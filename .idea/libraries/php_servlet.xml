@@ -1,0 +1,9 @@
+<component name="libraryTable">
+  <library name="php-servlet">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/plugins/php-servlet.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>
