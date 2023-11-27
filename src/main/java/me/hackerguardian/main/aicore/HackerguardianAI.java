@@ -5,28 +5,19 @@ import org.neuroph.core.data.DataSet;
 import org.neuroph.nnet.MultiLayerPerceptron;
 import org.neuroph.nnet.learning.BackPropagation;
 
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.ObjectOutputStream;
-
-/**
- * @author JumpWatch on 27-03-2023
- * @Project HackerGuardian
- * v1.0.0
- */
 public class HackerguardianAI {
-    private final int numInputs;
+    private final int totalInputs; // Total number of inputs from all events
     private final int numOutputs;
     private final int numHiddenNodes;
     public final NeuralNetwork network;
 
-    public HackerguardianAI(int numInputs, int numOutputs, int numHiddenNodes) {
-        this.numInputs = numInputs;
+    public HackerguardianAI(int totalInputs, int numOutputs, int numHiddenNodes) {
+        this.totalInputs = totalInputs;
         this.numOutputs = numOutputs;
         this.numHiddenNodes = numHiddenNodes;
 
         // Define the neural network architecture
-        network = new MultiLayerPerceptron(numInputs, numHiddenNodes, numOutputs);
+        network = new MultiLayerPerceptron(totalInputs, numHiddenNodes, numOutputs);
 
         // Set up the backpropagation learning rule
         BackPropagation backpropagation = new BackPropagation();
@@ -41,23 +32,9 @@ public class HackerguardianAI {
         network.learn(trainingData);
     }
 
-    public double predict(double[] input) {
+    public double[] predict(double[] input) {
         network.setInput(input);
         network.calculate();
-        return network.getOutput()[0];
+        return network.getOutput();
     }
-    public void save(String fileName) {
-        try {
-            FileOutputStream fos = new FileOutputStream(fileName);
-            ObjectOutputStream oos = new ObjectOutputStream(fos);
-            oos.writeObject(network);
-            oos.close();
-            fos.close();
-        } catch (IOException e) {
-            System.out.println("Error saving network to file: " + e.getMessage());
-        }
-
-    }
-
-
 }

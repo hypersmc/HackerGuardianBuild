@@ -23,41 +23,54 @@ public class onPlayerMove implements Listener {
 
     @EventHandler
     public void onPlayerMove(PlayerMoveEvent event){
-        // Get player's movement and look data
-        Player player = event.getPlayer();
-        Location from = event.getFrom();
-        Location to = event.getTo();
-        Vector direction = to.subtract(from).toVector().normalize();
-        Vector look = player.getLocation().getDirection().normalize();
+        if (main.learning) {
+            // Get player's movement and look data
+            Player player = event.getPlayer();
+            Location from = event.getFrom();
+            Location to = event.getTo();
+            Vector direction = to.clone().subtract(from.clone()).toVector().normalize();
+            Vector look = player.getLocation().getDirection().normalize();
 
-        // Calculate input values
-        double[] input = new double[5];
-        input[0] = direction.getX();
-        input[1] = direction.getY();
-        input[2] = direction.getZ();
-        input[3] = look.getX();
-        input[4] = look.getZ();
+            // Calculate input values
+            double[] input = new double[5];
+            input[0] = direction.getX();
+            input[1] = direction.getY();
+            input[2] = direction.getZ();
+            input[3] = look.getX();
+            input[4] = look.getZ();
 
-        // Get player's cheat status (example)
-        boolean isCheating = isPlayerCheating(player);
+            // Get player's cheat status (example)
+            boolean isCheating = isPlayerCheating(player);
 
-        // Add input and output to training data set
-        trainingData.addRow(input, new double[] {isCheating ? 1 : 0});
-
+            // Add input and output to training data set
+            trainingData.addRow(input, new double[]{isCheating ? 1 : 0});
+        }
 
     }
     private boolean isPlayerCheating(Player player) {
-        // Example method for determining player cheat status
-        // Replace with your own implementation
-        return player.getWalkSpeed() > 0.3 || player.getFlySpeed() > 0.3;
+        // Check if the player's movement speed is unusually high
+        boolean highSpeed = player.getWalkSpeed() > 1.5 || player.getFlySpeed() > 2;
+
+        // Check for abnormal positions between previous and current location
+        Location from = player.getLocation();
+        Location to = player.getLocation();
+        double distance = from.clone().distance(to); // Calculate the distance between locations
+        boolean abnormalPositionChange = distance > 0.5; // Adjust distance threshold as needed
+
+        // Check for abnormal health regeneration
+        boolean abnormalHealthRegen = player.getHealth() > player.getMaxHealth();
+
+        // Combine checks to identify potential cheating
+        return highSpeed || abnormalPositionChange || abnormalHealthRegen;
     }
+
     public static TrainingData getTrainingData(){
         main.ai.train(trainingData.getDataSet());
         return trainingData;
     }
     public static void setTrainingData(TrainingData data, String name){
-        if (Objects.equals(name, "onPlayerMove")) {
-            trainingData.setDataSet(data.getDataSet());
-        }
+        trainingData.setDataSet(data.getDataSet());
+        main.text.SendconsoleTextWsp("Data for " + name + " is now added!");
+
     }
 }

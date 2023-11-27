@@ -4,9 +4,9 @@ version: 0.1.1
 author: HypersMC, JumpWatch, HumpJump
 #load: STARTUP
 api-version: 1.13
-depend:
-  - ProtocolLib
-  - ViaVersion
+#depend:
+#  - ProtocolLib
+#  - ViaVersion
 database: true
 commands:
   HackerGuardian:

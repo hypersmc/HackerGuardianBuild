@@ -19,44 +19,56 @@ import java.util.Objects;
  */
 public class onPlayerInteract implements Listener {
     static hackerguardian main = hackerguardian.getInstance();
-    private static final TrainingData trainingData = new TrainingData(5, 1);
+    private static final TrainingData trainingData = new TrainingData(main.calculateTotalInputs(), 1);
     @EventHandler
     public void onPlayerInteract(PlayerInteractEvent event) {
-        Player player = event.getPlayer();
-        Block block = event.getClickedBlock();
-        Material material = block.getType();
-        Vector direction = player.getLocation().getDirection().normalize();
+        if (main.learning) {
+            Player player = event.getPlayer();
+            Block block = event.getClickedBlock();
+            if (block != null) {
+                Vector direction = player.getLocation().getDirection().normalize();
 
-        // Calculate input values
-        double[] input = new double[7];
-        input[0] = block.getX();
-        input[1] = block.getY();
-        input[2] = block.getZ();
-        input[3] = material.getId();
-        input[4] = direction.getX();
-        input[5] = direction.getY();
-        input[6] = direction.getZ();
+                // Calculate input values
+                double[] input = new double[6];
+                input[0] = block.getX();
+                input[1] = block.getY();
+                input[2] = block.getZ();
+                input[3] = direction.getX();
+                input[4] = direction.getY();
+                input[5] = direction.getZ();
 
-        // Get player's cheat status (example)
-        boolean isCheating = isPlayerCheating(player);
-
-        // Add input and output to training data set
-        trainingData.addRow(input, new double[] {isCheating ? 1 : 0});
+                // Get player's cheat status (example)
+                boolean isCheating = isPlayerCheating(player, event);
+                // Add input and output to training data set
+                trainingData.addRow(input, new double[]{isCheating ? 1 : 0});
+            }
+        }
     }
 
-    private boolean isPlayerCheating(Player player) {
-        // Example method for determining player cheat status
-        // Replace with your own implementation
-        return player.getWalkSpeed() > 0.3 || player.getFlySpeed() > 0.3;
+    private boolean isPlayerCheating(Player player, PlayerInteractEvent event) {
+        // Check if the player's movement speed is unusually high
+        boolean highSpeed = player.getWalkSpeed() > 0.3 || player.getFlySpeed() > 0.3;
+
+        // Check for specific interactions that might indicate cheating
+        boolean suspiciousInteractions = false;
+
+        // Example: Check for interacting with specific block types (e.g., bedrock, barrier, etc.)
+        if (event.getClickedBlock() != null) {
+            Material clickedBlockType = event.getClickedBlock().getType();
+            suspiciousInteractions = clickedBlockType == Material.BEDROCK || clickedBlockType == Material.BARRIER;
+        }
+
+        // Combine checks to identify potential cheating
+        return highSpeed || suspiciousInteractions;
     }
+
     public static TrainingData getTrainingData(){
         main.ai.train(trainingData.getDataSet());
         return trainingData;
     }
     public static void setTrainingData(TrainingData data, String name){
-        if (Objects.equals(name, "onPlayerInteract")) {
-            trainingData.setDataSet(data.getDataSet());
-        }
+        trainingData.setDataSet(data.getDataSet());
+        main.text.SendconsoleTextWsp("Data for " + name + " is now added!");
     }
 
 }

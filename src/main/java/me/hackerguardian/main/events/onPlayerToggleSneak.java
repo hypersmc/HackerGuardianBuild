@@ -16,35 +16,52 @@ import java.util.Objects;
  */
 public class onPlayerToggleSneak implements Listener {
     static hackerguardian main = hackerguardian.getInstance();
-    private static final TrainingData trainingData = new TrainingData(2, 1);
+    private static final TrainingData trainingData = new TrainingData(0, 1);
 
     @EventHandler
     public void onPlayerToggleSneak(PlayerToggleSneakEvent event) {
-        Player player = event.getPlayer();
-        boolean isSneaking = event.isSneaking();
+        if (main.learning) {
+            Player player = event.getPlayer();
+            boolean isSneaking = event.isSneaking();
 
-        // Calculate input values
-        double[] input = new double[1];
-        input[0] = isSneaking ? 1 : 0;
-        // Get player's cheat status (example)
-        boolean isCheating = isPlayerCheating(player, isSneaking);
-        // Add input and output to training data set
-        trainingData.addRow(input, new double[] {isCheating ? 1 : 0});
+            double[] input = new double[5]; // Define an array of size 5 (maximum input size)
+
+            // Set the first element based on the sneaking status
+            input[0] = isSneaking ? 1 : 0;
+
+            // Rest of the elements will be zeros
+            for (int i = 1; i < input.length; i++) {
+                input[i] = 0; // Padding with zeros for the rest of the inputs
+            }
+
+            // Get player's cheat status (example)
+            boolean isCheating = isPlayerCheating(player, isSneaking);
+
+            // Add input and output to training data set
+            trainingData.addRow(input, new double[]{isCheating ? 1 : 0});
+        }
 
     }
 
     private boolean isPlayerCheating(Player player, boolean isSneaking) {
-        // Replace with your own implementation
-        return isSneaking && player.isOnGround();
+        // Check if the player is sneaking while not on the ground
+        boolean sneakingNotOnGround = isSneaking && !player.isOnGround();
+
+        // Check for abnormal velocity (indicating potential hacks)
+        boolean abnormalVelocity = player.getVelocity().lengthSquared() > 0.5; // Adjust threshold as needed
+
+        // Combine checks to identify potential cheating
+        return sneakingNotOnGround || abnormalVelocity;
     }
+
     public static TrainingData getTrainingData(){
         main.ai.train(trainingData.getDataSet());
         return trainingData;
     }
     public static void setTrainingData(TrainingData data, String name){
-        if (Objects.equals(name, "onPlayerToggleSneak")) {
-            trainingData.setDataSet(data.getDataSet());
-        }
+        trainingData.setDataSet(data.getDataSet());
+        main.text.SendconsoleTextWsp("Data for " + name + " is now added!");
+
     }
 
 

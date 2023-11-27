@@ -25,17 +25,7 @@ debug: false #Enable if I ask you to.
 #General stuff
 Settings:
   CheckWebsiteFunction: false #Should HackerGuardian check if HackerGuardian-Webserver is present in the database?
-  autoaddtobanwave: false #Should HackerGuardian add the player to banwave after it found the player guilty of cheats?
-  logplayerip: false #Should HackerGuardian add the players IP to a list?
-  ReportViewTime: 48 #Max staff reports view time (in hours).
-  MaxIPListCount: 3 #Max ip count on in-game log.
-  MaxModsListCount: 5 #Max mods count on in-game log. (only applies of user used forge)
-  MaxReasonListCount: 5 #Max Checks Trigger counts on in-game log.
-  MaxHandlerListCount: 5 #Max handler list count on in-game log.
-  Addoneachtriggercoung: false #Should HackerGuardian add the suspicion each time its triggered or only on kick? True is yes, False is no
-  mintps: 14 #Counter measures will be used if tps gets bellow this.
-  maxtps: 19 #Counter measures will be stopped if tps is equal or greater than this.
-  AutoUpdate: true #Should HackerGuardian AutoUpdate when an update is available?
+  LearningMode: false #Should the AI be in Learning mode?
 
 #Webserver settings
 webdomain: your-domain.net

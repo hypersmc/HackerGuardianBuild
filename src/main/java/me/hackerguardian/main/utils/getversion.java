@@ -90,6 +90,10 @@ public class getversion {
                 return "1.19.3";
             case 762:
                 return "1.19.4";
+            case 763:
+                return "1.20/1.20.1";
+            case 764:
+                return "1.20.2";
             default:
                 return "Unknown";
         }
