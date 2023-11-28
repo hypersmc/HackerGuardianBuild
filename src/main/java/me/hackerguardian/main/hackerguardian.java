@@ -1,5 +1,7 @@
 package me.hackerguardian.main;
 
+import com.comphenix.protocol.ProtocolLibrary;
+import com.comphenix.protocol.events.PacketListener;
 import me.hackerguardian.main.aicore.DataIO;
 import me.hackerguardian.main.aicore.HackerguardianAI;
 import me.hackerguardian.main.aicore.TrainingData;
@@ -76,10 +78,9 @@ public class hackerguardian extends JavaPlugin {
                     if (fileToLoad.exists()) {
                         TrainingData dataSet = DataIO.loadTrainingData(fileToLoad.getName());
                         try {
-                            Class<?> clazz = Class.forName(fileName);
-                            Object instance = clazz.getDeclaredConstructor().newInstance();
-                            clazz.getMethod("setTrainingData", TrainingData.class, String.class)
-                                    .invoke(instance, dataSet, fileNameWithoutExtension);
+                            Class<?> clazz = Class.forName(file.getName());
+                            Object ins = clazz.newInstance();
+                            clazz.getMethod("setTrainingData", TrainingData.class, String.class).invoke(ins, dataSet, fileNameWithoutExtension);
                             text.SendconsoleTextWsp("Training data for " + fileName + " have been added!");
                         } catch (ClassNotFoundException | InstantiationException |
                                  IllegalAccessException | InvocationTargetException |
@@ -112,7 +113,7 @@ public class hackerguardian extends JavaPlugin {
         getServer().getPluginManager().registerEvents(new onPlayerToggleFlight(), this);
         getServer().getPluginManager().registerEvents(new onPlayerToggleSneak(), this);
         getServer().getPluginManager().registerEvents(new onPlayerJoin(), this);
-
+        ProtocolLibrary.getProtocolManager().addPacketListener((PacketListener) new onPackageListener());
     }
 
     @Override
