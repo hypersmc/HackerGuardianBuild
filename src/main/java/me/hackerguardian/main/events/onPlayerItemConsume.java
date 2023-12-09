@@ -11,6 +11,7 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.PotionMeta;
 import org.bukkit.potion.PotionData;
 import org.bukkit.potion.PotionType;
+import org.neuroph.core.data.DataSet;
 
 import java.util.Objects;
 
@@ -21,7 +22,7 @@ import java.util.Objects;
  */
 public class onPlayerItemConsume implements Listener {
     static hackerguardian main = hackerguardian.getInstance();
-    private static final TrainingData trainingData = new TrainingData(main.calculateTotalInputs(), 1);
+    private static final TrainingData trainingData = new TrainingData(12, 1);
 
     @EventHandler
     public void onPlayerItemConsume(PlayerItemConsumeEvent event) {
@@ -31,7 +32,7 @@ public class onPlayerItemConsume implements Listener {
             Material itemType = event.getItem().getType();
 
             // Calculate input values
-            double[] input = new double[13];
+            double[] input = new double[12];
             input[0] = player.getHealth() / 20.0; // Normalize health to range [0, 1]
             input[1] = player.getFoodLevel() / 20.0; // Normalize food level to range [0, 1]
             input[2] = player.getSaturation() / 20.0; // Normalize saturation to range [0, 1]
@@ -44,6 +45,11 @@ public class onPlayerItemConsume implements Listener {
             input[9] = player.isSprinting() ? 1 : 0; // Is sprinting (binary)
             input[10] = player.isBlocking() ? 1 : 0; // Is blocking (binary)
             input[11] = itemType.getMaxDurability() / 1562.0; // Normalize item durability to range [0, 1]
+
+            boolean isCheating = isPlayerCheating(player);
+            trainingData.addRow(input, new double[]{isCheating ? 1 : 0});
+
+
         }
     }
     private boolean isPlayerCheating(Player player) {
@@ -80,13 +86,13 @@ public class onPlayerItemConsume implements Listener {
         return false; // Return false if no suspicious consumption detected
     }
     public static TrainingData getTrainingData(){
-        main.ai.train(trainingData.getDataSet());
         return trainingData;
     }
-    public static void setTrainingData(TrainingData data, String name){
-        trainingData.setDataSet(data.getDataSet());
+    public static void setTrainingData(DataSet data, String name){
+        trainingData.setDataSet(data);
         main.text.SendconsoleTextWsp("Data for " + name + " is now added!");
-
+        main.ai4.train(trainingData.getDataSet());
+        main.text.SendconsoleTextWsp("Data for " + name + " is has been trained!");
     }
 
 }

@@ -5,6 +5,7 @@ import me.hackerguardian.main.hackerguardian;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerChatEvent;
+import org.neuroph.core.data.DataSet;
 
 import java.util.Objects;
 
@@ -15,7 +16,9 @@ import java.util.Objects;
  */
 public class onPlayerChat implements Listener {
     static hackerguardian main = hackerguardian.getInstance();
-    private static final TrainingData trainingData = new TrainingData(main.calculateTotalInputs(), 1);
+    private static final int MAX_MESSAGE_LENGTH = 50; // Choose an appropriate maximum message length
+
+    private static final TrainingData trainingData = new TrainingData(50, 1);
 
     @EventHandler
     public void onPlayerChat(PlayerChatEvent event) {
@@ -25,38 +28,24 @@ public class onPlayerChat implements Listener {
             boolean isCheating = isPlayerCheating(message);
 
             // Convert message to input values
-            double[] input = new double[message.length()];
-            for (int i = 0; i < message.length(); i++) {
+            double[] input = new double[MAX_MESSAGE_LENGTH];
+
+            // Truncate or pad the message to fit the fixed input size
+            int messageLength = Math.min(message.length(), MAX_MESSAGE_LENGTH);
+            for (int i = 0; i < messageLength; i++) {
                 input[i] = (double) message.charAt(i);
             }
 
-            // Add input and output to training data set
-            trainingData.addRow(input, new double[]{isCheating ? 1 : 0});
-        } else {
-            // Prediction Mode: Use the trained AI for prediction or perform certain actions
-            // Perform actions or predictions based on the learned knowledge
-            // ...
-            if (main.ai != null){
-                String message = event.getMessage();
-
-                // Convert message to input values (similar to how it was done in learning mode)
-                double[] input = new double[message.length()];
-                for (int i = 0; i < message.length(); i++) {
-                    input[i] = (double) message.charAt(i);
+            // If the message is shorter than the fixed size, pad the remaining slots
+            if (messageLength < MAX_MESSAGE_LENGTH) {
+                for (int i = messageLength; i < MAX_MESSAGE_LENGTH; i++) {
+                    input[i] = 0.0; // You can choose any appropriate padding value
                 }
-
-                // Perform prediction using the trained AI
-                double[] prediction = main.ai.predict(input);
-
-                // Interpret the prediction result
-                if (prediction[0] >= 0.5) {
-                    event.getPlayer().sendMessage("Cheating behavior detected!");
-                } else {
-                    event.getPlayer().sendMessage("No cheating detected.");
-                }
-            }else{
-
             }
+
+            // Add input and output to the training data set
+            trainingData.addRow(input, new double[]{isCheating ? 1 : 0});
+
         }
     }
 
@@ -75,15 +64,14 @@ public class onPlayerChat implements Listener {
     public static TrainingData getTrainingData(){
         return trainingData;
     }
-    public static void setTrainingData(TrainingData data, String name){
-         trainingData.setDataSet(data.getDataSet());
+    public static void setTrainingData(DataSet data, String name){
+        trainingData.setDataSet(data);
         main.text.SendconsoleTextWsp("Data for " + name + " is now added!");
-
+        main.ai3.train(trainingData.getDataSet());
+        main.text.SendconsoleTextWsp("Data for " + name + " is has been trained!");
     }
-
     public static void trainTrainingData(){
         main.ai.train(trainingData.getDataSet());
-
     }
 
 }

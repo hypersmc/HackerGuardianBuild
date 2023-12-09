@@ -427,30 +427,6 @@ public class onPackageListener {
                 }
             }
         });
-        protocolManager.addPacketListener(new PacketAdapter(main, ListenerPriority.HIGH, PacketType.Play.Client.TRANSACTION) {
-            @Override
-            public void onPacketReceiving(PacketEvent event) {
-                if (main.learning) {
-
-                }
-            }
-        });
-        protocolManager.addPacketListener(new PacketAdapter(main, ListenerPriority.HIGH, PacketType.Play.Client.FLYING) {
-            @Override
-            public void onPacketReceiving(PacketEvent event) {
-                if (main.learning) {
-
-                }
-            }
-        });
-        protocolManager.addPacketListener(new PacketAdapter(main, ListenerPriority.HIGH, PacketType.Play.Client.CHAT_PREVIEW) {
-            @Override
-            public void onPacketReceiving(PacketEvent event) {
-                if (main.learning) {
-
-                }
-            }
-        });
 
     }
 }

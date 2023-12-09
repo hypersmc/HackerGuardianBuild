@@ -6,6 +6,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerToggleSneakEvent;
+import org.neuroph.core.data.DataSet;
 
 import java.util.Objects;
 
@@ -16,7 +17,7 @@ import java.util.Objects;
  */
 public class onPlayerToggleSneak implements Listener {
     static hackerguardian main = hackerguardian.getInstance();
-    private static final TrainingData trainingData = new TrainingData(0, 1);
+    private static final TrainingData trainingData = new TrainingData(5, 1);
 
     @EventHandler
     public void onPlayerToggleSneak(PlayerToggleSneakEvent event) {
@@ -39,6 +40,8 @@ public class onPlayerToggleSneak implements Listener {
 
             // Add input and output to training data set
             trainingData.addRow(input, new double[]{isCheating ? 1 : 0});
+
+
         }
 
     }
@@ -55,14 +58,13 @@ public class onPlayerToggleSneak implements Listener {
     }
 
     public static TrainingData getTrainingData(){
-        main.ai.train(trainingData.getDataSet());
         return trainingData;
     }
-    public static void setTrainingData(TrainingData data, String name){
-        trainingData.setDataSet(data.getDataSet());
+    public static void setTrainingData(DataSet data, String name){
+        trainingData.setDataSet(data);
         main.text.SendconsoleTextWsp("Data for " + name + " is now added!");
-
+        main.ai2.train(trainingData.getDataSet());
+        main.text.SendconsoleTextWsp("Data for " + name + " is has been trained!");
     }
-
 
 }

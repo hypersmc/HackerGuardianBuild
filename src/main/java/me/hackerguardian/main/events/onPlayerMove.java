@@ -8,6 +8,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.util.Vector;
+import org.neuroph.core.data.DataSet;
 
 import java.util.Objects;
 
@@ -44,6 +45,8 @@ public class onPlayerMove implements Listener {
 
             // Add input and output to training data set
             trainingData.addRow(input, new double[]{isCheating ? 1 : 0});
+
+
         }
 
     }
@@ -65,12 +68,12 @@ public class onPlayerMove implements Listener {
     }
 
     public static TrainingData getTrainingData(){
-        main.ai.train(trainingData.getDataSet());
         return trainingData;
     }
-    public static void setTrainingData(TrainingData data, String name){
-        trainingData.setDataSet(data.getDataSet());
+    public static void setTrainingData(DataSet data, String name){
+        trainingData.setDataSet(data);
         main.text.SendconsoleTextWsp("Data for " + name + " is now added!");
-
+        main.ai2.train(trainingData.getDataSet());
+        main.text.SendconsoleTextWsp("Data for " + name + " is has been trained!");
     }
 }

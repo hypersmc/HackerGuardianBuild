@@ -120,6 +120,7 @@ public class MySQL {
                 }
             }
             text.SendconsoleTextWp("Database Cleanup successful!");
+            doNewCoreDatabase();
         } catch (SQLException e) {
             if (hackerguardian.getInstance().getConfig().getBoolean("debug")) e.printStackTrace();
         }
@@ -141,7 +142,8 @@ public class MySQL {
                     text.SendconsoleTextWsp("Eradicating old database tables and data!");
                     initializeDatabaseCleanup();
                 } else {
-                    text.SendconsoleTextWp("CorePlayerStats table not found.");
+                    text.SendconsoleTextWp("New installation!");
+                    doNewCoreDatabase();
                 }
             }
 
@@ -152,6 +154,9 @@ public class MySQL {
             text.SendconsoleTextWp("Error while checking Core system SQL tables.");
             if (hackerguardian.getInstance().getConfig().getBoolean("debug")) e.printStackTrace();
         }
+    }
+    public void doNewCoreDatabase(){
+
     }
 
 }

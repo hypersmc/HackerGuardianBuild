@@ -13,9 +13,6 @@
 #                         ██║██║╚██╔╝██║██╔═══╝ ██║   ██║██╔══██╗   ██║   ██╔══██║██║╚██╗██║   ██║   ╚═╝
 #                         ██║██║ ╚═╝ ██║██║     ╚██████╔╝██║  ██║   ██║   ██║  ██║██║ ╚████║   ██║   ██╗
 #                         ╚═╝╚═╝     ╚═╝╚═╝      ╚═════╝ ╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═══╝   ╚═╝   ╚═╝
-
-#So little heads up before you make a connection to your database. IF you are planning to use my addon: HackerGuardian-Webserver
-#I highly recommend to use the same database as the websystem and hackerguardian mostly communicate through the database.
 SQLHost: '127.0.0.1' #This should be the ip to your database
 SQLPort: '3306' #This should be the port to your database
 SQLDatabaseName: 'myDatabase' #This should be the database name to your database.
@@ -24,7 +21,7 @@ SQLPassword: 'changeme' #This shuld be the database password to your database
 debug: false #Enable if I ask you to.
 #General stuff
 Settings:
-  CheckWebsiteFunction: false #Should HackerGuardian check if HackerGuardian-Webserver is present in the database?
+  CheckWebsiteFunction: false #Should HackerGuardian check if HackerGuardian-Webserver is present and connectable?
   LearningMode: false #Should the AI be in Learning mode?
 
 #Webserver settings
