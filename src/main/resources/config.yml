@@ -5,25 +5,20 @@
 #           ██╔══██║██╔══██║██║     ██╔═██╗ ██╔══╝  ██╔══██╗██║   ██║██║   ██║██╔══██║██╔══██╗██║  ██║██║██╔══██║██║╚██╗██║
 #           ██║  ██║██║  ██║╚██████╗██║  ██╗███████╗██║  ██║╚██████╔╝╚██████╔╝██║  ██║██║  ██║██████╔╝██║██║  ██║██║ ╚████║
 #           ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝ ╚═════╝  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═════╝ ╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝
-#          █████╗█████╗█████╗█████╗█████╗█████╗█████╗█████╗█████╗█████╗█████╗█████╗█████╗█████╗█████╗█████╗█████╗█████╗█████╗
-#          ╚════╝╚════╝╚════╝╚════╝╚════╝╚════╝╚════╝╚════╝╚════╝╚════╝╚════╝╚════╝╚════╝╚════╝╚════╝╚════╝╚════╝╚════╝╚════╝
-#                         ██╗███╗   ███╗██████╗  ██████╗ ██████╗ ████████╗ █████╗ ███╗   ██╗████████╗██╗
-#                         ██║████╗ ████║██╔══██╗██╔═══██╗██╔══██╗╚══██╔══╝██╔══██╗████╗  ██║╚══██╔══╝██║
-#                         ██║██╔████╔██║██████╔╝██║   ██║██████╔╝   ██║   ███████║██╔██╗ ██║   ██║   ██║
-#                         ██║██║╚██╔╝██║██╔═══╝ ██║   ██║██╔══██╗   ██║   ██╔══██║██║╚██╗██║   ██║   ╚═╝
-#                         ██║██║ ╚═╝ ██║██║     ╚██████╔╝██║  ██║   ██║   ██║  ██║██║ ╚████║   ██║   ██╗
-#                         ╚═╝╚═╝     ╚═╝╚═╝      ╚═════╝ ╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═══╝   ╚═╝   ╚═╝
+
 SQLHost: '127.0.0.1' #This should be the ip to your database
-SQLPort: '3306' #This should be the port to your database
+SQLPort: '3306' #This should be the port to your database.
 SQLDatabaseName: 'myDatabase' #This should be the database name to your database.
-SQLUsername: 'changeme' #This shuld be the database username to your database
-SQLPassword: 'changeme' #This shuld be the database password to your database
+SQLUsername: 'changeme' #This should be the database username to your database
+SQLPassword: 'changeme' #This should be the database password to your database
 debug: false #Enable if I ask you to.
-#General stuff
+#General settings
 Settings:
-  CheckWebsiteFunction: false #Should HackerGuardian check if HackerGuardian-Webserver is present and connectable?
-  LearningMode: false #Should the AI be in Learning mode?
+  UseWebsiteFunction: false #Should HackerGuardian use HackerGuardian-Webserver if it's present and connectable?
+  EnableAI: false #Want to use the AI part of the Anti-Cheat (ALPHA)
+  LearningMode: false #Should the AI be in Learning mode? (ALPHA)
 
 #Webserver settings
-webdomain: your-domain.net
-webapikey: your-api-key-here
+SettingsWeb:
+  webdomain: your-domain.net
+  webapikey: your-api-key-here

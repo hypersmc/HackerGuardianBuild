@@ -1,6 +1,6 @@
 package me.hackerguardian.main.utils;
 
-import me.hackerguardian.main.hackerguardian;
+import me.hackerguardian.main.HackerGuardian;
 import org.bukkit.ChatColor;
 
 /**
@@ -41,13 +41,13 @@ public class textHandling {
      * @param text
      */
     public void SendconsoleTextWp(String text) {
-        hackerguardian.getInstance().getServer().getConsoleSender().sendMessage(ChatColor.translateAlternateColorCodes('&',prefix + text));
+        HackerGuardian.getInstance().getServer().getConsoleSender().sendMessage(ChatColor.translateAlternateColorCodes('&',prefix + text));
     }
     /**
      * @param text
      */
     public void SendconsoleTextWsp(String text) {
-        hackerguardian.getInstance().getServer().getConsoleSender().sendMessage(ChatColor.translateAlternateColorCodes('&',shortprefix + text));
+        HackerGuardian.getInstance().getServer().getConsoleSender().sendMessage(ChatColor.translateAlternateColorCodes('&',shortprefix + text));
     }
 
     /**

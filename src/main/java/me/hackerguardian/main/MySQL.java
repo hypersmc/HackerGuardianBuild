@@ -1,20 +1,19 @@
 package me.hackerguardian.main;
+import me.hackerguardian.main.utils.ErrorHandler;
 import me.hackerguardian.main.utils.textHandling;
 import org.bukkit.Bukkit;
 
 import java.sql.*;
-import java.util.*;
 
 public class MySQL {
 
     public static textHandling text = new textHandling();
     public static Connection db = null;
-    private String host = hackerguardian.getInstance().getConfig().getString("SQLHost");
-    private String port = hackerguardian.getInstance().getConfig().getString("SQLPort");
-    private String database = hackerguardian.getInstance().getConfig().getString("SQLDatabaseName");
-    private String user = hackerguardian.getInstance().getConfig().getString("SQLUsername");
-    private String pass = hackerguardian.getInstance().getConfig().getString("SQLPassword");
-    //TODO Add ny liste så man kan se hvad spillern sidst er blivet "kicket" for af checks.
+    private String host = HackerGuardian.getInstance().getConfig().getString("SQLHost");
+    private String port = HackerGuardian.getInstance().getConfig().getString("SQLPort");
+    private String database = HackerGuardian.getInstance().getConfig().getString("SQLDatabaseName");
+    private String user = HackerGuardian.getInstance().getConfig().getString("SQLUsername");
+    private String pass = HackerGuardian.getInstance().getConfig().getString("SQLPassword");
 
     public void setupCoreSystem(){
         String url = null;
@@ -25,7 +24,7 @@ public class MySQL {
             text.SendconsoleTextWp("Disabling plugin. Please reboot to reload config.");
             text.SendconsoleTextWp("-----------------------------");
             text.SendconsoleTextWp("");
-            Bukkit.getPluginManager().disablePlugin(hackerguardian.getInstance());
+            Bukkit.getPluginManager().disablePlugin(HackerGuardian.getInstance());
             return;
         }
         try {
@@ -33,21 +32,19 @@ public class MySQL {
             url = "jdbc:mysql://" + this.host + ":" + this.port + "/" + this.database + "?user=" + this.user + "&password=" + this.pass + "?autoReconnect=true?useUnicode=yes";
             Class.forName(driver);
             String finalUrl = url;
-            Bukkit.getScheduler().runTaskAsynchronously(hackerguardian.getInstance(), () -> {
+            Bukkit.getScheduler().runTaskAsynchronously(HackerGuardian.getInstance(), () -> {
                 try {
                     db = DriverManager.getConnection(finalUrl, this.user, this.pass);
                     formatCoreDatabase();
                     text.SendconsoleTextWp("Connection to MySQL database successful.");
                 } catch (SQLException e) {
-                    text.SendconsoleTextWp("Could not connect to the '" + this.database + "' Database");
-                    if (hackerguardian.getInstance().getConfig().getBoolean("debug")) e.printStackTrace();
+                    ErrorHandler.handleGenericException(e, "Could not connect to the database");
+
                 }
             });
 
         } catch (Exception e) {
-            text.SendconsoleTextWp("Could not connect to the '" + this.database + "' Database");
-            text.SendconsoleTextWp("Info: " + url);
-            if (hackerguardian.getInstance().getConfig().getBoolean("debug")) e.printStackTrace();
+            ErrorHandler.handleGenericException(e, "Could not connect to the database");
         }
     }
     /*
@@ -55,11 +52,11 @@ public class MySQL {
      */
 
     public static void InitializeWebsiteContentCheck(){
-        String host = hackerguardian.getInstance().getConfig().getString("SQLHost");
-        String port = hackerguardian.getInstance().getConfig().getString("SQLPort");
-        String database = hackerguardian.getInstance().getConfig().getString("SQLDatabaseName");
-        String user = hackerguardian.getInstance().getConfig().getString("SQLUsername");
-        String pass = hackerguardian.getInstance().getConfig().getString("SQLPassword");
+        String host = HackerGuardian.getInstance().getConfig().getString("SQLHost");
+        String port = HackerGuardian.getInstance().getConfig().getString("SQLPort");
+        String database = HackerGuardian.getInstance().getConfig().getString("SQLDatabaseName");
+        String user = HackerGuardian.getInstance().getConfig().getString("SQLUsername");
+        String pass = HackerGuardian.getInstance().getConfig().getString("SQLPassword");
         String url = null;
     }
     /*
@@ -67,11 +64,11 @@ public class MySQL {
      */
 
     public static void InitializeDatabaseConnectionCheck() {
-        String host = hackerguardian.getInstance().getConfig().getString("SQLHost");
-        String port = hackerguardian.getInstance().getConfig().getString("SQLPort");
-        String database = hackerguardian.getInstance().getConfig().getString("SQLDatabaseName");
-        String user = hackerguardian.getInstance().getConfig().getString("SQLUsername");
-        String pass = hackerguardian.getInstance().getConfig().getString("SQLPassword");
+        String host = HackerGuardian.getInstance().getConfig().getString("SQLHost");
+        String port = HackerGuardian.getInstance().getConfig().getString("SQLPort");
+        String database = HackerGuardian.getInstance().getConfig().getString("SQLDatabaseName");
+        String user = HackerGuardian.getInstance().getConfig().getString("SQLUsername");
+        String pass = HackerGuardian.getInstance().getConfig().getString("SQLPassword");
         String url = null;
         try {
             String driver = "com.mysql.jdbc.Driver";
@@ -79,20 +76,18 @@ public class MySQL {
             Class.forName(driver);
 
             String finalUrl = url;
-            Bukkit.getScheduler().runTaskAsynchronously(hackerguardian.getInstance(), () -> {
+            Bukkit.getScheduler().runTaskAsynchronously(HackerGuardian.getInstance(), () -> {
                 try {
                     db = DriverManager.getConnection(finalUrl, user, pass);
                     text.SendconsoleTextWp("Reconnection to MySQL database successful.");
                 } catch (SQLException e) {
-                    text.SendconsoleTextWp("Could not connect to the '" + database + "' Database");
-                    if (hackerguardian.getInstance().getConfig().getBoolean("debug")) e.printStackTrace();
+                    ErrorHandler.handleGenericException(e, "Could not connect to the database");
+
                 }
             });
 
         } catch (Exception e) {
-            text.SendconsoleTextWp("Could not connect to the '" + database + "' Database");
-            text.SendconsoleTextWp("Info: " + url);
-            if (hackerguardian.getInstance().getConfig().getBoolean("debug")) e.printStackTrace();
+            ErrorHandler.handleGenericException(e, "Could not connect to the database");
         }
     }
 
@@ -101,8 +96,7 @@ public class MySQL {
             db.close();
             text.SendconsoleTextWp("MysQL database connection closed.");
         } catch (SQLException e) {
-            text.SendconsoleTextWp("Failed to close connection.");
-            if (hackerguardian.getInstance().getConfig().getBoolean("debug")) e.printStackTrace();
+            ErrorHandler.handleGenericException(e, "Could not connect to the database");
         }
     }
 
@@ -122,7 +116,7 @@ public class MySQL {
             text.SendconsoleTextWp("Database Cleanup successful!");
             doNewCoreDatabase();
         } catch (SQLException e) {
-            if (hackerguardian.getInstance().getConfig().getBoolean("debug")) e.printStackTrace();
+            ErrorHandler.handleGenericException(e, "Could not connect to the database");
         }
     }
 
@@ -151,8 +145,7 @@ public class MySQL {
             checkIfExists.close();
             text.SendconsoleTextWp("Successfully checked tables.");
         } catch (SQLException e) {
-            text.SendconsoleTextWp("Error while checking Core system SQL tables.");
-            if (hackerguardian.getInstance().getConfig().getBoolean("debug")) e.printStackTrace();
+            ErrorHandler.handleGenericException(e, "Error finding SQL Tables");
         }
     }
     public void doNewCoreDatabase(){

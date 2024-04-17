@@ -5,7 +5,7 @@ import com.comphenix.protocol.PacketType;
 import com.comphenix.protocol.events.ListeningWhitelist;
 import com.comphenix.protocol.events.PacketEvent;
 import com.comphenix.protocol.events.PacketListener;
-import me.hackerguardian.main.hackerguardian;
+import me.hackerguardian.main.HackerGuardian;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 
@@ -28,7 +28,7 @@ public class HGPacketListener implements PacketListener {
         PacketType type = event.getPacketType();
         byte[] bytes = event.getPacket().getByteArrays().read(0);
         // Do something with the packet data, such as logging it
-        hackerguardian.getInstance().getLogger().info(String.format("Packet received from player %s: %s - %s", player.getName(), type, bytes));
+        HackerGuardian.getInstance().getLogger().info(String.format("Packet received from player %s: %s - %s", player.getName(), type, bytes));
     }
 
     @Override
@@ -37,7 +37,7 @@ public class HGPacketListener implements PacketListener {
         PacketType type = event.getPacketType();
         byte[] bytes = event.getPacket().getByteArrays().read(0);
         // Do something with the packet data, such as logging it
-        hackerguardian.getInstance().getLogger().info(String.format("Packet received from player %s: %s - %s", player.getName(), type, bytes));
+        HackerGuardian.getInstance().getLogger().info(String.format("Packet received from player %s: %s - %s", player.getName(), type, bytes));
     }
 
     @Override
@@ -52,6 +52,6 @@ public class HGPacketListener implements PacketListener {
 
     @Override
     public Plugin getPlugin() {
-        return hackerguardian.getInstance();
+        return HackerGuardian.getInstance();
     }
 }

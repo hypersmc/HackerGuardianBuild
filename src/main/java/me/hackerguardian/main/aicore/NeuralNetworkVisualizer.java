@@ -8,7 +8,8 @@ import java.util.List;
 
 import javax.imageio.ImageIO;
 
-import me.hackerguardian.main.hackerguardian;
+import me.hackerguardian.main.HackerGuardian;
+import me.hackerguardian.main.utils.ErrorHandler;
 import org.neuroph.core.Layer;
 import org.neuroph.core.NeuralNetwork;
 import org.neuroph.core.Neuron;
@@ -21,7 +22,7 @@ import org.neuroph.core.Neuron;
 public class NeuralNetworkVisualizer {
 
     public static void visualize(NeuralNetwork network, String fileName) {
-        hackerguardian main = hackerguardian.getInstance();
+        HackerGuardian main = HackerGuardian.getInstance();
         int imageSize = 600;
 
         List<Layer> layers = new ArrayList<>();
@@ -87,7 +88,8 @@ public class NeuralNetworkVisualizer {
         try {
             ImageIO.write(image, "png", new File(fileName));
         } catch (IOException e) {
-            System.out.println("Error writing image to file: " + e.getMessage());
+            ErrorHandler.handleIOException(e, "Could not save image");
+
         }
     }
 }

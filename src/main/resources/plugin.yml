@@ -1,14 +1,19 @@
 name: HackerGuardian
-main: me.hackerguardian.main.hackerguardian
-version: 0.1.1
-author: HypersMC, JumpWatch, HumpJump
-#load: STARTUP
+main: me.hackerguardian.main.HackerGuardian
+version: 1
+description: HackerGuardian, an anti-cheat with versatile cheat detection.
+author: HypersMC
+libraries:
+  - com.caucho:quercus:4.0.44
+  - org.apache.commons:commons-lang3:3.12.0
+  - org.apache.commons:commons-text:1.10.0
+  - org.apache.commons:commons-configuration2:2.8.0
+  - commons-validator:commons-validator:1.7
+  - io.netty:netty-buffer:4.1.85.Final
 api-version: 1.13
-depend:
-  - ProtocolLib
-#  - ViaVersion
+softdepend: [ProtocolLib, ViaVersion, ProtocolSupport]
 database: true
+load: POSTWORLD
+folia-supported: false
 commands:
   HackerGuardian:
-    aliases: hg
-    description: Main command for HackerGuardian. aliases is hg

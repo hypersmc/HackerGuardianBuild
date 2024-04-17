@@ -1,6 +1,7 @@
 package me.hackerguardian.main.aicore;
 
-import me.hackerguardian.main.hackerguardian;
+import me.hackerguardian.main.HackerGuardian;
+import me.hackerguardian.main.utils.ErrorHandler;
 import org.neuroph.core.data.DataSet;
 
 import java.io.*;
@@ -11,7 +12,7 @@ import java.io.*;
  * v1.0.0
  */
 public class DataIO {
-    static hackerguardian main = hackerguardian.getInstance();
+    static HackerGuardian main = HackerGuardian.getInstance();
     public static void saveTrainingData(DataSet trainingData, String fileName) {
         try {
             FileOutputStream fos = new FileOutputStream(fileName);
@@ -20,7 +21,7 @@ public class DataIO {
             oos.close();
             fos.close();
         } catch (IOException e) {
-            main.text.SendconsoleTextWsp("Error saving training data to file: " + e.getMessage());
+            ErrorHandler.handleIOException(e, "Error saving training data");
         }
     }
 
@@ -34,7 +35,7 @@ public class DataIO {
             ois.close();
             fis.close();
         } catch (IOException | ClassNotFoundException e) {
-            main.text.SendconsoleTextWsp("Error loading training data from file: " + e.getMessage());
+            ErrorHandler.handleGenericException(e, "Error saving training data");
         }
         return trainingData;
     }

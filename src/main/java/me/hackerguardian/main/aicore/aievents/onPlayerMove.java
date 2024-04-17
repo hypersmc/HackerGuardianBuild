@@ -1,7 +1,7 @@
-package me.hackerguardian.main.events;
+package me.hackerguardian.main.aicore.aievents;
 
+import me.hackerguardian.main.HackerGuardian;
 import me.hackerguardian.main.aicore.TrainingData;
-import me.hackerguardian.main.hackerguardian;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -10,15 +10,13 @@ import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.util.Vector;
 import org.neuroph.core.data.DataSet;
 
-import java.util.Objects;
-
 /**
  * @author JumpWatch on 04-04-2023
  * @Project HackerGuardian
  * v1.0.0
  */
 public class onPlayerMove implements Listener {
-    static hackerguardian main = hackerguardian.getInstance();
+    static HackerGuardian main = HackerGuardian.getInstance();
     private static final TrainingData trainingData = new TrainingData(5, 1);
 
 

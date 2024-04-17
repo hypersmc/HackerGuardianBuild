@@ -1,8 +1,9 @@
 package me.hackerguardian.main.utils;
 
+import me.hackerguardian.main.HackerGuardian;
 import me.hackerguardian.main.aicore.DataIO;
-import me.hackerguardian.main.events.*;
-import me.hackerguardian.main.hackerguardian;
+import me.hackerguardian.main.aicore.aievents.*;
+import me.hackerguardian.main.aievents.*;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.neuroph.core.data.DataSet;
@@ -16,7 +17,8 @@ import java.lang.reflect.InvocationTargetException;
  * v1.0.0
  */
 public class schedules {
-    static hackerguardian main = hackerguardian.getInstance();
+    static HackerGuardian main = HackerGuardian.getInstance();
+    static textHandling text = new textHandling();
 
     public static void setDataForAI(JavaPlugin javaPlugin){
         new BukkitRunnable(){
@@ -39,22 +41,22 @@ public class schedules {
                                     Class<?> clazz = Class.forName("me.hackerguardian.main.events." + fileNameWithoutExtension);
                                     Object ins = clazz.newInstance();
                                     clazz.getMethod("setTrainingData", DataSet.class, String.class).invoke(ins, dataSet, fileNameWithoutExtension);
-                                    main.text.SendconsoleTextWsp("Training data for " + fileName + " have been added!");
+                                    text.SendconsoleTextWsp("Training data for " + fileName + " have been added!");
                                 } catch (ClassNotFoundException | InstantiationException |
                                          IllegalAccessException | InvocationTargetException |
                                          NoSuchMethodException e) {
-                                    main.text.SendconsoleTextWsp("Failed to process file: " + fileName);
+                                    text.SendconsoleTextWsp("Failed to process file: " + fileName);
                                     if (main.getConfig().getBoolean("debug")) e.printStackTrace();
                                 }
                             } else {
-                                main.text.SendconsoleTextWsp("File " + fileToLoad.getName() + " does not exist!");
+                                text.SendconsoleTextWsp("File " + fileToLoad.getName() + " does not exist!");
                             }
                         }
                     } else {
-                        main.text.SendconsoleTextWsp("No .bin files found in the data-core folder!");
+                        text.SendconsoleTextWsp("No .bin files found in the data-core folder!");
                     }
                 } else {
-                    main.text.SendconsoleTextWsp("Data-core directory does not exist!");
+                    text.SendconsoleTextWsp("Data-core directory does not exist!");
                 }
             }
         }.runTaskAsynchronously(javaPlugin);
@@ -64,7 +66,7 @@ public class schedules {
 
             @Override
             public void run() {
-                main.text.SendconsoleTextWsp("Saving current data from AI");
+                text.SendconsoleTextWsp("Saving current data from AI");
                 try {
                     main.saveTrainingDataToFile(onPlayerChat.getTrainingData(), "onPlayerChat.bin");
                     main.saveTrainingDataToFile(onPlayerInteract.getTrainingData(), "onPlayerInteract.bin");
@@ -73,7 +75,7 @@ public class schedules {
                     main.saveTrainingDataToFile(onPlayerToggleFlight.getTrainingData(), "onPlayerToggleFlight.bin");
                     main.saveTrainingDataToFile(onPlayerToggleSneak.getTrainingData(), "onPlayerToggleSneak.bin");
                 } catch (Exception e) {
-                    if (hackerguardian.getInstance().getConfig().getBoolean("debug")) e.printStackTrace();
+                    if (HackerGuardian.getInstance().getConfig().getBoolean("debug")) e.printStackTrace();
                 }
             }
         }.runTaskTimerAsynchronously(javaPlugin, 400L, 20L*60L*5L);

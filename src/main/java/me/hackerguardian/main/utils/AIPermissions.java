@@ -1,6 +1,6 @@
 package me.hackerguardian.main.utils;
 
-import me.hackerguardian.main.hackerguardian;
+import me.hackerguardian.main.HackerGuardian;
 
 import java.io.File;
 
@@ -10,8 +10,8 @@ import java.io.File;
  * v1.0.0
  */
 public class AIPermissions {
-
-    public static void setLearningFilesPermissions(hackerguardian main){
+    static textHandling text = new textHandling();
+    public static void setLearningFilesPermissions(HackerGuardian main){
         String[] fileNames = {
                 "onPlayerChat.bin",
                 "onPlayerInteract.bin",
@@ -21,17 +21,17 @@ public class AIPermissions {
                 "onPlayerToggleSneak.bin"
         };
         try {
-            main.text.SendconsoleTextWsp("Trying to set permissions for AI data-core files");
+            text.SendconsoleTextWsp("Trying to set permissions for AI data-core files");
             for (String fileName : fileNames) {
                 File file = new File(main.getDataFolder() + "/datacore/" + fileName);
                 file.setExecutable(true, false);
                 file.setReadable(true, false);
                 file.setWritable(true, false);
             }
-            main.text.SendconsoleTextWsp("Permissions for AI data-core files successful");
+            text.SendconsoleTextWsp("Permissions for AI data-core files successful");
         } catch (Exception e) {
-            main.text.SendconsoleTextWsp("Was not able to set full RWE permissions for files!");
-            if(main.getConfig().getBoolean("debug")) e.printStackTrace();
+            ErrorHandler.handleGenericException(e, "Could not set full WRE permissions on files");
+
         }
     }
 }

@@ -1,13 +1,11 @@
-package me.hackerguardian.main.events;
+package me.hackerguardian.main.aicore.aievents;
 
+import me.hackerguardian.main.HackerGuardian;
 import me.hackerguardian.main.aicore.TrainingData;
-import me.hackerguardian.main.hackerguardian;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerChatEvent;
 import org.neuroph.core.data.DataSet;
-
-import java.util.Objects;
 
 /**
  * @author JumpWatch on 07-04-2023
@@ -15,7 +13,8 @@ import java.util.Objects;
  * v1.0.0
  */
 public class onPlayerChat implements Listener {
-    static hackerguardian main = hackerguardian.getInstance();
+    static HackerGuardian main = HackerGuardian.getInstance();
+
     private static final int MAX_MESSAGE_LENGTH = 50; // Choose an appropriate maximum message length
 
     private static final TrainingData trainingData = new TrainingData(50, 1);

@@ -1,7 +1,7 @@
-package me.hackerguardian.main.events;
+package me.hackerguardian.main.aicore.aievents;
 
+import me.hackerguardian.main.HackerGuardian;
 import me.hackerguardian.main.aicore.TrainingData;
-import me.hackerguardian.main.hackerguardian;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
@@ -11,16 +11,14 @@ import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.util.Vector;
 import org.neuroph.core.data.DataSet;
 
-import java.util.Objects;
-
 /**
  * @author JumpWatch on 07-04-2023
  * @Project HackerGuardian
  * v1.0.0
  */
 public class onPlayerInteract implements Listener {
-    static hackerguardian main = hackerguardian.getInstance();
-    private static final TrainingData trainingData = new TrainingData(main.calculateTotalInputs(), 1);
+    static HackerGuardian main = HackerGuardian.getInstance();
+    private static final TrainingData trainingData = new TrainingData(6, 1);
     @EventHandler
     public void onPlayerInteract(PlayerInteractEvent event) {
         if (main.learning) {

@@ -27,6 +27,11 @@
       <option name="url" value="https://repo1.maven.org/maven2" />
     </remote-repository>
     <remote-repository>
+      <option name="id" value="sk89q-repo" />
+      <option name="name" value="sk89q-repo" />
+      <option name="url" value="https://maven.enginehub.org/repo/" />
+    </remote-repository>
+    <remote-repository>
       <option name="id" value="sonatype-nexus-snapshots" />
       <option name="name" value="Sonatype Nexus Snapshots" />
       <option name="url" value="https://oss.sonatype.org/content/repositories/snapshots" />
