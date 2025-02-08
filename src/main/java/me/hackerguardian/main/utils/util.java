@@ -35,11 +35,18 @@ public class util {
             return "" + ChatColor.DARK_GRAY +"|      " + ChatColor.RED+"ProtocolSupport"+ ChatColor.RESET + "\n";
         }
     }
-    public String detectSettingAI(Plugin pl){
-        if(pl.getConfig().getBoolean("Settings.EnableAI")){
-            return "" + ChatColor.DARK_GRAY +"|      " + ChatColor.GREEN +"AI Addon"+ ChatColor.RESET + "\n";
-        }else{
-            return "" + ChatColor.DARK_GRAY +"|      " + ChatColor.RED+"AI Addon"+ ChatColor.RESET + "\n";
+    public String detectSettingAI(Plugin pl) {
+        boolean enableAI = pl.getConfig().getBoolean("Settings.EnableAI");
+        boolean learningMode = pl.getConfig().getBoolean("Settings.LearningMode");
+
+        if (enableAI) {
+            if (learningMode) {
+                return ChatColor.DARK_GRAY + "|      " + ChatColor.GREEN + "AI Addon (Learning Mode)" + ChatColor.RESET + "\n";
+            } else {
+                return ChatColor.DARK_GRAY + "|      " + ChatColor.GREEN + "AI Addon" + ChatColor.RESET + "\n";
+            }
+        } else {
+            return ChatColor.DARK_GRAY + "|      " + ChatColor.RED + "AI Addon" + ChatColor.RESET + "\n";
         }
     }
     public String detectSettingWebsite(Plugin pl){

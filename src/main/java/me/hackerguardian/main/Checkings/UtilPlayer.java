@@ -15,7 +15,7 @@ import org.bukkit.potion.PotionEffectType;
 public class UtilPlayer {
 
     public static boolean isFlying(Player p) {
-        return p.isFlying() || p.isGliding() || p.hasPotionEffect(PotionEffectType.LEVITATION);
+        return p.isFlying() || p.isGliding() || p.getInventory().getChestplate() != null && p.getInventory().getChestplate().getType() == Material.ELYTRA;
     }
 
     public static boolean isSwimming(Player p) {
@@ -31,20 +31,21 @@ public class UtilPlayer {
         return false;
     }
 
-    @SuppressWarnings("deprecation")
     public static boolean hasEfficiency(Player player) {
         if (player.hasPotionEffect(PotionEffectType.FAST_DIGGING)
                 && player.getPotionEffect(PotionEffectType.FAST_DIGGING).getAmplifier() > 3) {
             return true;
         }
-        if (player.getItemInHand() != null) {
-            if (player.getItemInHand().containsEnchantment(Enchantment.DIG_SPEED)) {
+        if (player.getInventory().getItemInMainHand() != null) {
+            if (player.getInventory().getItemInMainHand().containsEnchantment(Enchantment.DIG_SPEED)) {
                 return true;
-            } else {
-                return false;
             }
-        } else {
-            return false;
         }
+        if (player.getInventory().getItemInOffHand() != null) {
+            if (player.getInventory().getItemInOffHand().containsEnchantment(Enchantment.DIG_SPEED)) {
+                return true;
+            }
+        }
+        return false;
     }
 }

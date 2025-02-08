@@ -67,7 +67,7 @@ public class onPlayerChat implements Listener {
         trainingData.setDataSet(data);
         main.text.SendconsoleTextWsp("Data for " + name + " is now added!");
         main.ai3.train(trainingData.getDataSet());
-        main.text.SendconsoleTextWsp("Data for " + name + " is has been trained!");
+        main.text.SendconsoleTextWsp("Data for " + name + " has been trained!");
     }
     public static void trainTrainingData(){
         main.ai.train(trainingData.getDataSet());

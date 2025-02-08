@@ -1,6 +1,7 @@
 package me.hackerguardian.main.utils;
 
 import java.io.IOException;
+import java.sql.SQLException;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -27,5 +28,8 @@ public class ErrorHandler {
     public static void handleGenericException(Exception e, String message) {
         logger.log(Level.SEVERE, message, e);
         // Additional handling or actions for generic exceptions
+    }
+    public static void handleSQLException(SQLException e, String message){
+        logger.log(Level.SEVERE, message, e);
     }
 }

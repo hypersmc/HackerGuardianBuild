@@ -2,6 +2,7 @@ package me.hackerguardian.main.Checkings;
 
 import java.util.ArrayList;
 
+import me.hackerguardian.main.utils.DeprecatedHelper;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
@@ -24,6 +25,8 @@ public class UtilBlock {
         BlockIterator bl = new BlockIterator(p, 7);
         boolean found = false;
         double md = 1;
+
+        // Update visibility distance for specific entities
         if (e.getType() == EntityType.WITHER) {
             md = 9;
         } else if (e.getType() == EntityType.ENDERMAN) {
@@ -31,6 +34,7 @@ public class UtilBlock {
         } else {
             md = md + e.getEyeHeight();
         }
+
         while (bl.hasNext()) {
             found = true;
             double d = bl.next().getLocation().distanceSquared(e.getLocation());
@@ -38,13 +42,13 @@ public class UtilBlock {
                 return true;
             }
         }
+
         bl = null;
         if (!found) {
             return true;
         }
 
         return false;
-
     }
 
     public static boolean isHoveringOverWater(Location player, int blocks) {
@@ -89,6 +93,31 @@ public class UtilBlock {
             return true;
         if (m == Material.SCAFFOLDING)
             return true;
+        if (m == Material.POWDER_SNOW)
+            return true; // Added Powder Snow as a climbable block
+        if (m == Material.GLOW_BERRIES)
+            return true; // Added Glow Berries as a climbable block
+
+        // Deprecated block: Legacy trapdoors are no longer recommended for use
+        boolean isDeprecated = DeprecatedHelper.markDeprecated(() -> {
+            if (m == Material.LEGACY_TRAP_DOOR)
+                return true; // Added Legacy Trapdoor as a climbable block
+            if (m == Material.LEGACY_IRON_TRAPDOOR)
+                return true; // Added Legacy Iron Trapdoor as a climbable block
+            return false;
+        }, "Legacy trapdoors are no longer recommended for use");
+
+        if (isDeprecated)
+            return true;
+
+        // Check for all trapdoor variants
+        if (m.name().endsWith("_TRAPDOOR"))
+            return true;
+
+        if (m == Material.TWISTING_VINES)
+            return true; // Added Twisting Vines as a climbable block
+        if (m == Material.WEEPING_VINES)
+            return true; // Added Weeping Vines as a climbable block
         return false;
     }
 
@@ -161,6 +190,8 @@ public class UtilBlock {
         ignore.add(Material.GRANITE);
         ignore.add(Material.ANDESITE);
         ignore.add(Material.LAVA);
+        ignore.add(Material.BEDROCK); // Exclude Bedrock
+        ignore.add(Material.OBSIDIAN); // Exclude Obsidian
 
         for (int x = -1; x <= 1; x++) {
             for (int y = -1; y <= 1; y++) {

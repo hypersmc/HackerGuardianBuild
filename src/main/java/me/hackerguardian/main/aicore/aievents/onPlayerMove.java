@@ -72,6 +72,6 @@ public class onPlayerMove implements Listener {
         trainingData.setDataSet(data);
         main.text.SendconsoleTextWsp("Data for " + name + " is now added!");
         main.ai2.train(trainingData.getDataSet());
-        main.text.SendconsoleTextWsp("Data for " + name + " is has been trained!");
+        main.text.SendconsoleTextWsp("Data for " + name + " has been trained!");
     }
 }

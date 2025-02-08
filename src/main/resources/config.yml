@@ -14,9 +14,10 @@ SQLPassword: 'changeme' #This should be the database password to your database
 debug: false #Enable if I ask you to.
 #General settings
 Settings:
-  UseWebsiteFunction: false #Should HackerGuardian use HackerGuardian-Webserver if it's present and connectable?
+  UseWebsiteFunction: false #Should HackerGuardian use HackerGuardian-Webserver if it's present and connectable? (not in this build)
   EnableAI: false #Want to use the AI part of the Anti-Cheat (ALPHA)
-  LearningMode: false #Should the AI be in Learning mode? (ALPHA)
+  LearningMode: false #Should the AI be in Learning mode? (ALPHA) (not in this build)
+  UseDBForAIData: false #Should we store the learned data in the database instead of the local machine? (not ready for use)
 
 #Webserver settings
 SettingsWeb:

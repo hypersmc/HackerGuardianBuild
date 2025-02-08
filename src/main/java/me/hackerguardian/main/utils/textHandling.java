@@ -10,6 +10,7 @@ import org.bukkit.ChatColor;
  */
 public class textHandling {
     public String prefix = "&4&l[&r&l&8HackerGuardian&r&4&l]&r ";
+    public String prefixnoBR = "&l&8HackerGuardian&r ";
     public String shortprefix = "&4&l[&r&l&8HG&r&4&l]&r ";
 
     public textHandling(){}

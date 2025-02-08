@@ -1,13 +1,16 @@
 package me.hackerguardian.main;
 
-import me.hackerguardian.main.aicore.DataIO;
-import me.hackerguardian.main.aicore.HackerguardianAI;
-import me.hackerguardian.main.aicore.TrainingData;
+import me.arcaniax.hdb.api.HeadDatabaseAPI;
+import me.hackerguardian.main.Checkings.DamageHandler;
+import me.hackerguardian.main.Checkings.ExemptHandler;
+import me.hackerguardian.main.aicore.*;
 import me.hackerguardian.main.aicore.aievents.*;
-import me.hackerguardian.main.aievents.*;
+import me.hackerguardian.main.ui.info.info;
 import me.hackerguardian.main.utils.*;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
+import org.bukkit.entity.Player;
+import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
@@ -19,6 +22,15 @@ import java.io.IOException;
  */
 public class HackerGuardian extends JavaPlugin {
     private static HackerGuardian instance;
+    final util util = new util();
+    static HGai hgai;
+    private CommandManager commandManager;
+    private ExemptHandler exemptHandler = null;
+    public DamageHandler damageHandler = null;
+    public static textHandling text = new textHandling();
+    /*
+    old stuff for just learning mode
+     */
     public HackerguardianAI ai;
     public HackerguardianAI ai2;
     public HackerguardianAI ai3;
@@ -26,23 +38,31 @@ public class HackerGuardian extends JavaPlugin {
     public HackerguardianAI ai5;
     public HackerguardianAI ai6;
     public boolean learning;
-    final util util = new util();
-    private CommandManager commandManager;
-    public static textHandling text = new textHandling();
+
+    public static HGai getAi() {
+        return hgai;
+    }
 
     @Override
     public void onEnable() {
         instance = this;
+//        MySQL sql = new MySQL();
+//        sql.setupCoreSystem();
         initializeFirstSetup();
-        
         handleFileOperations();
         initializeSettings();
         initializeAI();
         commandManager = new CommandManager(this, "HackerGuardian");
+        regiserCommand();
+        registerChecker();
         registerAllEvents();
 
     }
     private void initializeFirstSetup() {
+//        HeadDatabaseAPI api = new HeadDatabaseAPI();
+//        ItemStack right = api.getItemHead("7826");
+//        ItemStack left = api.getItemHead("7827");
+
         loadConfig();
         getServer().getConsoleSender().sendMessage(
                 "\n \n" + ChatColor.DARK_GRAY + "[]=====["
@@ -71,17 +91,10 @@ public class HackerGuardian extends JavaPlugin {
                         + ChatColor.DARK_GRAY + "[]=====["
                         + ChatColor.GRAY +"Enabling "+ getDescription().getName()  + ChatColor.RESET
                         + ChatColor.DARK_GRAY + "]=====[]" + ChatColor.RESET + "\n\n");
-
-
         AIPermissions.setLearningFilesPermissions(this);
-        try {
-            MySQL sql = new MySQL();
-            sql.setupCoreSystem();
-        } catch (Exception e) {
-            ErrorHandler.handleGenericException(e, "Error saving training data");
 
-        }
     }
+
     public void loadConfig() {
         saveDefaultConfig();
         reloadConfig();
@@ -94,16 +107,23 @@ public class HackerGuardian extends JavaPlugin {
             saveAllTrainingData();
         }
     }
-    public static HackerGuardian getInstance() {
-        return instance;
-    }
     private void saveAllTrainingData() {
-        saveTrainingDataToFile(onPlayerChat.getTrainingData(), "onPlayerChat.bin");
-        saveTrainingDataToFile(onPlayerInteract.getTrainingData(), "onPlayerInteract.bin");
-        saveTrainingDataToFile(onPlayerItemConsume.getTrainingData(), "onPlayerItemConsume.bin");
-        saveTrainingDataToFile(onPlayerMove.getTrainingData(), "onPlayerMove.bin");
-        saveTrainingDataToFile(onPlayerToggleFlight.getTrainingData(), "onPlayerToggleFlight.bin");
-        saveTrainingDataToFile(onPlayerToggleSneak.getTrainingData(), "onPlayerToggleSneak.bin");
+        MySQL sql = new MySQL();
+        if (this.getConfig().getBoolean("Settings.UseDBForAIData")){
+            sql.insertAIData("onPlayerChat.bin", onPlayerChat.getTrainingData().getDataSet());
+            sql.insertAIData("onPlayerInteract.bin", onPlayerInteract.getTrainingData().getDataSet());
+            sql.insertAIData("onPlayerItemConsume.bin", onPlayerItemConsume.getTrainingData().getDataSet());
+            sql.insertAIData("onPlayerMove.bin", onPlayerMove.getTrainingData().getDataSet());
+            sql.insertAIData("onPlayerToggleFlight.bin", onPlayerToggleFlight.getTrainingData().getDataSet());
+            sql.insertAIData("onPlayerToggleSneak.bin", onPlayerToggleSneak.getTrainingData().getDataSet());
+        }else {
+            saveTrainingDataToFile(onPlayerChat.getTrainingData(), "onPlayerChat.bin");
+            saveTrainingDataToFile(onPlayerInteract.getTrainingData(), "onPlayerInteract.bin");
+            saveTrainingDataToFile(onPlayerItemConsume.getTrainingData(), "onPlayerItemConsume.bin");
+            saveTrainingDataToFile(onPlayerMove.getTrainingData(), "onPlayerMove.bin");
+            saveTrainingDataToFile(onPlayerToggleFlight.getTrainingData(), "onPlayerToggleFlight.bin");
+            saveTrainingDataToFile(onPlayerToggleSneak.getTrainingData(), "onPlayerToggleSneak.bin");
+        }
     }
     public  void saveTrainingDataToFile(TrainingData trainingData, String fileName) {
         try {
@@ -113,11 +133,16 @@ public class HackerGuardian extends JavaPlugin {
             ErrorHandler.handleGenericException(e, "Error Saving data for " + fileName);
         }
     }
+    public static HackerGuardian getInstance() {
+        return instance;
+    }
+
 
 
 
     public void initializeAI() {
         if (this.getConfig().getBoolean("Settings.EnableAI")) {
+//            hgai = new HGai();
             int totalInputs = 6;
             int numOutputs = 1;
             int numHiddenNodes = 15;
@@ -133,6 +158,7 @@ public class HackerGuardian extends JavaPlugin {
     }
     private void registerAllEvents() {
         if (this.getConfig().getBoolean("Settings.EnableAI")) { //AI events
+//            getServer().getPluginManager().registerEvents(new AiEvents(), this);
             getServer().getPluginManager().registerEvents(new onPlayerChat(), this);
             getServer().getPluginManager().registerEvents(new onPlayerInteract(), this);
             getServer().getPluginManager().registerEvents(new onPlayerItemConsume(), this);
@@ -140,9 +166,14 @@ public class HackerGuardian extends JavaPlugin {
             getServer().getPluginManager().registerEvents(new onPlayerToggleFlight(), this);
             getServer().getPluginManager().registerEvents(new onPlayerToggleSneak(), this);
             getServer().getPluginManager().registerEvents(new onPlayerJoin(), this);
+            getServer().getPluginManager().registerEvents(new onEntityDamageByEntityEvent(), this);
         }
         Bukkit.getServer().getScheduler().scheduleSyncRepeatingTask(this, new Tps(), 100L, 1L);
 
+    }
+    private void registerChecker(){
+        exemptHandler = new ExemptHandler(this);
+        damageHandler = new DamageHandler(this);
     }
 
     private void handleFileOperations() {
@@ -166,5 +197,15 @@ public class HackerGuardian extends JavaPlugin {
         }
         learning = this.getConfig().getBoolean("Settings.LearningMode");
 
+    }
+
+    public ExemptHandler getExemptHandler() {
+        return exemptHandler;
+    }
+    private void regiserCommand() {
+        commandManager.register("test", (sender, params) -> { //Denne command er /zn menu
+            Player p = (Player) sender;
+            new info(p.getName()).open(p);
+        });
     }
 }

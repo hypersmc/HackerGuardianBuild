@@ -1,6 +1,6 @@
 name: HackerGuardian
 main: me.hackerguardian.main.HackerGuardian
-version: 1
+version: 2
 description: HackerGuardian, an anti-cheat with versatile cheat detection.
 author: HypersMC
 libraries:
@@ -10,6 +10,7 @@ libraries:
   - org.apache.commons:commons-configuration2:2.8.0
   - commons-validator:commons-validator:1.7
   - io.netty:netty-buffer:4.1.85.Final
+  - com.github.neuroph:neuroph-core:2.98
 api-version: 1.13
 softdepend: [ProtocolLib, ViaVersion, ProtocolSupport]
 database: true

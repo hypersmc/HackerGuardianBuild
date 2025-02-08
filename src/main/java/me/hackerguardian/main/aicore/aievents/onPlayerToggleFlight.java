@@ -61,6 +61,6 @@ public class onPlayerToggleFlight implements Listener {
         trainingData.setDataSet(data);
         main.text.SendconsoleTextWsp("Data for " + name + " is now added!");
         main.ai6.train(trainingData.getDataSet());
-        main.text.SendconsoleTextWsp("Data for " + name + " is has been trained!");
+        main.text.SendconsoleTextWsp("Data for " + name + " has been trained!");
     }
 }

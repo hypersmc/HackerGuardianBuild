@@ -2,7 +2,9 @@ package me.hackerguardian.main;
 import me.hackerguardian.main.utils.ErrorHandler;
 import me.hackerguardian.main.utils.textHandling;
 import org.bukkit.Bukkit;
+import org.neuroph.core.data.DataSet;
 
+import java.io.*;
 import java.sql.*;
 
 public class MySQL {
@@ -28,7 +30,7 @@ public class MySQL {
             return;
         }
         try {
-            String driver = "com.mysql.jdbc.Driver";
+            String driver = "com.mysql.cj.jdbc.Driver";
             url = "jdbc:mysql://" + this.host + ":" + this.port + "/" + this.database + "?user=" + this.user + "&password=" + this.pass + "?autoReconnect=true?useUnicode=yes";
             Class.forName(driver);
             String finalUrl = url;
@@ -71,7 +73,7 @@ public class MySQL {
         String pass = HackerGuardian.getInstance().getConfig().getString("SQLPassword");
         String url = null;
         try {
-            String driver = "com.mysql.jdbc.Driver";
+            String driver = "com.mysql.cj.jdbc.Driver";
             url = "jdbc:mysql://" + host + ":" + port + "/" + database + "?user=" + user + "&password=" + pass + "?autoReconnect=true?useUnicode=yes";
             Class.forName(driver);
 
@@ -149,7 +151,62 @@ public class MySQL {
         }
     }
     public void doNewCoreDatabase(){
+        PreparedStatement aiTable = null;
+        try{
+            aiTable = db.prepareStatement("CREATE TABLE IF NOT EXISTS " + this.database + ".aiTable(`filename` VARCHAR(255) NOT NULL UNIQUE PRIMARY KEY, `training_data_bin` LONGBLOB NOT NULL);");
+            aiTable.executeUpdate();
+            aiTable.close();
+        } catch (SQLException e) {
+            ErrorHandler.handleSQLException(e, "Error creating SQL tables");
+        }
+    }
 
+    /*
+     * Get, Put, Delete and more
+     */
+    public void insertAIData(String filename, DataSet trainingData){
+        PreparedStatement aiData = null;
+        try {
+            byte[] dataBytes = convertObjectToByteArray(trainingData);
+            aiData = db.prepareStatement("insert into " + this.database + ".aiTable values('" + filename +"', '" + dataBytes + "');");
+            aiData.executeUpdate();
+            aiData.close();
+        } catch (SQLException e) {
+            ErrorHandler.handleSQLException(e, "Error executing SQL statement");
+        }
+    }
+    public DataSet loadAIData(String filename){
+        PreparedStatement aiData = null;
+        try {
+            aiData = db.prepareStatement("SELECT training_data_bin from " + this.database + ".aiTable where filename = '" + filename + "';");
+            ResultSet resultSet = aiData.executeQuery();
+            if (resultSet.next()){
+                byte[] dataBytes = resultSet.getBytes("training_data_bin");
+                return (DataSet) convertByteArrayToObject(dataBytes);
+            }
+        } catch (SQLException e) {
+            ErrorHandler.handleSQLException(e, "Error executing SQL statement");
+        }
+        return null;
+    }
+
+    private Object convertByteArrayToObject(byte[] byteArray) {
+        try (ByteArrayInputStream bis = new ByteArrayInputStream(byteArray);
+             ObjectInputStream ois = new ObjectInputStream(bis)) {
+            return ois.readObject();
+        } catch (IOException | ClassNotFoundException e) {
+            throw new RuntimeException("Error converting byte array to object: " + e.getMessage(), e);
+        }
+    }
+    private static byte[] convertObjectToByteArray(Object object) {
+        try (ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+             ObjectOutputStream objectOutputStream = new ObjectOutputStream(byteArrayOutputStream)) {
+            objectOutputStream.writeObject(object);
+            return byteArrayOutputStream.toByteArray();
+        } catch (IOException e) {
+            e.printStackTrace();
+            return null;
+        }
     }
 
 }
