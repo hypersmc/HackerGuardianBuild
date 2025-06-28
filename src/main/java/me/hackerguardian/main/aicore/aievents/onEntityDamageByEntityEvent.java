@@ -16,10 +16,13 @@ import org.bukkit.event.entity.EntityDamageByEntityEvent;
  */
 public class onEntityDamageByEntityEvent implements Listener {
     static HackerGuardian main = HackerGuardian.getInstance();
-    private static final TrainingData trainingData = new TrainingData(6, 1);
+    private static final TrainingData trainingData = new TrainingData(7, 1);
     @EventHandler
     public void onEntityDamageByEntityEvent(EntityDamageByEntityEvent event){
         if (main.learning){
+            if (!(event.getDamager() instanceof Player)) {
+                return;
+            }
             double range = event.getEntity().getLocation().distance(event.getDamager().getLocation());
             String rf = range + "";
             try {
@@ -29,7 +32,7 @@ public class onEntityDamageByEntityEvent implements Listener {
             boolean isCheating = isPlayerCheating(range, (Player) event.getDamager());
             Location locationd = event.getDamager().getLocation();
             Location locationa = event.getEntity().getLocation();
-            double[] input = new double[5];
+            double[] input = new double[7];
             input[0] = range;
             input[1] = locationd.getX();
             input[2] = locationd.getY();
