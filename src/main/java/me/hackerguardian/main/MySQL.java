@@ -168,7 +168,9 @@ public class MySQL {
         PreparedStatement aiData = null;
         try {
             byte[] dataBytes = convertObjectToByteArray(trainingData);
-            aiData = db.prepareStatement("insert into " + this.database + ".aiTable values('" + filename +"', '" + dataBytes + "');");
+            aiData = db.prepareStatement("INSERT INTO " + this.database + ".aiTable (filename, training_data_bin) VALUES (?, ?)");
+            aiData.setString(1, filename);
+            aiData.setBytes(2, dataBytes);
             aiData.executeUpdate();
             aiData.close();
         } catch (SQLException e) {
@@ -178,7 +180,8 @@ public class MySQL {
     public DataSet loadAIData(String filename){
         PreparedStatement aiData = null;
         try {
-            aiData = db.prepareStatement("SELECT training_data_bin from " + this.database + ".aiTable where filename = '" + filename + "';");
+            aiData = db.prepareStatement("SELECT training_data_bin FROM " + this.database + ".aiTable WHERE filename = ?");
+            aiData.setString(1, filename);
             ResultSet resultSet = aiData.executeQuery();
             if (resultSet.next()){
                 byte[] dataBytes = resultSet.getBytes("training_data_bin");

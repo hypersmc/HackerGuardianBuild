@@ -112,7 +112,9 @@ public class BMySQL {
         PreparedStatement first = null;
 //        checkdbconnection();
         try {
-            first = db.prepareStatement("INSERT INTO " + this.database + ".PlayerMods VALUES ('" + playeruuid + "','" + modData + "');");
+            first = db.prepareStatement("INSERT INTO " + this.database + ".PlayerMods (PlayerUUID, Mods) VALUES (?, ?)");
+            first.setString(1, playeruuid.toString());
+            first.setString(2, modData);
             first.executeUpdate();
             first.close();
         } catch (Exception ignored) {
@@ -127,7 +129,8 @@ public class BMySQL {
         ResultSet firesult = null;
         checkdbconnection();
         try {
-            second = db.prepareStatement("SELECT * FROM " + this.database + ".PlayerMods WHERE PlayerUUID='" + playeruuid + "';");
+            second = db.prepareStatement("SELECT * FROM " + this.database + ".PlayerMods WHERE PlayerUUID=?");
+            second.setString(1, playeruuid.toString());
             firesult = second.executeQuery();
             System.out.println("Player: " + playeruuid + " Mods: " + modData);
             while (firesult.next()){
@@ -139,19 +142,22 @@ public class BMySQL {
                     for (String modName : modData) {
                         if (!s.contains(modName)) {
                             System.out.println(modName + " is not in list");
-                            first = db.prepareStatement("INSERT INTO " + this.database + ".PlayerMods (PlayerUUID, Mods) VALUES ('" + playeruuid + "','" + modName.replace("[", "").replace("]", "") + "');");
+                            first = db.prepareStatement("INSERT INTO " + this.database + ".PlayerMods (PlayerUUID, Mods) VALUES (?, ?)");
+                            first.setString(1, playeruuid.toString());
+                            first.setString(2, modName.replace("[", "").replace("]", ""));
+                            first.executeUpdate();
+                            first.close();
                             System.out.println("Player: " + playeruuid + " Mods: " + modName + " Added to database!");
-                        }else {
+                        } else {
                             System.out.println(modName + " is in list");
                         }
-
                     }
                     return;
                 }
-                first.executeUpdate();
-                return;
             }
-            first.close();
+            if (first != null) {
+                first.close();
+            }
             second.close();
             firesult.close();
         }catch (Exception ignored) {
@@ -161,7 +167,8 @@ public class BMySQL {
         PreparedStatement second = null;
         ResultSet firesult = null;
         try {
-            second = db.prepareStatement("SELECT * FROM " + this.database + ".Playerstats WHERE PlayerUUID='" + playeruuid + "';");
+            second = db.prepareStatement("SELECT * FROM " + this.database + ".Playerstats WHERE PlayerUUID=?");
+            second.setString(1, playeruuid.toString());
             firesult = second.executeQuery();
             while (firesult.next()){
                 String s = firesult.getString("Banned");
@@ -177,7 +184,8 @@ public class BMySQL {
         PreparedStatement second = null;
         ResultSet firesult = null;
         try {
-            second = db.prepareStatement("SELECT * FROM " + this.database + ".OtherReasons WHERE PlayerUUID='" + playeruuid + "' AND Handler = 'Ban' ORDER BY Reason ASC LIMIT 1;");
+            second = db.prepareStatement("SELECT * FROM " + this.database + ".OtherReasons WHERE PlayerUUID=? AND Handler = 'Ban' ORDER BY Reason ASC LIMIT 1;");
+            second.setString(1, playeruuid.toString());
             firesult = second.executeQuery();
             while (firesult.next()){
                 String s = firesult.getString("Reason");
@@ -192,7 +200,8 @@ public class BMySQL {
         PreparedStatement second = null;
         ResultSet firesult = null;
         try {
-            second = db.prepareStatement("SELECT * FROM " + this.database + ".OtherReasons WHERE PlayerUUID='" + playeruuid + "' AND Handler = 'Kick' ORDER BY Reason ASC LIMIT 1;");
+            second = db.prepareStatement("SELECT * FROM " + this.database + ".OtherReasons WHERE PlayerUUID=? AND Handler = 'Kick' ORDER BY Reason ASC LIMIT 1;");
+            second.setString(1, playeruuid.toString());
             firesult = second.executeQuery();
             while (firesult.next()){
                 String s = firesult.getString("Reason");
