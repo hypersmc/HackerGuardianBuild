@@ -69,3 +69,24 @@ jobs:
 
       - name: Build and test
         run: mvn -B package
+
+  ml-tooling:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: tools/ml/requirements.txt
+
+      - name: Install ML tooling dependencies
+        run: python -m pip install -r tools/ml/requirements.txt
+
+      - name: Run offline trainer self-test
+        run: python tools/ml/train_behavior_model.py --self-test
