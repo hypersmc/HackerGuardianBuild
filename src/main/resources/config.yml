@@ -30,15 +30,15 @@ Settings:
   # (Not in this build) If HG-Webserver exists + is reachable, allow HG to use it.
   UseWebsiteFunction: false
 
-  # Enable AI-based detection (ALPHA). If disabled, HG works as moderation + logging only.
+  # LEGACY / DEPRECATED Neuroph AI implementation.
+  # Keep disabled unless intentionally testing the old model while Detection v2
+  # is being developed. It will be removed after v2 has replaced its useful parts.
   EnableAI: false
 
-  # If true, AI will "learn" and update datasets rather than only running inference.
-  # Only enable if you are actively training/testing the model.
+  # Legacy Neuroph self-learning mode. Detection v2 does NOT self-train online.
   LearningMode: false
 
-  # If true, store AI training data in the database instead of local disk.
-  # NOT READY for production use.
+  # Legacy AI database data path. Not used by Detection v2.
   UseDBForAIData: false
 
   # ---------------------------------------------------------
@@ -92,6 +92,42 @@ Settings:
   max_reports_per_window: 10
 
 # =========================================================
+# Detection v2 (new evidence-first anti-cheat foundation)
+# =========================================================
+# Detection v2 is intentionally OBSERVE-ONLY in this build.
+# It records bounded recent telemetry, runs explainable detectors, and stores a
+# small in-memory assessment history. It cannot punish, warn, report, or trigger
+# replays yet. Future ML/AI models will plug into this evidence pipeline instead
+# of owning enforcement directly.
+DetectionV2:
+  enabled: true
+
+  # Rolling observation window used to build one BehaviorSnapshot.
+  window_ms: 5000
+
+  # How often online players are assessed. 20 ticks = about once per second.
+  assessment_interval_ticks: 20
+
+  # Number of recent assessments retained in RAM per online player.
+  history_size: 20
+
+  detectors:
+    # Server-observed hit-distance envelope. This is deliberately treated as
+    # imperfect evidence and its reliability is reduced during high ping/low TPS.
+    reach:
+      enabled: true
+      soft_distance: 4.5
+      hard_distance: 6.0
+
+    # Sustained arm-swing rate. High CPS alone is weak evidence, so this
+    # detector intentionally carries low reliability and never acts by itself.
+    click_burst:
+      enabled: true
+      soft_cps: 22.0
+      hard_cps: 35.0
+      minimum_swings: 20
+
+# =========================================================
 # Webserver settings (HG-Webserver integration)
 # =========================================================
 SettingsWeb:
@@ -142,10 +178,10 @@ Replays:
   chunk_ms: 2000
 
   # ---------------------------------------------------------
-  # AI Trigger
+  # Future Detection Policy Trigger
   # ---------------------------------------------------------
-  # If AI score >= this, HG may trigger a replay automatically.
-  # Example: 0.92 means "92% confident".
+  # Reserved for the future policy layer. Detection v2 does not currently
+  # trigger replays automatically.
   ai_trigger_threshold: 0.92
 
   # ---------------------------------------------------------
