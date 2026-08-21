@@ -139,15 +139,15 @@ public final class ReplayViewer implements Listener {
             }
             sandboxWorldName = world.getName();
 
-            int originChunkX = ((int) Math.floor(first.x)) >> 4;
-            int originChunkZ = ((int) Math.floor(first.z)) >> 4;
-            pasteSnapshotsInto(world, snaps, originChunkX, originChunkZ);
+            pasteSnapshotsInto(world, snaps);
 
+            // Keep recorded coordinates unchanged in the sandbox: playback events
+            // and block/context snapshots use the original absolute coordinates.
             startLoc = new Location(
                     world,
-                    first.x - (originChunkX << 4),
+                    first.x,
                     first.y,
-                    first.z - (originChunkZ << 4),
+                    first.z,
                     first.yaw,
                     first.pitch
             );
@@ -260,8 +260,7 @@ public final class ReplayViewer implements Listener {
         }
     }
 
-    private void pasteSnapshotsInto(World sandbox, List<ReplayStorage.WorldChunkSnapshot> snaps,
-                                    int originChunkX, int originChunkZ) {
+    private void pasteSnapshotsInto(World sandbox, List<ReplayStorage.WorldChunkSnapshot> snaps) {
         for (ReplayStorage.WorldChunkSnapshot s : snaps) {
             byte[] raw = ReplayStorage.gunzip(s.data);
             ReplayChunkSnapshotCodec.DecodedChunk decoded;
@@ -272,9 +271,7 @@ public final class ReplayViewer implements Listener {
                 continue;
             }
 
-            int targetChunkX = s.chunkX - originChunkX;
-            int targetChunkZ = s.chunkZ - originChunkZ;
-            Chunk chunk = sandbox.getChunkAt(targetChunkX, targetChunkZ);
+            Chunk chunk = sandbox.getChunkAt(s.chunkX, s.chunkZ);
 
             int idx = 0;
             for (int y = decoded.minY; y <= decoded.maxY; y++) {
