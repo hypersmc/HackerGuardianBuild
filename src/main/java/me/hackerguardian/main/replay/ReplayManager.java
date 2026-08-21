@@ -203,6 +203,7 @@ public final class ReplayManager {
         String playerName = target.getName();
         ReplayBuffer buffer = buffers.computeIfAbsent(id, k -> new ReplayBuffer(prebufferMs));
         List<ReplayBuffer.Entry> pre = buffer.snapshot(now);
+        long streamStartMs = pre.isEmpty() ? now : pre.get(0).tsMs;
 
         ioExecutor.execute(() -> {
             try {
@@ -210,7 +211,9 @@ public final class ReplayManager {
                         id.toString(), playerName, now, type, meta, aiScore, formatVersion, codec
                 );
 
-                ReplaySession session = new ReplaySession(plugin, replayId, storage, chunkMs, now, ioExecutor);
+                // started_at on the replay row is the trigger time. The stream itself
+                // begins at the first prebuffer event so event deltas remain accurate.
+                ReplaySession session = new ReplaySession(plugin, replayId, storage, chunkMs, streamStartMs, ioExecutor);
                 for (ReplayBuffer.Entry entry : pre) session.append(entry.tsMs, entry.eventBytes);
 
                 // DB creation happens off-thread. Preserve events that arrived after the
