@@ -1,78 +1,76 @@
 package me.hackerguardian.velocity.utils;
 
 import com.velocitypowered.api.event.player.ServerConnectedEvent;
-import com.velocitypowered.api.proxy.ProxyServer;
-import com.velocitypowered.api.proxy.ServerConnection;
 import com.velocitypowered.api.proxy.Player;
+import com.velocitypowered.api.proxy.ProxyServer;
+import com.velocitypowered.api.proxy.server.RegisteredServer;
 import me.hackerguardian.Util.HmacSigner;
 import me.hackerguardian.Util.TicketPayload;
 import me.hackerguardian.velocity.HackerGuardianV;
+import me.hackerguardian.velocity.VDatabase;
 import net.kyori.adventure.text.Component;
 
-import java.sql.*;
 import java.util.UUID;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 public final class VelocityTicketIssuer {
 
+    private final HackerGuardianV plugin;
     private final ProxyServer proxy;
-    private final Logger logger = Logger.getLogger("HGVelocity_Link");;
+    private final VDatabase database;
+    private final Logger logger;
+    private final String secret;
+    private final long ttlMs;
 
-    private final String secret = (String) HackerGuardianV.settings.getOrDefault("shared_secret", "");
-    private final long ttlMs = (long) HackerGuardianV.settings.getOrDefault("ttlms", 15000);
-
-
-    private final String mysqlUrl = (String) HackerGuardianV.sql.get("");
-    private final String mysqlUser = (String) HackerGuardianV.sql.get("");
-    private final String mysqlPass = (String) HackerGuardianV.sql.get("");
-
-    public VelocityTicketIssuer(ProxyServer proxy) {
+    public VelocityTicketIssuer(HackerGuardianV plugin,
+                                ProxyServer proxy,
+                                VDatabase database,
+                                String secret,
+                                long ttlMs) {
+        this.plugin = plugin;
         this.proxy = proxy;
+        this.database = database;
+        this.secret = secret == null ? "" : secret;
+        this.ttlMs = ttlMs;
+        this.logger = plugin.getLogger();
     }
 
-    public void handleServerConnected(ServerConnectedEvent e) {
-        Player p = e.getPlayer();
-        ServerConnection sc = (ServerConnection) e.getServer();
-        if (p == null || sc == null) return;
+    public void handleServerConnected(ServerConnectedEvent event) {
+        Player player = event.getPlayer();
+        RegisteredServer server = event.getServer();
+        if (player == null || server == null) return;
+
+        if (secret.isBlank() || secret.startsWith("CHANGE_ME")) {
+            logger.severe("HG Secure Link is enabled but Settings.shared_secret is not configured.");
+            player.disconnect(Component.text("Proxy link system is not configured."));
+            return;
+        }
 
         String ticketId = UUID.randomUUID().toString();
         long now = System.currentTimeMillis();
         long expires = now + ttlMs;
 
-        String targetServer = sc.getServerInfo().getName();
-        String playerUuid = p.getUniqueId().toString();
-        String playerName = p.getUsername();
+        String targetServer = server.getServerInfo().getName();
+        String playerUuid = player.getUniqueId().toString();
+        String playerName = player.getUsername();
 
-        TicketPayload unsigned = new TicketPayload(ticketId, playerUuid, playerName, now, expires, targetServer, "");
+        TicketPayload unsigned = new TicketPayload(
+                ticketId, playerUuid, playerName, now, expires, targetServer, ""
+        );
         String sigHex = HmacSigner.signHex(secret, unsigned.signingString());
+        TicketPayload payload = new TicketPayload(
+                ticketId, playerUuid, playerName, now, expires, targetServer, sigHex
+        );
 
-        TicketPayload payload = new TicketPayload(ticketId, playerUuid, playerName, now, expires, targetServer, sigHex);
-
-        proxy.getScheduler().buildTask(this, () -> {
+        proxy.getScheduler().buildTask(plugin, () -> {
             try {
-                insertTicket(payload);
-                sc.sendPluginMessage(HackerGuardianV.CH, payload.encode());
+                database.insertTicket(payload);
+                server.sendPluginMessage(HackerGuardianV.CH, payload.encode());
             } catch (Exception ex) {
-                logger.log(Level.SEVERE, "Ticket issue failed: {}", ex.getMessage());
-                p.disconnect(Component.text("Proxy link system error."));
+                logger.log(Level.SEVERE, "Secure-link ticket issue failed for " + playerName, ex);
+                player.disconnect(Component.text("Proxy link system error."));
             }
         }).schedule();
-    }
-
-    private void insertTicket(TicketPayload payload) throws SQLException {
-        String sql = "INSERT INTO hg_player_tickets(ticket_id, player_uuid, player_name, issued_at, expires_at, used_at, target_server) " +
-                "VALUES(?,?,?,?,?,NULL,?)";
-
-        try (Connection c = DriverManager.getConnection(mysqlUrl, mysqlUser, mysqlPass);
-             PreparedStatement ps = c.prepareStatement(sql)) {
-            ps.setString(1, payload.ticketId);
-            ps.setString(2, payload.playerUuid);
-            ps.setString(3, payload.playerName);
-            ps.setLong(4, payload.issuedAt);
-            ps.setLong(5, payload.expiresAt);
-            ps.setString(6, payload.targetServer);
-            ps.executeUpdate();
-        }
     }
 }
