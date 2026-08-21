@@ -1,7 +1,7 @@
 package me.hackerguardian.bungee.moderation;
 
 import me.hackerguardian.bungee.HackerGuardianB;
-import me.hackerguardian.bungee.utils.BMySQL;
+import me.hackerguardian.bungee.utils.BDatabase;
 import me.hackerguardian.main.moderation.punish.TimeFormat;
 import net.md_5.bungee.api.ChatColor;
 import net.md_5.bungee.api.ProxyServer;
@@ -22,17 +22,14 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class ProxyPunishEnforcer implements Listener {
 
     private final HackerGuardianB plugin;
-    private final BMySQL sql;
-
-    // prevents recursive re-connect when we call player.connect() ourselves
+    private final BDatabase sql;
     private final Set<UUID> bypassNextConnect = ConcurrentHashMap.newKeySet();
 
-    public ProxyPunishEnforcer(HackerGuardianB plugin, BMySQL sql) {
+    public ProxyPunishEnforcer(HackerGuardianB plugin, BDatabase sql) {
         this.plugin = plugin;
         this.sql = sql;
     }
 
-    // 1) Earliest: block WIDE IP bans
     @EventHandler
     public void onPreLogin(PreLoginEvent e) {
         PendingConnection c = e.getConnection();
@@ -59,11 +56,10 @@ public final class ProxyPunishEnforcer implements Listener {
         });
     }
 
-    // 2) Next: block WIDE UUID bans
     @EventHandler
     public void onLogin(LoginEvent e) {
         PendingConnection c = e.getConnection();
-        UUID uuid = c.getUniqueId(); // reliable here
+        UUID uuid = c.getUniqueId();
         if (uuid == null) return;
 
         e.registerIntent(plugin);
@@ -83,32 +79,26 @@ public final class ProxyPunishEnforcer implements Listener {
         });
     }
 
-    // 3) Server-specific scope check at connect time
     @EventHandler
     public void onServerConnect(ServerConnectEvent e) {
         ProxiedPlayer player = e.getPlayer();
         UUID uuid = player.getUniqueId();
         if (uuid == null) return;
 
-        // If we are doing our "manual connect" after async check, skip once.
         if (bypassNextConnect.remove(uuid)) return;
 
-        String targetServer = e.getTarget().getName(); // e.g. "pvp"
-
-        // Stop the original connection attempt while the DB check runs. If allowed,
-        // we reconnect once with bypassNextConnect set to avoid recursion.
+        String targetServer = e.getTarget().getName();
         e.setCancelled(true);
 
         ProxyServer.getInstance().getScheduler().runAsync(plugin, () -> {
             long now = System.currentTimeMillis();
 
-            // WIDE bans were already checked in PreLogin/Login. Here we only need
-            // SERVER-scoped bans for the requested backend.
             BanRow serverBan;
             try {
                 serverBan = sql.getActivePlayerBanServer(uuid.toString(), now, targetServer);
             } catch (SQLException ex) {
-                plugin.getLogger().warning("Failed to check server-scoped player ban for " + player.getName() + ": " + ex.getMessage());
+                plugin.getLogger().warning("Failed to check server-scoped player ban for "
+                        + player.getName() + ": " + ex.getMessage());
                 return;
             }
 
@@ -119,43 +109,43 @@ public final class ProxyPunishEnforcer implements Listener {
                         ? sql.getActiveIpBanServer(ipPlain, now, targetServer)
                         : null;
             } catch (SQLException ex) {
-                plugin.getLogger().warning("Failed to check server-scoped IP ban for " + player.getName() + ": " + ex.getMessage());
+                plugin.getLogger().warning("Failed to check server-scoped IP ban for "
+                        + player.getName() + ": " + ex.getMessage());
                 return;
             }
 
             if (serverBan != null || serverIpBan != null) {
-                BanRow row = (serverBan != null) ? serverBan : serverIpBan;
-                String msg = (serverBan != null)
+                BanRow row = serverBan != null ? serverBan : serverIpBan;
+                String msg = serverBan != null
                         ? buildPlayerBanKick(row, now)
                         : buildIpBanKick(row, now);
                 player.disconnect(new TextComponent(color(msg)));
                 return;
             }
 
-            // Allowed -> connect manually (and bypass this event once)
             bypassNextConnect.add(uuid);
             player.connect(e.getTarget());
         });
     }
 
     private String buildPlayerBanKick(BanRow row, long nowMs) {
-        boolean temp = (row.expiresAt != null);
+        boolean temp = row.expiresAt != null;
         String key = temp ? "Punishments.messages.ban_join_temp" : "Punishments.messages.ban_join_perm";
         String expiresLeft = temp ? TimeFormat.remaining(nowMs, row.expiresAt) : "Never";
         String expiresDate = temp ? TimeFormat.dateTime(row.expiresAt) : "Never";
 
         String msg = HackerGuardianB.configuration.getString(key,
                 "&cYou are banned.\n&7Reason: &f%reason%\n&7Expires: &f%expires%");
-        msg = msg.replace("%reason%", row.reason)
+        return msg.replace("%reason%", row.reason)
                 .replace("%expires%", expiresLeft)
                 .replace("%expires_date%", expiresDate)
                 .replace("%id%", String.valueOf(row.id));
-        return msg;
     }
 
     private String buildIpBanKick(BanRow row, long nowMs) {
-        String expires = (row.expiresAt == null) ? "Never" : TimeFormat.remaining(nowMs, row.expiresAt);
-        return "&cYou are IP-banned.\n\n&7Reason: &f" + row.reason + "\n&7Expires: &f" + expires + "\n\n&7IP Ban ID: &f#" + row.id;
+        String expires = row.expiresAt == null ? "Never" : TimeFormat.remaining(nowMs, row.expiresAt);
+        return "&cYou are IP-banned.\n\n&7Reason: &f" + row.reason
+                + "\n&7Expires: &f" + expires + "\n\n&7IP Ban ID: &f#" + row.id;
     }
 
     private String color(String s) {
