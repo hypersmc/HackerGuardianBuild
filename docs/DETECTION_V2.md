@@ -2,7 +2,7 @@
 
 Detection v2 replaces the original idea that one neural-network output should be treated as the anti-cheat decision.
 
-The new direction is evidence-first:
+The direction is evidence-first:
 
 ```text
 Bukkit / packet observations
@@ -16,7 +16,7 @@ BehaviorSnapshot
         +-------------------+
         |                   |
         v                   v
-heuristic detector      future ML detector
+heuristic detector       ML detector(s)
         |                   |
         +---------+---------+
                   |
@@ -40,8 +40,8 @@ heuristic detector      future ML detector
 
 ## Rules of the design
 
-1. **Telemetry does not know about AI.**
-   `BehaviorTelemetryCollector` only records bounded recent observations and creates a typed `BehaviorSnapshot`.
+1. **Telemetry does not know about ML.**
+   `BehaviorTelemetryCollector` records bounded recent observations and creates a typed `BehaviorSnapshot`.
 
 2. **Detectors do not punish.**
    `Detector` implementations can only emit `DetectionFinding` objects. They do not get access to punishment, replay, report, or staff-warning APIs.
@@ -53,20 +53,20 @@ heuristic detector      future ML detector
    `DetectionAssessment.riskScore` is intentionally not named `cheatProbability` or `confidenceOfCheating`.
 
 5. **No online self-training.**
-   Detection v2 must not train from its own detections. That creates a feedback loop where false positives become future training labels.
+   Detection v2 must not train from its own detections. False positives must never become future training labels just because the model produced them.
 
-6. **Training labels should come from reviewed evidence.**
-   The future model-training path should use staff-reviewed replays/reports or deliberately generated test data with provenance.
+6. **Training labels require provenance.**
+   Model training should use staff-reviewed evidence, controlled test sessions, or other deliberately labeled data where the source and label are known.
 
 7. **Model inputs are versioned separately from telemetry.**
-   Future ML code should transform `BehaviorSnapshot` into a model-specific feature schema. The event collector must not be coupled to a hard-coded neural-network input order.
+   ML code transforms `BehaviorSnapshot` into a versioned model-specific feature schema. Event collection is not coupled to a positional `double[]` owned by one model.
 
 8. **Policy is separate from detection.**
-   A future policy layer may decide that sustained strong evidence should trigger a replay or alert staff. Automatic punishment must require a separately reviewed policy and must never be a direct model callback.
+   A future policy layer may decide that sustained strong evidence should trigger a replay or alert staff. Automatic punishment must never be a direct model callback.
 
 ## Current foundation
 
-The first v2 foundation is deliberately observe-only. It contains:
+The foundation is deliberately observe-only. It contains:
 
 - `BehaviorTelemetryCollector`
 - `BehaviorSnapshot`
@@ -79,34 +79,52 @@ The first v2 foundation is deliberately observe-only. It contains:
 - `ClickBurstDetector`
 - `/hg detection [player]` for read-only inspection
 
-The first two detectors are not intended to be a complete anti-cheat. They validate that the telemetry, evidence, reliability, aggregation, history, configuration, and operator-inspection path work before more advanced detection is added.
+The first two deterministic detectors are not intended to be a complete anti-cheat. They validate the telemetry, evidence, reliability, aggregation, history, configuration, and operator-inspection path before ML inference is introduced.
 
 ## Current detector philosophy
 
 ### Reach envelope
 
-The server-observed attacker/victim distance is useful evidence but is not precise enough to be a verdict. Ping and low TPS reduce the finding reliability.
+The server-observed attacker/victim distance is useful evidence but is not precise enough to be a verdict. Ping and low TPS reduce finding reliability.
 
 ### Click burst
 
 High CPS alone is weak evidence. The detector intentionally has low reliability even when the observation is extreme.
 
-## Next steps
+## ML baseline
 
-A sensible next sequence is:
+The original Neuroph subsystem has been removed completely. There is no legacy model file, online learning mode, legacy feature collector, AI SQL table, or duplicate AI command surface left to maintain.
 
-1. validate telemetry values on a real test server;
-2. add packet-level telemetry as a separate optional source;
-3. add environmental context needed to avoid movement false positives;
-4. persist selected assessments/evidence with explicit schema versions;
-5. connect replay IDs to assessment evidence;
-6. create a reviewed-label workflow;
-7. choose and implement the first ML model behind the `Detector` contract;
-8. create a policy layer for replay/staff-alert decisions;
-9. only after substantial validation, discuss whether any automatic enforcement should exist.
+The first real ML implementation should therefore start from a clean contract:
 
-## Legacy AI
+```text
+BehaviorSnapshot
+      |
+      v
+FeatureSchemaV1
+      |
+      v
+normalization / validation
+      |
+      v
+versioned model artifact
+      |
+      v
+ML Detector
+      |
+      v
+DetectionFinding
+```
 
-The existing Neuroph implementation remains temporarily available behind `Settings.EnableAI`, which defaults to `false`.
+The model artifact must carry enough metadata to reject incompatible feature schemas rather than silently evaluating a vector with the wrong order or scale.
 
-It is considered legacy/deprecated and is intentionally isolated from Detection v2. Once the useful pieces have been migrated or replaced, the Neuroph dependency, old feature collector, online learning commands, and old AI database path can be removed.
+## Next ML steps
+
+1. define `FeatureSchemaV1` and feature normalization rules;
+2. define a versioned model-artifact format and compatibility checks;
+3. persist/export labeled behavior samples with provenance;
+4. build the offline training/evaluation workflow;
+5. choose the first lightweight model family based on measured data rather than model novelty;
+6. implement inference behind the existing `Detector` contract;
+7. compare ML findings against deterministic findings and reviewed replay evidence;
+8. only after validation, introduce the policy layer that can trigger evidence capture or staff review.
