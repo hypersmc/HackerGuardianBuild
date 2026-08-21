@@ -45,6 +45,7 @@ public final class ReplayManager {
 
     private final ConcurrentHashMap<UUID, ReplayBuffer> buffers = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, ReplaySession> activeSessions = new ConcurrentHashMap<>();
+    private final Set<UUID> pendingSessions = ConcurrentHashMap.newKeySet();
     private final ConcurrentHashMap<UUID, Deque<Long>> triggerTimes = new ConcurrentHashMap<>();
 
     private long tickCounter = 0;
@@ -192,7 +193,11 @@ public final class ReplayManager {
         if (!enabled || shuttingDown || target == null || !target.isOnline()) return;
 
         UUID id = target.getUniqueId();
-        if (activeSessions.containsKey(id) || !rateLimitOk(id)) return;
+        if (activeSessions.containsKey(id) || !pendingSessions.add(id)) return;
+        if (!rateLimitOk(id)) {
+            pendingSessions.remove(id);
+            return;
+        }
 
         long now = System.currentTimeMillis();
         String playerName = target.getName();
@@ -235,6 +240,8 @@ public final class ReplayManager {
             } catch (Exception e) {
                 plugin.getLogger().warning("[Replay] Failed to create replay for " + playerName + ": " + e.getMessage());
                 if (plugin.getConfig().getBoolean("debug")) e.printStackTrace();
+            } finally {
+                pendingSessions.remove(id);
             }
         });
     }
@@ -270,6 +277,7 @@ public final class ReplayManager {
         List<CompletableFuture<Void>> closing = new ArrayList<>();
         for (UUID id : new ArrayList<>(activeSessions.keySet())) closing.add(closeSession(id));
         buffers.clear();
+        pendingSessions.clear();
         triggerTimes.clear();
 
         try {
