@@ -19,7 +19,6 @@ public final class ReplayWorldSnapshotter {
     private final boolean enabled;
     private final int chunkRadius;
     private final int maxChunks;
-    private final int intervalTicks;
 
     // replayId -> set of captured chunk keys
     private final ConcurrentHashMap<Long, Set<Long>> captured = new ConcurrentHashMap<>();
@@ -32,7 +31,6 @@ public final class ReplayWorldSnapshotter {
         this.enabled = plugin.getConfig().getBoolean("Replays.sandbox.enabled", false);
         this.chunkRadius = Math.max(0, plugin.getConfig().getInt("Replays.sandbox.chunk_radius", 2));
         this.maxChunks = Math.max(1, plugin.getConfig().getInt("Replays.sandbox.max_chunks", 200));
-        this.intervalTicks = Math.max(1, plugin.getConfig().getInt("Replays.sandbox.snapshot_interval_ticks", 20));
     }
 
     public boolean isEnabled() { return enabled; }
@@ -76,11 +74,14 @@ public final class ReplayWorldSnapshotter {
                         try {
                             storage.upsertWorldChunk(replayId, worldName, cx, cz, raw);
                         } catch (Exception e) {
+                            // Allow a later capture tick to retry a failed DB write.
+                            set.remove(key);
                             plugin.getLogger().warning("[Replay] Failed to store world snapshot for replay "
                                     + replayId + " chunk " + cx + "," + cz + ": " + e.getMessage());
                         }
                     });
                 } catch (Exception ex) {
+                    set.remove(key);
                     plugin.getLogger().warning("[Replay] Failed to capture chunk " + cx + "," + cz
                             + " for replay " + replayId + ": " + ex.getMessage());
                     if (plugin.getConfig().getBoolean("debug")) ex.printStackTrace();
