@@ -2,20 +2,12 @@ package me.hackerguardian.main;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import me.hackerguardian.Util.TicketPayload;
-import me.hackerguardian.main.moderation.punish.PunishmentRepository;
-import me.hackerguardian.main.report.ReportRepository;
 import me.hackerguardian.main.utils.ErrorHandler;
 import me.hackerguardian.main.utils.textHandling;
 import org.bukkit.Bukkit;
-import org.neuroph.core.data.DataSet;
 
 import javax.sql.DataSource;
-import javax.sql.rowset.spi.SyncFactoryException;
-import java.io.*;
 import java.sql.*;
-import java.util.logging.Level;
-
-import static javax.sql.rowset.spi.SyncFactory.getLogger;
 
 public final class MySQL {
 
@@ -53,7 +45,6 @@ public final class MySQL {
 
         HikariConfig cfg = new HikariConfig();
 
-        // Proper JDBC URL params
         String jdbcUrl = "jdbc:mysql://" + host + ":" + port + "/" + database
                 + "?useSSL=false"
                 + "&serverTimezone=UTC"
@@ -64,55 +55,20 @@ public final class MySQL {
         cfg.setUsername(user);
         cfg.setPassword(pass);
 
-        // Pool tuning (safe defaults)
         cfg.setMaximumPoolSize(plugin.getConfig().getInt("SQLPoolSize", 10));
         cfg.setMinimumIdle(plugin.getConfig().getInt("SQLMinIdle", 2));
         cfg.setConnectionTimeout(10_000);
         cfg.setValidationTimeout(5_000);
         cfg.setIdleTimeout(60_000);
         cfg.setMaxLifetime(10 * 60_000);
-
-        // This helps detect dead connections
         cfg.setConnectionTestQuery("SELECT 1");
 
         ds = new HikariDataSource(cfg);
 
-        // Create tables async so enable thread stays clean
+        // MySQL owns only its core tables. Feature-specific repositories are
+        // initialized by HackerGuardian after those repositories exist.
         Bukkit.getScheduler().runTaskAsynchronously(plugin, this::createTablesSafe);
 
-        // Report
-        ReportRepository repo = new ReportRepository(HackerGuardian.getInstance().getMySQL().getDataSource());
-        // Ensure tables async
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-            try {
-                repo.ensureTables();
-                //getLogger().log(Level.FINE, "[HG] Reports tables ready.");
-            } catch (SQLException e) {
-                throw new RuntimeException(e);
-            }
-        });
-
-        // Punishment
-
-        // Ensure tables async
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-            try {
-                plugin.punishRepo.ensureTables();
-                //getLogger().info("[HG] Punishment tables ready.");
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
-        });
-
-        // Ensure tables async
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-            try {
-                plugin.webSQL.ensureTables();
-                //getLogger().info("[HG] Punishment tables ready.");
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
-        });
         plugin.getLogger().info("MySQL pool initialized.");
     }
 
@@ -123,11 +79,13 @@ public final class MySQL {
             plugin.getLogger().info("MySQL pool closed.");
         }
     }
-    public DataSource getDataSource() { return ds; }
+
+    public DataSource getDataSource() {
+        return ds;
+    }
 
     private void createTablesSafe() {
         try (Connection c = getConnection()) {
-            // tickets table
             try (PreparedStatement ps = c.prepareStatement(
                     "CREATE TABLE IF NOT EXISTS " + database + ".hg_player_tickets(" +
                             "`ticket_id` CHAR(36) PRIMARY KEY," +
@@ -145,7 +103,6 @@ public final class MySQL {
                 ps.executeUpdate();
             }
 
-            // ai table
             try (PreparedStatement ps = c.prepareStatement(
                     "CREATE TABLE IF NOT EXISTS " + database + ".aiTable(" +
                             "`filename` VARCHAR(255) NOT NULL UNIQUE PRIMARY KEY," +
@@ -186,7 +143,6 @@ public final class MySQL {
             ps.setLong(5, nowMs);
             return ps.executeUpdate() == 1;
         } catch (SQLException e) {
-            // you can map this to HG-E-101
             plugin.getLogger().warning("consumeTicket SQL error: " + e.getMessage());
             return false;
         }

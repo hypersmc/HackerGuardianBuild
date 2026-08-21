@@ -46,12 +46,13 @@ public final class ProxyPunishEnforcer implements Listener {
         ProxyServer.getInstance().getScheduler().runAsync(plugin, () -> {
             try {
                 long now = System.currentTimeMillis();
-                BanRow ipBan = sql.getActivePlayerBanWide(ip, now);
+                BanRow ipBan = sql.getActiveIpBanWide(ip, now);
                 if (ipBan != null) {
                     e.setCancelled(true);
                     e.setCancelReason(new TextComponent(color(buildIpBanKick(ipBan, now))));
                 }
-            } catch (Exception ignored) {
+            } catch (Exception ex) {
+                plugin.getLogger().warning("Failed to check wide IP ban: " + ex.getMessage());
             } finally {
                 e.completeIntent(plugin);
             }
@@ -74,7 +75,8 @@ public final class ProxyPunishEnforcer implements Listener {
                     e.setCancelled(true);
                     e.setCancelReason(new TextComponent(color(buildPlayerBanKick(wideBan, now))));
                 }
-            } catch (Exception ignored) {
+            } catch (Exception ex) {
+                plugin.getLogger().warning("Failed to check wide player ban: " + ex.getMessage());
             } finally {
                 e.completeIntent(plugin);
             }
@@ -92,69 +94,56 @@ public final class ProxyPunishEnforcer implements Listener {
         if (bypassNextConnect.remove(uuid)) return;
 
         String targetServer = e.getTarget().getName(); // e.g. "pvp"
-        String ip = (player.getSocketAddress() != null)
-                ? player.getSocketAddress().toString()
-                : null;
 
-        // Cancel now, decide async.
-        // e.setCancelled(true);
+        // Stop the original connection attempt while the DB check runs. If allowed,
+        // we reconnect once with bypassNextConnect set to avoid recursion.
+        e.setCancelled(true);
 
         ProxyServer.getInstance().getScheduler().runAsync(plugin, () -> {
             long now = System.currentTimeMillis();
 
-            // IMPORTANT:
-            // - WIDE already blocked in PreLogin/Login
-            // - here we only need SERVER scoped bans for this target
-            BanRow serverBan = null;
+            // WIDE bans were already checked in PreLogin/Login. Here we only need
+            // SERVER-scoped bans for the requested backend.
+            BanRow serverBan;
             try {
                 serverBan = sql.getActivePlayerBanServer(uuid.toString(), now, targetServer);
             } catch (SQLException ex) {
-                throw new RuntimeException(ex);
+                plugin.getLogger().warning("Failed to check server-scoped player ban for " + player.getName() + ": " + ex.getMessage());
+                return;
             }
 
-            String ipPlain = sql.extractIp(player); // implement from socket address safely (shown below)
-            BanRow serverIpBan = null;
+            String ipPlain = sql.extractIp(player);
+            BanRow serverIpBan;
             try {
                 serverIpBan = (ipPlain != null)
                         ? sql.getActiveIpBanServer(ipPlain, now, targetServer)
                         : null;
             } catch (SQLException ex) {
-                throw new RuntimeException(ex);
+                plugin.getLogger().warning("Failed to check server-scoped IP ban for " + player.getName() + ": " + ex.getMessage());
+                return;
             }
 
             if (serverBan != null || serverIpBan != null) {
-                // You can either disconnect or redirect to fallback server.
-                // Minimal: disconnect
                 BanRow row = (serverBan != null) ? serverBan : serverIpBan;
                 String msg = (serverBan != null)
                         ? buildPlayerBanKick(row, now)
                         : buildIpBanKick(row, now);
-
-                ProxyServer.getInstance().getScheduler().runAsync(plugin, () ->
-                        player.disconnect(new TextComponent(color(msg)))
-                );
+                player.disconnect(new TextComponent(color(msg)));
                 return;
             }
 
             // Allowed -> connect manually (and bypass this event once)
             bypassNextConnect.add(uuid);
-            ProxyServer.getInstance().getScheduler().runAsync(plugin, () ->
-                    player.connect(e.getTarget())
-            );
+            player.connect(e.getTarget());
         });
     }
 
     private String buildPlayerBanKick(BanRow row, long nowMs) {
-        String expires = (row.expiresAt == null) ? "Never" : TimeFormat.remaining(nowMs, row.expiresAt);
-        boolean temp = (row.expiresAt == null);
-        String key = temp ? "Punishments.messages.ban_join_perm" : "Punishments.messages.ban_join_temp";
-        long now = System.currentTimeMillis();
-        String expiresLeft = "never";
-        String expiresDate = "never";
-        if (row.expiresAt != null) {
-            expiresLeft = temp ? TimeFormat.remaining(now, row.expiresAt) : "Never";
-            expiresDate = temp ? TimeFormat.dateTime(row.expiresAt) : "Never";
-        }
+        boolean temp = (row.expiresAt != null);
+        String key = temp ? "Punishments.messages.ban_join_temp" : "Punishments.messages.ban_join_perm";
+        String expiresLeft = temp ? TimeFormat.remaining(nowMs, row.expiresAt) : "Never";
+        String expiresDate = temp ? TimeFormat.dateTime(row.expiresAt) : "Never";
+
         String msg = HackerGuardianB.configuration.getString(key,
                 "&cYou are banned.\n&7Reason: &f%reason%\n&7Expires: &f%expires%");
         msg = msg.replace("%reason%", row.reason)

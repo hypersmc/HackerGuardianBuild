@@ -163,9 +163,9 @@ public final class PunishmentRepository {
             ps.setLong(5, createdAt);
             if (expiresAt == null) ps.setNull(6, Types.BIGINT);else ps.setLong(6, expiresAt);
 
-            ps.setString(9, scope.name());
-            if (scope == PunishScope.SERVER) ps.setString(10, scopeServer);
-            else ps.setNull(10, Types.VARCHAR);
+            ps.setString(7, scope.name());
+            if (scope == PunishScope.SERVER) ps.setString(8, scopeServer);
+            else ps.setNull(8, Types.VARCHAR);
 
             ps.executeUpdate();
             try (ResultSet keys = ps.getGeneratedKeys()) {
@@ -282,7 +282,7 @@ public final class PunishmentRepository {
              PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setString(1, ip);
             ps.setLong(2, nowMs);
-            ps.setString(4, serverName);
+            ps.setString(3, serverName);
             try (ResultSet rs = ps.executeQuery()) {
                 if (!rs.next()) return Optional.empty();
                 return Optional.of(IpBanRow.from(rs));

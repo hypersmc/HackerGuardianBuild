@@ -66,7 +66,15 @@ public class HackerGuardianB extends Plugin {
 
     @Override
     public void onDisable() {
-        super.onDisable();
+        if (api != null) {
+            api.stop();
+            api = null;
+        }
+        if (mysql != null) {
+            mysql.shutdown();
+            mysql = null;
+        }
+        instance = null;
     }
 
     public void makeConfig() throws IOException {
