@@ -1,0 +1,26 @@
+# HackerGuardian database configuration
+#
+# Supported types:
+#   MYSQL       - MySQL 8.x compatible servers
+#   POSTGRESQL  - PostgreSQL 14+ compatible servers
+#
+# On first boot HackerGuardian creates this file and stops if the placeholder
+# credentials are still present. Configure the database, then restart.
+Database:
+  type: MYSQL
+  host: "127.0.0.1"
+  port: 3306
+  name: "hackerguardian"
+  username: "changeme"
+  password: "changeme"
+
+  # TLS for the JDBC connection. Configure server certificates separately.
+  ssl: false
+
+  pool:
+    maximum_size: 10
+    minimum_idle: 2
+    connection_timeout_ms: 10000
+    validation_timeout_ms: 5000
+    idle_timeout_ms: 60000
+    max_lifetime_ms: 600000
