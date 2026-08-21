@@ -1,13 +1,17 @@
 package me.hackerguardian.bungee.utils;
 
+import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
+import me.hackerguardian.Util.TicketPayload;
 import me.hackerguardian.bungee.HackerGuardianB;
-import me.hackerguardian.main.HackerGuardian;
+import me.hackerguardian.bungee.moderation.BanRow;
 import me.hackerguardian.main.utils.ErrorHandler;
 import net.md_5.bungee.api.ProxyServer;
+import net.md_5.bungee.api.plugin.Plugin;
 
+import javax.sql.DataSource;
 import java.sql.*;
-import java.util.List;
-import java.util.UUID;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
@@ -17,17 +21,24 @@ import java.util.logging.Logger;
  */
 public class BMySQL {
 
-    public static Connection db = null;
+    private static HikariDataSource dataSource;
+
     HackerGuardianB main = HackerGuardianB.getInstance();
     Logger logger = Logger.getLogger("HGBungee_Link_Database");
-    private String host = main.configuration.getString("SQLHost");
-    private String port = main.configuration.getString("SQLPort");
-    private String database = main.configuration.getString("SQLDatabaseName");
-    private String user = main.configuration.getString("SQLUsername");
-    private String pass = main.configuration.getString("SQLPassword");
-    public void setupCoreSystem(){
-        String url = null;
-        if (this.user.equals("changeme") && this.pass.equals("changeme")){
+
+    private final String host = main.configuration.getString("SQLHost");
+    private final String port = main.configuration.getString("SQLPort");
+    private final String database = main.configuration.getString("SQLDatabaseName");
+    private final String user = main.configuration.getString("SQLUsername");
+    private final String pass = main.configuration.getString("SQLPassword");
+
+    /* ------------------------------------------------------------
+     * Core setup
+     * ------------------------------------------------------------ */
+
+    public void setupCoreSystem() {
+
+        if (this.user.equals("changeme") && this.pass.equals("changeme")) {
             logger.info("");
             logger.info("---------- Core MySQL ----------");
             logger.info("Please setup MySQL in the config. When done reboot the server.");
@@ -37,179 +48,274 @@ public class BMySQL {
             PluginDisabler.disablePlugin(HackerGuardianB.getInstance());
             return;
         }
-        try {
-            String driver = "com.mysql.cj.jdbc.Driver";
-            url = "jdbc:mysql://" + this.host + ":" + this.port + "/" + this.database + "?user=" + this.user + "&password=" + this.pass + "?autoReconnect=true?useUnicode=yes";
-            Class.forName(driver);
-            String finalUrl = url;
-            ProxyServer.getInstance().getScheduler().runAsync(HackerGuardianB.getInstance(), () -> {
-                try {
-                    db = DriverManager.getConnection(finalUrl, this.user, this.pass);
-//                    formatCoreDatabase();
-                    logger.info("Connection to MySQL database successful.");
-                } catch (SQLException e) {
-                    ErrorHandler.handleGenericException(e, "Could not connect to the database");
 
-                }
-            });
+        HikariConfig config = new HikariConfig();
 
-        } catch (Exception e) {
-            ErrorHandler.handleGenericException(e, "Could not connect to the database");
-        }
+        String jdbcUrl = "jdbc:mysql://" + host + ":" + port + "/" + database
+                + "?useSSL=false"
+                + "&serverTimezone=UTC"
+                + "&characterEncoding=utf8"
+                + "&useUnicode=true";
+
+        config.setJdbcUrl(jdbcUrl);
+        config.setUsername(user);
+        config.setPassword(pass);
+
+        config.setMaximumPoolSize(10);
+        config.setMinimumIdle(2);
+        config.setConnectionTimeout(10_000);
+        config.setIdleTimeout(300_000);
+        config.setMaxLifetime(1_800_000);
+
+        // This helps detect dead connections
+        config.setConnectionTestQuery("SELECT 1");
+
+        config.addDataSourceProperty("cachePrepStmts", "true");
+        config.addDataSourceProperty("prepStmtCacheSize", "250");
+        config.addDataSourceProperty("prepStmtCacheSqlLimit", "2048");
+
+        dataSource = new HikariDataSource(config);
+
+        // Test connection
+        try (Connection conn = dataSource.getConnection()) {
+            logger.info("Connection to MySQL (HikariCP) successful.");
+        }catch (Exception ignored) {}
+
+        // formatCoreDatabase();
     }
-    public void checkdbconnection(){
-        String url = null;
-        try {
-            String driver = "com.mysql.cj.jdbc.Driver";
-            url = "jdbc:mysql://" + this.host + ":" + this.port + "/" + this.database + "?user=" + this.user + "&password=" + this.pass + "?autoReconnect=true?useUnicode=yes";
-            Class.forName(driver);
-            String finalUrl = url;
-            ProxyServer.getInstance().getScheduler().runAsync(HackerGuardianB.getInstance(), () -> {
-                try {
-                    db = DriverManager.getConnection(finalUrl, this.user, this.pass);
-//                    formatCoreDatabase();
-                    logger.info("Connection to MySQL database successful.");
-                } catch (SQLException e) {
-                    ErrorHandler.handleGenericException(e, "Could not connect to the database");
 
-                }
-            });
-        } catch (ClassNotFoundException e) {
-            throw new RuntimeException(e);
-        }
+    /**
+     * Keeps compatibility with existing calls
+     */
+    public void checkdbconnection() {
+        ProxyServer.getInstance().getScheduler().runAsync(HackerGuardianB.getInstance(), () -> {
+            try (Connection conn = getConnection()) {
+                logger.info("Connection to MySQL database successful.");
+            } catch (SQLException e) {
+                ErrorHandler.handleGenericException(e, "Could not connect to the database");
+            }
+        });
     }
+
+    /* ------------------------------------------------------------
+     * Connection helper
+     * ------------------------------------------------------------ */
+
+    public Connection getConnection() throws SQLException {
+        if (dataSource == null || dataSource.isClosed()) {
+            throw new SQLException("HikariDataSource not initialized");
+        }
+        return dataSource.getConnection();
+    }
+
+    /* ------------------------------------------------------------
+     * Database formatting
+     * ------------------------------------------------------------ */
+
     public void formatCoreDatabase() {
+        try (Connection db = getConnection();
+             PreparedStatement checkIfExists = db.prepareStatement(
+                     "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = ? AND table_name = ?")) {
 
-        try {
-            PreparedStatement checkIfExists = db.prepareStatement("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = ? AND table_name = ?");
             checkIfExists.setString(1, this.database);
             checkIfExists.setString(2, "CorePlayerStats");
 
-            ResultSet resultSet = checkIfExists.executeQuery();
-
-            if (resultSet.next()) {
-                int count = resultSet.getInt(1);
-                if (count > 0) {
-                    logger.info("V1 HackerGuardian Installation found!");
-                    logger.info("Eradicating old database tables and data!");
-//                    initializeDatabaseCleanup();
-                } else {
-                    logger.info("New installation!");
-//                    doNewCoreDatabase();
+            try (ResultSet resultSet = checkIfExists.executeQuery()) {
+                if (resultSet.next()) {
+                    int count = resultSet.getInt(1);
+                    if (count > 0) {
+                        logger.info("V1 HackerGuardian Installation found!");
+                        logger.info("Eradicating old database tables and data!");
+                        // initializeDatabaseCleanup();
+                    } else {
+                        logger.info("New installation!");
+                        // doNewCoreDatabase();
+                    }
                 }
             }
 
-            resultSet.close();
-            checkIfExists.close();
             logger.info("Successfully checked tables.");
         } catch (SQLException e) {
             ErrorHandler.handleGenericException(e, "Error finding SQL Tables");
         }
     }
 
+    /* ------------------------------------------------------------
+     * Ticket handling
+     * ------------------------------------------------------------ */
 
-    public void firstPlayerMods(UUID playeruuid, String modData){
-        PreparedStatement first = null;
-//        checkdbconnection();
-        try {
-            first = db.prepareStatement("INSERT INTO " + this.database + ".PlayerMods (PlayerUUID, Mods) VALUES (?, ?)");
-            first.setString(1, playeruuid.toString());
-            first.setString(2, modData);
-            first.executeUpdate();
-            first.close();
-        } catch (Exception ignored) {
+    public void insertTicket(TicketPayload payload) throws SQLException {
+        String sql =
+                "INSERT INTO " + this.database + ".hg_player_tickets " +
+                        "(ticket_id, player_uuid, player_name, issued_at, expires_at, used_at, target_server) " +
+                        "VALUES (?,?,?,?,?,NULL,?)";
 
+        try (Connection db = getConnection();
+             PreparedStatement ps = db.prepareStatement(sql)) {
+
+            ps.setString(1, payload.ticketId);
+            ps.setString(2, payload.playerUuid);
+            ps.setString(3, payload.playerName);
+            ps.setLong(4, payload.issuedAt);
+            ps.setLong(5, payload.expiresAt);
+            ps.setString(6, payload.targetServer);
+            ps.executeUpdate();
         }
     }
-    @SuppressWarnings({"lgtm [java/concatenated-sql-query]", "lgtm [java/dereferenced-value-is-always-null]", "lgtm [java/dereferenced-value-may-be-null]"})
-    public void addPlayerMods(UUID playeruuid, List<String> modData){
-        if (modData.isEmpty()) return;
-        PreparedStatement first = null;
-        PreparedStatement second = null;
-        ResultSet firesult = null;
-        checkdbconnection();
-        try {
-            second = db.prepareStatement("SELECT * FROM " + this.database + ".PlayerMods WHERE PlayerUUID=?");
-            second.setString(1, playeruuid.toString());
-            firesult = second.executeQuery();
-            System.out.println("Player: " + playeruuid + " Mods: " + modData);
-            while (firesult.next()){
-                String s = firesult.getString("Mods");
-                System.out.println("Player: " + playeruuid + " Mods: " + modData + " trying to add!");
 
-                if (s != null && !s.isEmpty()) {
-                    System.out.println(s + " is not empty");
-                    for (String modName : modData) {
-                        if (!s.contains(modName)) {
-                            System.out.println(modName + " is not in list");
-                            first = db.prepareStatement("INSERT INTO " + this.database + ".PlayerMods (PlayerUUID, Mods) VALUES (?, ?)");
-                            first.setString(1, playeruuid.toString());
-                            first.setString(2, modName.replace("[", "").replace("]", ""));
-                            first.executeUpdate();
-                            first.close();
-                            System.out.println("Player: " + playeruuid + " Mods: " + modName + " Added to database!");
-                        } else {
-                            System.out.println(modName + " is in list");
-                        }
-                    }
-                    return;
-                }
-            }
-            if (first != null) {
-                first.close();
-            }
-            second.close();
-            firesult.close();
-        }catch (Exception ignored) {
+    public void cleanupExpired(Plugin plugin) {
+        String cleanup =
+                "DELETE FROM " + this.database + ".hg_player_tickets " +
+                        "WHERE expires_at < ? OR (used_at IS NOT NULL AND used_at < ?)";
+
+        long now = System.currentTimeMillis();
+
+        try (Connection db = getConnection();
+             PreparedStatement ps = db.prepareStatement(cleanup)) {
+
+            ps.setLong(1, now - 60_000);
+            ps.setLong(2, now - 60_000);
+            ps.executeUpdate();
+
+        } catch (Exception e) {
+            logger.log(Level.SEVERE, "error cleaning up: " + e.getMessage());
         }
     }
-    public String getplayerban(UUID playeruuid){
-        PreparedStatement second = null;
-        ResultSet firesult = null;
-        try {
-            second = db.prepareStatement("SELECT * FROM " + this.database + ".Playerstats WHERE PlayerUUID=?");
-            second.setString(1, playeruuid.toString());
-            firesult = second.executeQuery();
-            while (firesult.next()){
-                String s = firesult.getString("Banned");
-                if (s != null && !s.isEmpty()) return s;
-            }
-            second.close();
-            firesult.close();
-        }catch (Exception ignored){
-        }
-        return "null";
-    }
-    public String getPlayerbanreason(UUID playeruuid){
-        PreparedStatement second = null;
-        ResultSet firesult = null;
-        try {
-            second = db.prepareStatement("SELECT * FROM " + this.database + ".OtherReasons WHERE PlayerUUID=? AND Handler = 'Ban' ORDER BY Reason ASC LIMIT 1;");
-            second.setString(1, playeruuid.toString());
-            firesult = second.executeQuery();
-            while (firesult.next()){
-                String s = firesult.getString("Reason");
-                if (s != null && !s.isEmpty()) return s;
-            }
-        }catch (Exception ignored){
 
-        }
-        return "Reason not found!";
-    }
-    public String getPlayerkickreason(UUID playeruuid){
-        PreparedStatement second = null;
-        ResultSet firesult = null;
-        try {
-            second = db.prepareStatement("SELECT * FROM " + this.database + ".OtherReasons WHERE PlayerUUID=? AND Handler = 'Kick' ORDER BY Reason ASC LIMIT 1;");
-            second.setString(1, playeruuid.toString());
-            firesult = second.executeQuery();
-            while (firesult.next()){
-                String s = firesult.getString("Reason");
-                if (s != null && !s.isEmpty()) return s;
-            }
-        }catch (Exception ignored){
+    /* ------------------------------------------------------------
+     * Ban lookups
+     * ------------------------------------------------------------ */
 
+    public BanRow getActivePlayerBanWide(String playerUuid, long now) throws SQLException {
+        String sql =
+                "SELECT id, reason, expires_at FROM hg_punishments " +
+                        "WHERE type='BAN' AND target_uuid=? AND active=TRUE " +
+                        "AND (expires_at IS NULL OR expires_at > ?) " +
+                        "AND scope='WIDE' " +
+                        "ORDER BY created_at DESC LIMIT 1";
+
+        try (Connection db = getConnection();
+             PreparedStatement ps = db.prepareStatement(sql)) {
+
+            ps.setString(1, playerUuid);
+            ps.setLong(2, now);
+
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) return null;
+                Long expiresAt = rs.getObject("expires_at", Long.class);
+                return new BanRow(
+                        rs.getLong("id"),
+                        rs.getString("reason"),
+                        expiresAt
+                );
+            }
         }
-        return "Reason not found!";
+    }
+
+    public BanRow getActivePlayerBanServer(String playerUuid, long now, String serverName) throws SQLException {
+        String sql =
+                "SELECT id, reason, expires_at FROM hg_punishments " +
+                        "WHERE type='BAN' AND target_uuid=? AND active=TRUE " +
+                        "AND (expires_at IS NULL OR expires_at > ?) " +
+                        "AND scope='SERVER' AND scope_server=? " +
+                        "ORDER BY created_at DESC LIMIT 1";
+
+        try (Connection db = getConnection();
+             PreparedStatement ps = db.prepareStatement(sql)) {
+
+            ps.setString(1, playerUuid);
+            ps.setLong(2, now);
+            ps.setString(3, serverName);
+
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) return null;
+                Long expiresAt = rs.getObject("expires_at", Long.class);
+                return new BanRow(
+                        rs.getLong("id"),
+                        rs.getString("reason"),
+                        expiresAt
+                );
+            }
+        }
+    }
+
+    public BanRow getActiveIpBanWide(String ip, long now) throws SQLException {
+        String sql =
+                "SELECT id, reason, expires_at FROM hg_ip_bans " +
+                        "WHERE ip=? AND active=TRUE " +
+                        "AND (expires_at IS NULL OR expires_at > ?) " +
+                        "AND scope='WIDE' " +
+                        "ORDER BY created_at DESC LIMIT 1";
+
+        try (Connection db = getConnection();
+             PreparedStatement ps = db.prepareStatement(sql)) {
+
+            ps.setString(1, ip);
+            ps.setLong(2, now);
+
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) return null;
+                Long expiresAt = rs.getObject("expires_at", Long.class);
+                return new BanRow(
+                        rs.getLong("id"),
+                        rs.getString("reason"),
+                        expiresAt
+                );
+            }
+        }
+    }
+
+    public BanRow getActiveIpBanServer(String ip, long now, String serverName) throws SQLException {
+        String sql =
+                "SELECT id, reason, expires_at FROM hg_ip_bans " +
+                        "WHERE ip=? AND active=TRUE " +
+                        "AND (expires_at IS NULL OR expires_at > ?) " +
+                        "AND scope='SERVER' AND scope_server=? " +
+                        "ORDER BY created_at DESC LIMIT 1";
+
+        try (Connection db = getConnection();
+             PreparedStatement ps = db.prepareStatement(sql)) {
+
+            ps.setString(1, ip);
+            ps.setLong(2, now);
+            ps.setString(3, serverName);
+
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) return null;
+                Long expiresAt = rs.getObject("expires_at", Long.class);
+                return new BanRow(
+                        rs.getLong("id"),
+                        rs.getString("reason"),
+                        expiresAt
+                );
+            }
+        }
+    }
+
+    /* ------------------------------------------------------------
+     * Utility
+     * ------------------------------------------------------------ */
+
+    public String extractIp(net.md_5.bungee.api.connection.ProxiedPlayer p) {
+        try {
+            if (p.getSocketAddress() instanceof java.net.InetSocketAddress isa) {
+                if (isa.getAddress() != null) return isa.getAddress().getHostAddress();
+            }
+        } catch (Exception ignored) {}
+        return null;
+    }
+
+    /* ------------------------------------------------------------
+     * Shutdown (recommended)
+     * ------------------------------------------------------------ */
+
+    public void shutdown() {
+        if (dataSource != null && !dataSource.isClosed()) {
+            dataSource.close();
+        }
+    }
+
+    public DataSource getDataSource() {
+        return dataSource;
     }
 }

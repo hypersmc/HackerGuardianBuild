@@ -6,20 +6,302 @@
 #           ██║  ██║██║  ██║╚██████╗██║  ██╗███████╗██║  ██║╚██████╔╝╚██████╔╝██║  ██║██║  ██║██████╔╝██║██║  ██║██║ ╚████║
 #           ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝ ╚═════╝  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═════╝ ╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝
 
-SQLHost: '127.0.0.1' #This should be the ip to your database
-SQLPort: '3306' #This should be the port to your database.
-SQLDatabaseName: 'myDatabase' #This should be the database name to your database.
-SQLUsername: 'changeme' #This should be the database username to your database
-SQLPassword: 'changeme' #This should be the database password to your database
-debug: false #Enable if I ask you to.
-#General settings
-Settings:
-  UseWebsiteFunction: false #Should HackerGuardian use HackerGuardian-Webserver if it's present and connectable? (not in this build)
-  EnableAI: false #Want to use the AI part of the Anti-Cheat (ALPHA)
-  LearningMode: false #Should the AI be in Learning mode? (ALPHA) (not in this build)
-  UseDBForAIData: false #Should we store the learned data in the database instead of the local machine? (not ready for use)
+# =========================================================
+# Database (MySQL / MariaDB)
+# =========================================================
+# HG stores moderation actions, replays, reports, AI data (optional), etc. in SQL.
+# Use an account with permissions to CREATE/ALTER tables in the chosen database.
+SQLHost: "127.0.0.1"          # Database host (IP or FQDN). Example: "db01.example.com"
+SQLPort: "3306"               # Database port (default MySQL/MariaDB: 3306)
+SQLDatabaseName: "myDatabase" # The database/schema name HG should use
+SQLUsername: "changeme"       # Database username
+SQLPassword: "changeme"       # Database password
 
-#Webserver settings
+# Enables extra logs and stack traces. Only enable when debugging issues.
+debug: false
+
+# =========================================================
+# General settings
+# =========================================================
+Settings:
+  # ---------------------------------------------------------
+  # Integrations / Features
+  # ---------------------------------------------------------
+  # (Not in this build) If HG-Webserver exists + is reachable, allow HG to use it.
+  UseWebsiteFunction: false
+
+  # Enable AI-based detection (ALPHA). If disabled, HG works as moderation + logging only.
+  EnableAI: false
+
+  # If true, AI will "learn" and update datasets rather than only running inference.
+  # Only enable if you are actively training/testing the model.
+  LearningMode: false
+
+  # If true, store AI training data in the database instead of local disk.
+  # NOT READY for production use.
+  UseDBForAIData: false
+
+  # ---------------------------------------------------------
+  # Proxy / Network Mode
+  # ---------------------------------------------------------
+  # Unique backend server identifier (used for punishment scope -srv).
+  # Only needed if behind_proxy=true and you want server-scoped actions.
+  # Examples: "pvp", "survival", "hub"
+  server_name: "pvp"
+
+  # Set true if players normally join through a proxy (Bungee/Flamecord/Velocity).
+  # If false, HG assumes this server is joined directly.
+  behind_proxy: false
+
+  # ---------------------------------------------------------
+  # HG Secure Link (Proxy Authorization)
+  # ---------------------------------------------------------
+  # Enables the secure-link handshake (prevents unauthorized proxies + direct joins).
+  # Only turn this on if you have the proxy-side HG linker installed and configured.
+  hg_secure_link: false
+
+  # Shared secret used to sign/verify link tickets.
+  # MUST be the same on proxy + backend servers.
+  # Use a long random value and keep it private.
+  shared_secret: "CHANGE_ME_TO_A_LONG_RANDOM_SECRET"
+
+  # How long (ms) the backend server waits after join for the link ticket to arrive.
+  # If the ticket isn't received in time, the player is kicked.
+  verify_window_ms: 2000
+
+  # Extra grace period (ms) once a ticket is received while the DB verification runs.
+  # Prevents "race kicks" if DB is slow.
+  db_grace_ms: 2000
+
+  # Small cache (ms) used when the plugin message arrives before PlayerJoinEvent.
+  # Prevents false kicks due to event ordering.
+  verified_cache_ms: 30000
+
+  # ---------------------------------------------------------
+  # Player Reports (rate limit + UI)
+  # ---------------------------------------------------------
+  # Rolling time window (in milliseconds) used for report rate limiting.
+  # Example: 86400000 = 24 hours
+  # A player can create at most max_reports_per_window reports within the last report_window_ms period.
+  report_window_ms: 86400000
+
+  # How many reports to show per page in /hg reports view (pagination).
+  reports_page_size: 5
+
+  # Max reports a player can create during report_window_ms.
+  max_reports_per_window: 10
+
+# =========================================================
+# Webserver settings (HG-Webserver integration)
+# =========================================================
 SettingsWeb:
-  webdomain: your-domain.net
-  webapikey: your-api-key-here
+  Api:
+    enabled: true
+    bind_host: "0.0.0.0"
+    bind_port: 8787
+    require_auth: true
+    allowed_skew_ms: 90000
+    nonce_ttl_ms: 300000
+
+    keys:
+      panel-1: "CHANGE_ME_TO_LONG_RANDOM_SECRET"
+
+
+# =========================================================
+# Replays (HG Replay System)
+# =========================================================
+# Records player activity so staff can replay it in-game (and later on the web).
+# Data is stored in the database as compressed chunks.
+Replays:
+  # Master switch for the entire replay system.
+  enabled: true
+
+  # ---------------------------------------------------------
+  # Buffering + Recording Length
+  # ---------------------------------------------------------
+  # How many seconds of data are kept in RAM per player at all times.
+  # This allows "record the last X seconds" when AI/moderation triggers a replay.
+  # Higher = better "what happened before" but uses more memory.
+  prebuffer_seconds: 30
+
+  # After a replay is triggered, keep recording for this many seconds.
+  # Higher = longer capture after the trigger (good for seeing the aftermath).
+  postbuffer_seconds: 20
+
+  # ---------------------------------------------------------
+  # Recording Resolution / Granularity
+  # ---------------------------------------------------------
+  # How often the player snapshot is recorded (movement + look).
+  # 1 tick = 50ms. Lower value = smoother replay, more data.
+  # Common values: 1 (smoothest), 2 (good default), 4 (lighter).
+  snapshot_interval_ticks: 2
+
+  # How many milliseconds of events are grouped into one DB chunk.
+  # Smaller chunks = easier seeking + less loss if a chunk fails, but more DB rows.
+  # Larger chunks = fewer DB rows, but bigger writes and less precise seeking.
+  chunk_ms: 2000
+
+  # ---------------------------------------------------------
+  # AI Trigger
+  # ---------------------------------------------------------
+  # If AI score >= this, HG may trigger a replay automatically.
+  # Example: 0.92 means "92% confident".
+  ai_trigger_threshold: 0.92
+
+  # ---------------------------------------------------------
+  # Rate Limiting (Anti-spam safety)
+  # ---------------------------------------------------------
+  # Max number of replays that can be triggered for one player per hour.
+  # This applies to AI/moderation triggers (and can be applied to manual too if you want).
+  max_triggers_per_player_per_hour: 6
+
+  # ---------------------------------------------------------
+  # Storage Format
+  # ---------------------------------------------------------
+  # Compression used for DB storage.
+  codec: "gzip" # Do not change
+
+  # Replay binary format version.
+  format_version: 1 # Do not change
+
+  # =========================================================
+  # Context Recording (Nearby Players)
+  # =========================================================
+  # Records nearby players around the target player ("who was around them").
+  # Useful for PVP, team fights, and interaction context.
+  context:
+    # Prints debug logs about context capture (entries count etc.)
+    debug: false
+
+    # Master switch for recording nearby players snapshots.
+    enabled: true
+
+    # If false:
+    #   Nearby players are ONLY recorded when a replay session is actively running
+    #   (less DB + CPU, but prebuffer will NOT include nearby players).
+    #
+    # If true:
+    #   Nearby players are also recorded into the prebuffer
+    #   (best experience for AI triggers, but heavier).
+    record_in_prebuffer: true
+
+    # Search radius around the target player in BLOCKS.
+    # 32 = about 2 chunks.
+    radius: 32
+
+    # Max number of nearby players to record per context snapshot.
+    # Players closest to the target are recorded first.
+    max_players: 6
+
+    # If true, record the nearby players' main-hand item type
+    # (used to show what they were holding in the replay).
+    include_items: true
+
+    # How often to record context snapshots.
+    # Lower value = more accurate context replay, more data.
+    # Usually should match snapshot_interval_ticks.
+    interval_ticks: 2
+
+  # =========================================================
+  # Sandbox Playback World (Optional)
+  # =========================================================
+  # When enabled, replay viewing happens in a temporary "sandbox" world
+  # so staff don't modify or depend on the real live world state.
+  #
+  # Good when:
+  # - the real world has changed since recording
+  # - you want isolated viewing without interference
+  #
+  # Costs:
+  # - extra CPU/RAM during view
+  # - temporary world folder creation + deletion
+  sandbox:
+    # Enable sandbox playback worlds.
+    enabled: true
+
+    # How the sandbox environment is built:
+    #
+    # CHUNKS:
+    #   Record/load a chunk area around the player during recording and rebuild it for viewing.
+    #   Best for "accurate world context", but heavier.
+    #
+    # BLOCK_RADIUS:
+    #   (If you implement it) record blocks in a radius around player instead of whole chunks.
+    #   Lighter but less consistent than chunk-based capture.
+    mode: CHUNKS  # CHUNKS or BLOCK_RADIUS
+
+    # Only used in CHUNKS mode:
+    # Record a square chunk area around the player as they move.
+    # chunk_radius=2 => (2*2+1)=5 => 5x5 chunks around them.
+    chunk_radius: 2
+
+    # Safety cap: maximum number of distinct chunks stored per replay.
+    # Prevents huge storage use if a player runs far.
+    max_chunks: 200
+
+    # If true, the sandbox also includes chunks from the prebuffer time window.
+    # This helps AI triggers where the important stuff happened before the trigger.
+    # Heavier storage.
+    include_prebuffer: true
+
+    # Prefix used for generated sandbox worlds.
+    # Final name becomes: <world_prefix><replayId>_<viewerUUID>
+    world_prefix: "hg_replay_"
+
+    # If true, the sandbox world is unloaded and deleted when the viewer exits
+    # (or when replay ends automatically).
+    delete_world_on_exit: true
+
+
+#Moderation settings
+Punishments:
+  history_limit: 10
+  #Usable inputs %expires% %reason% %id%
+  messages:
+    kick: "&cYou were kicked.\n&7Reason: &f%reason%"
+    ban_kick: "&cYou are banned.\n&7Reason: &f%reason%"
+    ban_join: "&cYou are banned.\n&7Reason: &f%reason%\n&7Expires: &f%expires%"
+    ipban_join: "&cThe ip you are joining from is banned.\n&7Reason: &f%reason%"
+    ipban_kick: "&cYou are IP-banned.\n&7Reason: &f%reason%"
+
+    ban_join_temp: |
+      &cYou are temporarily banned for &f%expires% &cfrom this server!
+
+      &7Reason: &f%reason%
+      &7Find out more: &bhttps://your.site/appeal
+
+      &7Ban ID: &f#%id%
+      &7Sharing your Ban ID may affect the processing of your appeal!
+
+    ban_join_perm: |
+      &cYou are permanently banned from this server!
+
+      &7Reason: &f%reason%
+      &7Find out more: &bhttps://your.site/appeal
+
+      &7Ban ID: &f#%id%
+      &7Sharing your Ban ID may affect the processing of your appeal!
+
+    muted_chat: |
+      &cYou are muted.
+
+      &7Reason: &f%reason%
+      &7Expires in: &f%expires%
+
+    ipban_join_temp: |
+      &cYou are temporarily IP-banned for &f%expires% &cfrom this server!
+
+      &7Reason: &f%reason%
+      &7Find out more: &bhttps://your.site/appeal
+
+      &7IP Ban ID: &f#%id%
+      &7Sharing your Ban ID may affect the processing of your appeal!
+
+    ipban_join_perm: |
+      &cYou are permanently IP-banned from this server!
+
+      &7Reason: &f%reason%
+      &7Find out more: &bhttps://your.site/appeal
+
+      &7IP Ban ID: &f#%id%
+      &7Sharing your Ban ID may affect the processing of your appeal!

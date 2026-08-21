@@ -16,6 +16,15 @@
           <option value="HackerGuardian" />
           <option value="HackerGuardian" />
           <option value="HackerGuardian" />
+          <option value="HackerGuardian" />
+          <option value="HackerGuardian" />
+          <option value="HackerGuardian" />
+          <option value="HackerGuardian" />
+          <option value="HackerGuardian" />
+          <option value="HackerGuardian" />
+          <option value="HackerGuardian" />
+          <option value="HackerGuardian" />
+          <option value="HackerGuardian" />
         </list>
       </option>
       <option name="ignoredPackages">
@@ -23,6 +32,15 @@
           <option value="commons-net:commons-net:3.1" />
           <option value="org.apache.commons:commons-collections4:4.1" />
           <option value="org.freemarker:freemarker:2.3.23" />
+          <option value="io.netty:netty-codec:4.1.93.Final" />
+          <option value="io.netty:netty-common:4.1.85.Final" />
+          <option value="commons-beanutils:commons-beanutils:1.9.4" />
+          <option value="ch.qos.logback:logback-core:1.1.2" />
+          <option value="org.codehaus.plexus:plexus-archiver:4.4.0" />
+          <option value="org.apache.commons:commons-compress:1.21" />
+          <option value="ch.qos.logback:logback-classic:1.1.2" />
+          <option value="org.iq80.snappy:snappy:0.4" />
+          <option value="org.apache.maven:maven-core:3.1.1" />
         </list>
       </option>
       <option name="ignoredReasons">
@@ -30,6 +48,15 @@
           <option value="Not exploitable" />
           <option value="Not exploitable" />
           <option value="Not exploitable" />
+          <option value="Not exploitable" />
+          <option value="Not exploitable" />
+          <option value="Not exploitable" />
+          <option value="Not exploitable" />
+          <option value="Not exploitable" />
+          <option value="Not exploitable" />
+          <option value="In progress" />
+          <option value="In progress" />
+          <option value="doesn't matter to us" />
         </list>
       </option>
     </inspection_tool>

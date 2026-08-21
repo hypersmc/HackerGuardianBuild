@@ -1,19 +1,20 @@
 package me.hackerguardian.bungee;
 
-import me.hackerguardian.bungee.HG.Linker;
-import me.hackerguardian.bungee.events.joinevent;
+import me.hackerguardian.api.HgApiServerProxy;
+import me.hackerguardian.api.reports.ReportRepository;
+import me.hackerguardian.bungee.moderation.ProxyPunishEnforcer;
 import me.hackerguardian.bungee.utils.BMySQL;
-import net.md_5.bungee.api.connection.ProxiedPlayer;
+import me.hackerguardian.bungee.utils.TicketIssuer;
 import net.md_5.bungee.api.plugin.Plugin;
 import net.md_5.bungee.config.Configuration;
 import net.md_5.bungee.config.ConfigurationProvider;
 import net.md_5.bungee.config.YamlConfiguration;
-import org.bukkit.entity.Player;
 
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 
 /**
@@ -22,8 +23,11 @@ import java.util.logging.Logger;
  * v1.0.0
  */
 public class HackerGuardianB extends Plugin {
-    public Configuration configuration;
+    public static Configuration configuration;
     private static HackerGuardianB instance;
+    private HgApiServerProxy api;
+    private BMySQL mysql;
+    public ReportRepository reportsRepo;
     Logger logger = Logger.getLogger("HGBungee_Link");
     @Override
     public void onEnable() {
@@ -35,12 +39,30 @@ public class HackerGuardianB extends Plugin {
             logger.info("Configuration registered!");
         } catch (IOException ignore) {}
         logger.info("Starting MySQL system");
-        BMySQL sql = new BMySQL();
-        sql.setupCoreSystem();
-        getProxy().getPluginManager().registerListener(this, new joinevent());
-        getProxy().registerChannel("hg:channel");
-        getProxy().getPluginManager().registerListener(this, new Linker());
+        mysql = new BMySQL();
+        mysql.setupCoreSystem();
+
+        if (getConfiguration().getBoolean("Settings.hg_secure_link")) {
+            getProxy().registerChannel("hg:playerchannel");
+            getProxy().getPluginManager().registerListener(this, new TicketIssuer(this));
+
+
+            // cleanup job (optional)
+            getProxy().getScheduler().schedule(
+                    this,
+                    () -> mysql.cleanupExpired(this),
+                    5, 30, TimeUnit.MINUTES
+            );
+            getLogger().info("HG Link (Bungee) enabled.");
+        }
+        getProxy().getPluginManager().registerListener(this, new ProxyPunishEnforcer(this, mysql));
+        this.reportsRepo = new ReportRepository(getMysql().getDataSource());
+        api = new HgApiServerProxy(this);
+        api.startIfEnabled();
+
     }
+
+    public BMySQL getMysql() { return mysql; }
 
     @Override
     public void onDisable() {
@@ -58,11 +80,11 @@ public class HackerGuardianB extends Plugin {
         if (!configFile.exists()) {
             FileOutputStream outputStream = new FileOutputStream(configFile); // Throws IOException
             InputStream in = getResourceAsStream("configbungee.yml"); // This file must exist in the jar resources folder
-//            in.transferTo(outputStream); // Throws IOException
+            in.transferTo(outputStream); // Throws IOException
         }
     }
     public static HackerGuardianB getInstance() {
         return instance;
     }
-
+    public static Configuration getConfiguration() { return configuration;}
 }

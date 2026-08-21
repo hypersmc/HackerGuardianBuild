@@ -23,12 +23,5 @@ public class joinevent implements Listener {
     Logger logger = Logger.getLogger("HGBungee_Link");
     @EventHandler
     public void onPlayerJoin(PostLoginEvent event) {
-        BMySQL sql = new BMySQL();
-        ProxiedPlayer player = event.getPlayer();
-        UUID playerUUID = player.getUniqueId();
-        if (sql.getplayerban(playerUUID).equalsIgnoreCase("true")) {
-            logger.info("Player " + player.getName() + " joined but was banned!");
-            event.getPlayer().disconnect(new TextComponent(sql.getPlayerbanreason(playerUUID)));
-        }
     }
 }

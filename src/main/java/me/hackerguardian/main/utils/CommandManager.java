@@ -17,7 +17,7 @@ import java.util.function.BiConsumer;
  * v1.0.0
  */
 public class CommandManager implements CommandExecutor {
-    public textHandling text = new textHandling();
+    public textHandling tx = new textHandling();
     public Map<String, BiConsumer<CommandSender, String[]>> registeredCommands = new HashMap<>();
 
     public CommandManager(Plugin plugin, String baseCommand) {
@@ -42,7 +42,7 @@ public class CommandManager implements CommandExecutor {
             String[] param = args.length == 0 ? new String[0] : Arrays.copyOfRange(args, matchedCommand.get().getKey().split(" ").length, args.length);
             matchedCommand.get().getValue().accept(sender, param);
         }else
-            sender.sendMessage(text.prefix + "Command not found!");
+            sender.sendMessage(tx.playerText(tx.prefix + "Command not found!"));
         return true;
     }
 }

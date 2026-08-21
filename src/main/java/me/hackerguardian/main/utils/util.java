@@ -21,6 +21,13 @@ public class util {
             return "" + ChatColor.DARK_GRAY +"|      " + ChatColor.RED+"ProtocolLib"+ ChatColor.RESET + "\n";
         }
     }
+    public String detectPluginSkulls(){
+        if(Bukkit.getPluginManager().getPlugin("Skulls") != null){
+            return "" + ChatColor.DARK_GRAY +"|      " + ChatColor.GREEN +"Skulls"+ ChatColor.RESET + "\n";
+        }else{
+            return "" + ChatColor.DARK_GRAY +"|      " + ChatColor.RED+"Skulls"+ ChatColor.RESET + "\n";
+        }
+    }
     public String detectPluginViaversion(){
         if(Bukkit.getPluginManager().getPlugin("ViaVersion") != null){
             return "" + ChatColor.DARK_GRAY +"|      " + ChatColor.GREEN +"ViaVersion"+ ChatColor.RESET + "\n";
@@ -54,6 +61,13 @@ public class util {
             return "" + ChatColor.DARK_GRAY +"|      " + ChatColor.GREEN +"Website Addon"+ ChatColor.RESET + "\n";
         }else{
             return "" + ChatColor.DARK_GRAY +"|      " + ChatColor.RED+"Website Addon"+ ChatColor.RESET + "\n";
+        }
+    }
+    public String detectSettingsSecureLink(Plugin pl){
+        if(pl.getConfig().getBoolean("Settings.hg_secure_link")){
+            return "" + ChatColor.DARK_GRAY +"|      " + ChatColor.GREEN +"Secure Link" + ChatColor.RESET + "\n";
+        }else {
+            return "" + ChatColor.DARK_GRAY + "|      " + ChatColor.RED+"Secure Link" + ChatColor.RESET + "\n";
         }
     }
 }

@@ -6,6 +6,7 @@
         <autoDetectTypes>
           <platformType>SPIGOT</platformType>
           <platformType>ADVENTURE</platformType>
+          <platformType>VELOCITY</platformType>
           <platformType>BUNGEECORD</platformType>
         </autoDetectTypes>
         <projectReimportVersion>1</projectReimportVersion>

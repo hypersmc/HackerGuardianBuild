@@ -1,0 +1,12 @@
+SQL:
+  SQLHost: '127.0.0.1' #This should be the ip to your database
+  SQLPort: '3306' #This should be the port to your database.
+  SQLDatabaseName: 'myDatabase' #This should be the database name to your database.
+  SQLUsername: 'changeme' #This should be the database username to your database
+  SQLPassword: 'changeme' #This should be the database password to your database
+  debug: false #Enable if I ask you to.
+
+Settings:
+  shared_secret: "CHANGE_ME_TO_A_LONG_RANDOM_SECRET"
+  ttlms: 15000
+  hg_secure_link: false #HackerGuardian secure link system to prevent none authorized proxies and direct connection.

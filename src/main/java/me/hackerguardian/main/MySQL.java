@@ -1,215 +1,211 @@
 package me.hackerguardian.main;
+import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
+import me.hackerguardian.Util.TicketPayload;
+import me.hackerguardian.main.moderation.punish.PunishmentRepository;
+import me.hackerguardian.main.report.ReportRepository;
 import me.hackerguardian.main.utils.ErrorHandler;
 import me.hackerguardian.main.utils.textHandling;
 import org.bukkit.Bukkit;
 import org.neuroph.core.data.DataSet;
 
+import javax.sql.DataSource;
+import javax.sql.rowset.spi.SyncFactoryException;
 import java.io.*;
 import java.sql.*;
+import java.util.logging.Level;
 
-public class MySQL {
+import static javax.sql.rowset.spi.SyncFactory.getLogger;
 
-    public static textHandling text = new textHandling();
-    public static Connection db = null;
-    private String host = HackerGuardian.getInstance().getConfig().getString("SQLHost");
-    private String port = HackerGuardian.getInstance().getConfig().getString("SQLPort");
-    private String database = HackerGuardian.getInstance().getConfig().getString("SQLDatabaseName");
-    private String user = HackerGuardian.getInstance().getConfig().getString("SQLUsername");
-    private String pass = HackerGuardian.getInstance().getConfig().getString("SQLPassword");
+public final class MySQL {
 
-    public void setupCoreSystem(){
-        String url = null;
-        if (this.user.equals("changeme") && this.pass.equals("changeme")){
+    private final HackerGuardian plugin;
+
+    private HikariDataSource ds;
+
+    private final String host;
+    private final int port;
+    private final String database;
+    private final String user;
+    private final String pass;
+
+    public MySQL(HackerGuardian plugin) {
+        this.plugin = plugin;
+        this.host = plugin.getConfig().getString("SQLHost");
+        this.port = Integer.parseInt(plugin.getConfig().getString("SQLPort", "3306"));
+        this.database = plugin.getConfig().getString("SQLDatabaseName");
+        this.user = plugin.getConfig().getString("SQLUsername");
+        this.pass = plugin.getConfig().getString("SQLPassword");
+    }
+
+    public void init() {
+        if ("changeme".equalsIgnoreCase(user) && "changeme".equalsIgnoreCase(pass)) {
+            textHandling text = new textHandling();
             text.SendconsoleTextWp("");
             text.SendconsoleTextWp("---------- Core MySQL ----------");
             text.SendconsoleTextWp("Please setup MySQL in the config. When done reboot the server.");
             text.SendconsoleTextWp("Disabling plugin. Please reboot to reload config.");
-            text.SendconsoleTextWp("-----------------------------");
+            text.SendconsoleTextWp("-------------------------------");
             text.SendconsoleTextWp("");
-            Bukkit.getPluginManager().disablePlugin(HackerGuardian.getInstance());
+            Bukkit.getPluginManager().disablePlugin(plugin);
             return;
         }
-        try {
-            String driver = "com.mysql.cj.jdbc.Driver";
-            url = "jdbc:mysql://" + this.host + ":" + this.port + "/" + this.database + "?user=" + this.user + "&password=" + this.pass + "?autoReconnect=true?useUnicode=yes";
-            Class.forName(driver);
-            String finalUrl = url;
-            Bukkit.getScheduler().runTaskAsynchronously(HackerGuardian.getInstance(), () -> {
-                try {
-                    db = DriverManager.getConnection(finalUrl, this.user, this.pass);
-                    formatCoreDatabase();
-                    text.SendconsoleTextWp("Connection to MySQL database successful.");
-                } catch (SQLException e) {
-                    ErrorHandler.handleGenericException(e, "Could not connect to the database");
 
-                }
-            });
+        HikariConfig cfg = new HikariConfig();
 
-        } catch (Exception e) {
-            ErrorHandler.handleGenericException(e, "Could not connect to the database");
-        }
-    }
-    /*
-    Website basted
-     */
+        // Proper JDBC URL params
+        String jdbcUrl = "jdbc:mysql://" + host + ":" + port + "/" + database
+                + "?useSSL=false"
+                + "&serverTimezone=UTC"
+                + "&characterEncoding=utf8"
+                + "&useUnicode=true";
 
-    public static void InitializeWebsiteContentCheck(){
-        String host = HackerGuardian.getInstance().getConfig().getString("SQLHost");
-        String port = HackerGuardian.getInstance().getConfig().getString("SQLPort");
-        String database = HackerGuardian.getInstance().getConfig().getString("SQLDatabaseName");
-        String user = HackerGuardian.getInstance().getConfig().getString("SQLUsername");
-        String pass = HackerGuardian.getInstance().getConfig().getString("SQLPassword");
-        String url = null;
-    }
-    /*
-    END
-     */
+        cfg.setJdbcUrl(jdbcUrl);
+        cfg.setUsername(user);
+        cfg.setPassword(pass);
 
-    public static void InitializeDatabaseConnectionCheck() {
-        String host = HackerGuardian.getInstance().getConfig().getString("SQLHost");
-        String port = HackerGuardian.getInstance().getConfig().getString("SQLPort");
-        String database = HackerGuardian.getInstance().getConfig().getString("SQLDatabaseName");
-        String user = HackerGuardian.getInstance().getConfig().getString("SQLUsername");
-        String pass = HackerGuardian.getInstance().getConfig().getString("SQLPassword");
-        String url = null;
-        try {
-            String driver = "com.mysql.cj.jdbc.Driver";
-            url = "jdbc:mysql://" + host + ":" + port + "/" + database + "?user=" + user + "&password=" + pass + "?autoReconnect=true?useUnicode=yes";
-            Class.forName(driver);
+        // Pool tuning (safe defaults)
+        cfg.setMaximumPoolSize(plugin.getConfig().getInt("SQLPoolSize", 10));
+        cfg.setMinimumIdle(plugin.getConfig().getInt("SQLMinIdle", 2));
+        cfg.setConnectionTimeout(10_000);
+        cfg.setValidationTimeout(5_000);
+        cfg.setIdleTimeout(60_000);
+        cfg.setMaxLifetime(10 * 60_000);
 
-            String finalUrl = url;
-            Bukkit.getScheduler().runTaskAsynchronously(HackerGuardian.getInstance(), () -> {
-                try {
-                    db = DriverManager.getConnection(finalUrl, user, pass);
-                    text.SendconsoleTextWp("Reconnection to MySQL database successful.");
-                } catch (SQLException e) {
-                    ErrorHandler.handleGenericException(e, "Could not connect to the database");
+        // This helps detect dead connections
+        cfg.setConnectionTestQuery("SELECT 1");
 
-                }
-            });
+        ds = new HikariDataSource(cfg);
 
-        } catch (Exception e) {
-            ErrorHandler.handleGenericException(e, "Could not connect to the database");
-        }
-    }
+        // Create tables async so enable thread stays clean
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, this::createTablesSafe);
 
-    public void InitializeDBShutdown(){
-        try {
-            db.close();
-            text.SendconsoleTextWp("MysQL database connection closed.");
-        } catch (SQLException e) {
-            ErrorHandler.handleGenericException(e, "Could not connect to the database");
-        }
-    }
-
-    private void initializeDatabaseCleanup() {
-        String[] tablesToDrop = {
-                "CorePlayerStats", "Playerstats", "PlayerIPTable", "Reports",
-                "Comments", "Flags", "Triggers", "OtherReasons", "PlayerMods"
-        };
-
-        try {
-            for (String table : tablesToDrop) {
-                String query = "DROP TABLE `" + table + "`";
-                try (PreparedStatement preparedStatement = db.prepareStatement(query)) {
-                    preparedStatement.executeUpdate();
-                }
+        // Report
+        ReportRepository repo = new ReportRepository(HackerGuardian.getInstance().getMySQL().getDataSource());
+        // Ensure tables async
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+            try {
+                repo.ensureTables();
+                //getLogger().log(Level.FINE, "[HG] Reports tables ready.");
+            } catch (SQLException e) {
+                throw new RuntimeException(e);
             }
-            text.SendconsoleTextWp("Database Cleanup successful!");
-            doNewCoreDatabase();
-        } catch (SQLException e) {
-            ErrorHandler.handleGenericException(e, "Could not connect to the database");
-        }
+        });
+
+        // Punishment
+
+        // Ensure tables async
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+            try {
+                plugin.punishRepo.ensureTables();
+                //getLogger().info("[HG] Punishment tables ready.");
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        });
+
+        // Ensure tables async
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+            try {
+                plugin.webSQL.ensureTables();
+                //getLogger().info("[HG] Punishment tables ready.");
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        });
+        plugin.getLogger().info("MySQL pool initialized.");
     }
 
+    public void shutdown() {
+        if (ds != null) {
+            ds.close();
+            ds = null;
+            plugin.getLogger().info("MySQL pool closed.");
+        }
+    }
+    public DataSource getDataSource() { return ds; }
 
-    public void formatCoreDatabase() {
-        try {
-            PreparedStatement checkIfExists = db.prepareStatement("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = ? AND table_name = ?");
-            checkIfExists.setString(1, this.database);
-            checkIfExists.setString(2, "CorePlayerStats");
-
-            ResultSet resultSet = checkIfExists.executeQuery();
-
-            if (resultSet.next()) {
-                int count = resultSet.getInt(1);
-                if (count > 0) {
-                    text.SendconsoleTextWp("V1 HackerGuardian Installation found!");
-                    text.SendconsoleTextWsp("Eradicating old database tables and data!");
-                    initializeDatabaseCleanup();
-                } else {
-                    text.SendconsoleTextWp("New installation!");
-                    doNewCoreDatabase();
-                }
+    private void createTablesSafe() {
+        try (Connection c = getConnection()) {
+            // tickets table
+            try (PreparedStatement ps = c.prepareStatement(
+                    "CREATE TABLE IF NOT EXISTS " + database + ".hg_player_tickets(" +
+                            "`ticket_id` CHAR(36) PRIMARY KEY," +
+                            "`player_uuid` CHAR(36) NOT NULL," +
+                            "`player_name` VARCHAR(16) NOT NULL," +
+                            "`issued_at` BIGINT NOT NULL," +
+                            "`expires_at` BIGINT NOT NULL," +
+                            "`used_at` BIGINT NULL," +
+                            "`target_server` VARCHAR(64) NOT NULL," +
+                            "INDEX idx_player_uuid (player_uuid)," +
+                            "INDEX idx_expires_at (expires_at)," +
+                            "INDEX idx_used_at (used_at)" +
+                            ");"
+            )) {
+                ps.executeUpdate();
             }
 
-            resultSet.close();
-            checkIfExists.close();
-            text.SendconsoleTextWp("Successfully checked tables.");
-        } catch (SQLException e) {
-            ErrorHandler.handleGenericException(e, "Error finding SQL Tables");
-        }
-    }
-    public void doNewCoreDatabase(){
-        PreparedStatement aiTable = null;
-        try{
-            aiTable = db.prepareStatement("CREATE TABLE IF NOT EXISTS " + this.database + ".aiTable(`filename` VARCHAR(255) NOT NULL UNIQUE PRIMARY KEY, `training_data_bin` LONGBLOB NOT NULL);");
-            aiTable.executeUpdate();
-            aiTable.close();
+            // ai table
+            try (PreparedStatement ps = c.prepareStatement(
+                    "CREATE TABLE IF NOT EXISTS " + database + ".aiTable(" +
+                            "`filename` VARCHAR(255) NOT NULL UNIQUE PRIMARY KEY," +
+                            "`training_data_bin` LONGBLOB NOT NULL" +
+                            ");"
+            )) {
+                ps.executeUpdate();
+            }
+
+            plugin.getLogger().info("MySQL tables ensured.");
         } catch (SQLException e) {
             ErrorHandler.handleSQLException(e, "Error creating SQL tables");
         }
     }
 
-    /*
-     * Get, Put, Delete and more
-     */
-    public void insertAIData(String filename, DataSet trainingData){
-        PreparedStatement aiData = null;
-        try {
-            byte[] dataBytes = convertObjectToByteArray(trainingData);
-            aiData = db.prepareStatement("INSERT INTO " + this.database + ".aiTable (filename, training_data_bin) VALUES (?, ?)");
-            aiData.setString(1, filename);
-            aiData.setBytes(2, dataBytes);
-            aiData.executeUpdate();
-            aiData.close();
-        } catch (SQLException e) {
-            ErrorHandler.handleSQLException(e, "Error executing SQL statement");
-        }
-    }
-    public DataSet loadAIData(String filename){
-        PreparedStatement aiData = null;
-        try {
-            aiData = db.prepareStatement("SELECT training_data_bin FROM " + this.database + ".aiTable WHERE filename = ?");
-            aiData.setString(1, filename);
-            ResultSet resultSet = aiData.executeQuery();
-            if (resultSet.next()){
-                byte[] dataBytes = resultSet.getBytes("training_data_bin");
-                return (DataSet) convertByteArrayToObject(dataBytes);
-            }
-        } catch (SQLException e) {
-            ErrorHandler.handleSQLException(e, "Error executing SQL statement");
-        }
-        return null;
+    private Connection getConnection() throws SQLException {
+        if (ds == null) throw new SQLException("MySQL not initialized");
+        return ds.getConnection();
     }
 
-    private Object convertByteArrayToObject(byte[] byteArray) {
-        try (ByteArrayInputStream bis = new ByteArrayInputStream(byteArray);
-             ObjectInputStream ois = new ObjectInputStream(bis)) {
-            return ois.readObject();
-        } catch (IOException | ClassNotFoundException e) {
-            throw new RuntimeException("Error converting byte array to object: " + e.getMessage(), e);
-        }
-    }
-    private static byte[] convertObjectToByteArray(Object object) {
-        try (ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
-             ObjectOutputStream objectOutputStream = new ObjectOutputStream(byteArrayOutputStream)) {
-            objectOutputStream.writeObject(object);
-            return byteArrayOutputStream.toByteArray();
-        } catch (IOException e) {
-            e.printStackTrace();
-            return null;
+    /** Thread-safe and atomic. */
+    public boolean consumeTicket(TicketPayload payload, long nowMs) {
+        String sql =
+                "UPDATE " + database + ".hg_player_tickets " +
+                        "SET used_at = ? " +
+                        "WHERE ticket_id = ? " +
+                        "  AND player_uuid = ? " +
+                        "  AND target_server = ? " +
+                        "  AND used_at IS NULL " +
+                        "  AND expires_at > ?";
+
+        try (Connection c = getConnection();
+             PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setLong(1, nowMs);
+            ps.setString(2, payload.ticketId);
+            ps.setString(3, payload.playerUuid);
+            ps.setString(4, payload.targetServer);
+            ps.setLong(5, nowMs);
+            return ps.executeUpdate() == 1;
+        } catch (SQLException e) {
+            // you can map this to HG-E-101
+            plugin.getLogger().warning("consumeTicket SQL error: " + e.getMessage());
+            return false;
         }
     }
 
+    /** Optional: keep table small. Run periodically. */
+    public void cleanupTickets(long olderThanMs) {
+        long cutoff = System.currentTimeMillis() - olderThanMs;
+        String sql =
+                "DELETE FROM " + database + ".hg_player_tickets " +
+                        "WHERE expires_at < ? OR (used_at IS NOT NULL AND used_at < ?)";
+
+        try (Connection c = getConnection();
+             PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setLong(1, cutoff);
+            ps.setLong(2, cutoff);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            plugin.getLogger().warning("cleanupTickets SQL error: " + e.getMessage());
+        }
+    }
 }

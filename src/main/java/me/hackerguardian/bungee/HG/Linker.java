@@ -29,49 +29,6 @@ public class Linker implements Listener {
     @EventHandler
     public void on(PluginMessageEvent event)
     {
-        if ( event.getTag().equalsIgnoreCase( "hg:channel" ) ) {
-            logger.info("Message Received in channel!");
 
-
-            if ( event.getReceiver() instanceof ProxiedPlayer )
-            {
-                try (DataInputStream in = new DataInputStream(new ByteArrayInputStream(event.getData()))) {
-
-                    logger.info("Received data: " + Arrays.toString(event.getData()));
-                    String data = in.readLine(); // Assuming data is sent as UTF-8 string, adjust as needed
-                    logger.info("Received data: " + data);
-                    String[] parts = data.split("\\|");
-                    logger.info(parts[0] + "| " + parts[1] + "| " + parts[2]);
-                    String uuid = parts[0];
-                    boolean value = Boolean.parseBoolean(parts[1]);
-                    String type = parts[2];
-                    String reason = parts[3].replaceAll("Â", "");
-                    UUID playerUUID = UUID.fromString(uuid);
-                    BMySQL sql = new BMySQL();
-
-                    if (playerUUID != null && value) {
-                        if (type.equalsIgnoreCase("ban")) {
-                            if (sql.getplayerban(playerUUID).equalsIgnoreCase("true")) {
-                                ProxiedPlayer player = ProxyServer.getInstance().getPlayer(playerUUID);
-
-                                player.disconnect(new TextComponent(reason));
-                            }
-                        }
-                        if (type.equalsIgnoreCase("kick")) {
-                            ProxiedPlayer player = ProxyServer.getInstance().getPlayer(playerUUID);
-                            player.disconnect(new TextComponent(reason));
-                        }
-                    }
-                } catch (IOException e) {
-                    logger.info("IO Error: ");
-                    e.printStackTrace();
-                }
-            }
-            if ( event.getReceiver() instanceof Server )
-            {
-
-            }
-
-        }
     }
 }

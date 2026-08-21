@@ -1,7 +1,7 @@
 name: HackerGuardian
 main: me.hackerguardian.main.HackerGuardian
 version: 2
-description: HackerGuardian, an anti-cheat with versatile cheat detection.
+description: HackerGuardian, an anti-cheat with the ability to self learn.
 author: HypersMC
 libraries:
   - com.caucho:quercus:4.0.44
@@ -11,10 +11,13 @@ libraries:
   - commons-validator:commons-validator:1.7
   - io.netty:netty-buffer:4.1.85.Final
   - com.github.neuroph:neuroph-core:2.98
+  - com.zaxxer:HikariCP:7.0.2
 api-version: 1.13
-softdepend: [ProtocolLib, ViaVersion, ProtocolSupport]
+softdepend: [ViaVersion, ProtocolSupport]
+depend: [ProtocolLib, Skulls]
 database: true
 load: POSTWORLD
 folia-supported: false
 commands:
   HackerGuardian:
+  HG:
