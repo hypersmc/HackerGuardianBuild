@@ -1,8 +1,12 @@
 # HackerGuardian database configuration
 #
-# Supported types:
-#   MYSQL       - MySQL 8.x compatible servers
-#   POSTGRESQL  - PostgreSQL 14+ compatible servers
+# Supported database engines:
+#   MYSQL       - MySQL 8.x compatible servers (default port 3306)
+#   POSTGRESQL  - PostgreSQL 14+ compatible servers (default port 5432)
+#
+# Example PostgreSQL selection:
+#   type: POSTGRESQL
+#   port: 5432
 #
 # On first boot HackerGuardian creates this file and stops if the placeholder
 # credentials are still present. Configure the database, then restart.
