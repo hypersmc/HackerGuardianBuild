@@ -1,17 +1,19 @@
 package me.hackerguardian.main.replay;
 
-import org.bukkit.Bukkit;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 
 public final class ReplaySession {
 
     private final JavaPlugin plugin;
     private final ReplayStorage storage;
     private final long chunkMs;
+    private final Executor ioExecutor;
 
     private final long replayId;
     private int seq = 0;
@@ -22,12 +24,16 @@ public final class ReplaySession {
 
     private ByteArrayOutputStream chunkBuf = new ByteArrayOutputStream(8192);
     private DataOutputStream out = new DataOutputStream(chunkBuf);
+    private CompletableFuture<Void> pendingIo = CompletableFuture.completedFuture(null);
+    private boolean closed = false;
 
-    public ReplaySession(JavaPlugin plugin, long replayId, ReplayStorage storage, long chunkMs, long firstTsMs) {
+    public ReplaySession(JavaPlugin plugin, long replayId, ReplayStorage storage, long chunkMs,
+                         long firstTsMs, Executor ioExecutor) {
         this.plugin = plugin;
         this.replayId = replayId;
         this.storage = storage;
         this.chunkMs = chunkMs;
+        this.ioExecutor = ioExecutor;
         this.chunkStartMs = firstTsMs;
         this.chunkEndMs = firstTsMs;
         this.lastTsMs = firstTsMs;
@@ -35,11 +41,10 @@ public final class ReplaySession {
 
     public long replayId() { return replayId; }
 
-    /** Single-writer: NO async appends. */
+    /** Single-writer: appends are expected from the server thread. */
     public synchronized void append(long tsMs, byte[] eventBytes) throws IOException {
-        if (eventBytes == null) return;
+        if (closed || eventBytes == null) return;
 
-        // rotate chunk
         if (tsMs - chunkStartMs >= chunkMs) {
             flushLocked();
             chunkStartMs = tsMs;
@@ -57,11 +62,15 @@ public final class ReplaySession {
     }
 
     public synchronized void flush() {
-        flushLocked();
+        if (!closed) flushLocked();
     }
 
     private void flushLocked() {
-        try { out.flush(); } catch (IOException ignored) {}
+        try {
+            out.flush();
+        } catch (IOException e) {
+            plugin.getLogger().warning("[Replay] Failed to flush in-memory replay " + replayId + ": " + e.getMessage());
+        }
 
         byte[] raw = chunkBuf.toByteArray();
         if (raw.length == 0) {
@@ -76,20 +85,48 @@ public final class ReplaySession {
 
         reset();
 
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+        pendingIo = pendingIo.handle((ignored, failure) -> {
+            if (failure != null) {
+                plugin.getLogger().warning("[Replay] Earlier replay I/O failed for " + replayId + ": " + rootMessage(failure));
+            }
+            return null;
+        }).thenRunAsync(() -> {
             try {
                 storage.appendChunk(replayId, mySeq, start, end, toWrite);
-            } catch (Exception ignored) {}
-        });
+            } catch (Exception e) {
+                throw new ReplayIoException("Failed to append replay chunk " + replayId + "/" + mySeq, e);
+            }
+        }, ioExecutor);
     }
 
-    public void close(long endedAt) {
-        synchronized (this) {
-            flushLocked();
-        }
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-            try { storage.finishReplay(replayId, endedAt); } catch (Exception ignored) {}
+    /**
+     * Queues the final chunk followed by the replay completion marker on the same
+     * executor chain, guaranteeing ended_at is written after all chunks.
+     */
+    public synchronized CompletableFuture<Void> close(long endedAt) {
+        if (closed) return pendingIo;
+        flushLocked();
+        closed = true;
+
+        pendingIo = pendingIo.handle((ignored, failure) -> {
+            if (failure != null) {
+                plugin.getLogger().warning("[Replay] Replay " + replayId + " had a chunk write failure: " +
+                        rootMessage(failure));
+            }
+            return null;
+        }).thenRunAsync(() -> {
+            try {
+                storage.finishReplay(replayId, endedAt);
+            } catch (Exception e) {
+                throw new ReplayIoException("Failed to finish replay " + replayId, e);
+            }
+        }, ioExecutor).whenComplete((ignored, failure) -> {
+            if (failure != null) {
+                plugin.getLogger().warning("[Replay] Failed to finalize replay " + replayId + ": " + rootMessage(failure));
+            }
         });
+
+        return pendingIo;
     }
 
     private void reset() {
@@ -99,5 +136,17 @@ public final class ReplaySession {
 
     public long getReplayId() {
         return replayId;
+    }
+
+    private static String rootMessage(Throwable t) {
+        Throwable cur = t;
+        while (cur.getCause() != null) cur = cur.getCause();
+        return cur.getMessage() == null ? cur.getClass().getSimpleName() : cur.getMessage();
+    }
+
+    private static final class ReplayIoException extends RuntimeException {
+        ReplayIoException(String message, Throwable cause) {
+            super(message, cause);
+        }
     }
 }
