@@ -1,18 +1,19 @@
 package me.hackerguardian.main;
 
-import com.comphenix.protocol.ProtocolLibrary;
-import com.comphenix.protocol.ProtocolManager;
 import me.hackerguardian.Util.LinkErrorHandler;
 import me.hackerguardian.api.HgApiServerBackend;
-import me.hackerguardian.main.aicore.*;
-import me.hackerguardian.main.aicore.aievents.*;
+import me.hackerguardian.main.config.ConfigManager;
 import me.hackerguardian.main.detection.DetectionCommands;
 import me.hackerguardian.main.detection.DetectionRuntime;
 import me.hackerguardian.main.hglink.LinkVerifier;
 import me.hackerguardian.main.inv.InventoryClickListener;
 import me.hackerguardian.main.inv.info;
 import me.hackerguardian.main.inv.infoManager;
-import me.hackerguardian.main.moderation.punish.*;
+import me.hackerguardian.main.moderation.punish.PunishAnnouncer;
+import me.hackerguardian.main.moderation.punish.PunishCommands;
+import me.hackerguardian.main.moderation.punish.PunishListeners;
+import me.hackerguardian.main.moderation.punish.PunishmentRepository;
+import me.hackerguardian.main.moderation.punish.PunishmentService;
 import me.hackerguardian.main.modsys.HGModFingerprintListener;
 import me.hackerguardian.main.modsys.ModFingerprintManager;
 import me.hackerguardian.main.replay.ReplayBukkitListener;
@@ -22,39 +23,28 @@ import me.hackerguardian.main.replay.view.ReplayViewer;
 import me.hackerguardian.main.report.ReportCommands;
 import me.hackerguardian.main.report.ReportRepository;
 import me.hackerguardian.main.report.ReportService;
-import me.hackerguardian.main.utils.AIPermissions;
 import me.hackerguardian.main.utils.CommandManager;
 import me.hackerguardian.main.utils.Tps;
 import me.hackerguardian.main.utils.textHandling;
 import me.hackerguardian.main.utils.util;
-import me.hackerguardian.main.webserver.WebSQL;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
-import org.bukkit.scheduler.BukkitRunnable;
 
-import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Paper/Spigot entry point for HackerGuardian.
- *
- * Core moderation, reports and replays intentionally do not depend on the
- * optional AI subsystem. Startup is ordered so configuration and the database
- * exist before repositories/listeners/commands are constructed, and shutdown
- * drains component-owned work before closing Hikari.
- */
+/** Paper/Spigot entry point for HackerGuardian. */
 public class HackerGuardian extends JavaPlugin {
 
     private static HackerGuardian instance;
 
     private final util util = new util();
-    private final HGSuspicionManager suspicionManager = new HGSuspicionManager();
 
-    private MySQL mysql;
+    private ConfigManager configManager;
+    private DatabaseManager database;
     private CommandManager commandManager;
 
     private PunishmentRepository punishRepo;
@@ -72,29 +62,18 @@ public class HackerGuardian extends JavaPlugin {
     private HGModFingerprintListener fpListener;
     private HgApiServerBackend api;
 
-    // New evidence-first detection pipeline. This is observe-only by design.
+    // Evidence-first detection pipeline. ML models plug into this runtime.
     private DetectionRuntime detectionRuntime;
-
-    // Current/legacy AI implementation. Kept isolated so it can be replaced.
-    private FeatureCollector featureCollector;
-    private AiManager aiManager;
-    private AIService aiService;
-    private WebSQL webSQL;
-    private File modelFile;
-    private boolean learning;
-    private double suspicionThreshold = 0.80;
 
     @Override
     public void onEnable() {
         instance = this;
 
         loadConfig();
-        learning = getConfig().getBoolean("Settings.LearningMode", false);
         logStartupSummary();
 
-        mysql = new MySQL(this);
-        mysql.init();
-        if (!isEnabled() || mysql.getDataSource() == null) return;
+        database = new DatabaseManager(this);
+        if (!database.init() || !isEnabled() || database.getDataSource() == null) return;
 
         if (!initializeCoreServices()) {
             getLogger().severe("HackerGuardian core services failed to initialize. Disabling plugin.");
@@ -102,7 +81,6 @@ public class HackerGuardian extends JavaPlugin {
             return;
         }
 
-        initializeAiIfEnabled();
         registerListeners();
         initializeDetectionV2();
         registerCommands();
@@ -116,16 +94,16 @@ public class HackerGuardian extends JavaPlugin {
 
     private boolean initializeCoreServices() {
         try {
-            punishRepo = new PunishmentRepository(mysql.getDataSource());
+            punishRepo = new PunishmentRepository(database.getDataSource());
             punishRepo.ensureTables();
             punishService = new PunishmentService(this, punishRepo);
             announcer = new PunishAnnouncer(this);
 
-            reportRepository = new ReportRepository(mysql.getDataSource());
+            reportRepository = new ReportRepository(database.getDataSource());
             reportRepository.ensureTables();
             reportService = new ReportService(this, reportRepository);
 
-            replayManager = new ReplayManager(this, mysql.getDataSource());
+            replayManager = new ReplayManager(this, database.getDataSource());
             replayViewer = new ReplayViewer(this, replayManager.getStorage());
 
             infoManager = new infoManager();
@@ -154,62 +132,12 @@ public class HackerGuardian extends JavaPlugin {
         }
     }
 
-    private void initializeAiIfEnabled() {
-        if (!getConfig().getBoolean("Settings.EnableAI", false)) {
-            getLogger().info("Legacy HackerGuardian AI is disabled; moderation, reports, replays and Detection v2 remain independent.");
-            return;
-        }
-
-        try {
-            webSQL = new WebSQL(mysql.getDataSource());
-            webSQL.ensureTables();
-            aiService = new AIService(this, webSQL);
-
-            featureCollector = new FeatureCollector();
-            aiManager = new AiManager(FeatureCollector.FEATURE_COUNT, learning);
-            modelFile = new File(getDataFolder(), "ai_model.nnet");
-            aiManager.loadFromFile(modelFile);
-
-            AIPermissions.setLearningFilesPermissions(this);
-            startAiTrainingTask();
-            getLogger().warning("Legacy Neuroph AI subsystem initialized. It is deprecated and separate from Detection v2.");
-        } catch (Exception e) {
-            getLogger().severe("Legacy AI initialization failed; continuing with core HackerGuardian features only: "
-                    + e.getMessage());
-            if (getConfig().getBoolean("debug")) e.printStackTrace();
-
-            featureCollector = null;
-            aiManager = null;
-            aiService = null;
-            webSQL = null;
-            modelFile = null;
-        }
-    }
-
     private void registerListeners() {
-        // Core listeners must never depend on Settings.EnableAI.
         getServer().getPluginManager().registerEvents(new PunishListeners(this, punishRepo), this);
         getServer().getPluginManager().registerEvents(new InventoryClickListener(infoManager), this);
         getServer().getPluginManager().registerEvents(new ReplayBukkitListener(replayManager), this);
         getServer().getPluginManager().registerEvents(replayViewer, this);
         Bukkit.getScheduler().scheduleSyncRepeatingTask(this, new Tps(), 100L, 1L);
-
-        if (aiManager == null || featureCollector == null || aiService == null) return;
-
-        getServer().getPluginManager().registerEvents(new onPlayerJoin(), this);
-        getServer().getPluginManager().registerEvents(new HGPlayerInteractListener(), this);
-        getServer().getPluginManager().registerEvents(new HGPlayerItemConsumeListener(), this);
-        getServer().getPluginManager().registerEvents(new HGPlayerMoveListener(), this);
-        getServer().getPluginManager().registerEvents(new HGPlayerToggleFlightListener(), this);
-        getServer().getPluginManager().registerEvents(new HGPlayerToggleStateListener(), this);
-        getServer().getPluginManager().registerEvents(new HGEntityDamageByEntityListener(aiService), this);
-        getServer().getPluginManager().registerEvents(new HGBlockPlaceListener(), this);
-        getServer().getPluginManager().registerEvents(new HGBlockBreakListener(), this);
-        getServer().getPluginManager().registerEvents(new HGPlayerQuitListener(), this);
-        getServer().getPluginManager().registerEvents(new HGPlayerKickListener(), this);
-
-        ProtocolManager protocolManager = ProtocolLibrary.getProtocolManager();
-        protocolManager.addPacketListener(new me.hackerguardian.main.aicore.aievents.HGPacketListener(this));
     }
 
     private void registerCommands() {
@@ -247,7 +175,6 @@ public class HackerGuardian extends JavaPlugin {
             sendHelpPage(sender, page);
         });
 
-        // Development player-info command retained from the current build.
         commandManager.register("test", (sender, params) -> {
             if (CommandValidate.notPlayer(sender)) return;
             if (params.length != 1) {
@@ -269,10 +196,6 @@ public class HackerGuardian extends JavaPlugin {
 
         if (detectionRuntime != null) {
             new DetectionCommands(detectionRuntime).register(commandManager);
-        }
-
-        if (aiManager != null) {
-            new LegacyAiCommands(this).register(commandManager);
         }
 
         new ReportCommands(this, reportService).register(commandManager);
@@ -317,19 +240,11 @@ public class HackerGuardian extends JavaPlugin {
         }, 20L * 60L, 20L * 600L);
     }
 
-    private void startAiTrainingTask() {
-        long period = 20L * 60L * 5L;
-        new BukkitRunnable() {
-            @Override
-            public void run() {
-                if (aiManager == null || modelFile == null) return;
-                aiManager.trainFromBuffer();
-                aiManager.saveToFile(modelFile);
-            }
-        }.runTaskTimerAsynchronously(this, period, period);
-    }
-
     private void logStartupSummary() {
+        String detection = getConfig().getBoolean("DetectionV2.enabled", true)
+                ? ChatColor.GREEN + "Detection v2: enabled\n"
+                : ChatColor.RED + "Detection v2: disabled\n";
+
         getServer().getConsoleSender().sendMessage(
                 "\n" + ChatColor.DARK_GRAY + "[]=====[" + ChatColor.GRAY + "Enabling "
                         + getDescription().getName() + ChatColor.DARK_GRAY + "]=====[]" + ChatColor.RESET + "\n"
@@ -342,7 +257,7 @@ public class HackerGuardian extends JavaPlugin {
                         + util.detectPluginProtocolsupport()
                         + util.detectPluginViaversion()
                         + ChatColor.DARK_GRAY + "| " + ChatColor.RED + "Features:" + ChatColor.RESET + "\n"
-                        + util.detectSettingAI(this)
+                        + detection
                         + util.detectSettingWebsite(this)
                         + util.detectSettingsSecureLink(this)
                         + ChatColor.DARK_GRAY + "[]=================================[]" + ChatColor.RESET + "\n"
@@ -364,16 +279,7 @@ public class HackerGuardian extends JavaPlugin {
         entries.add(new HelpEntry("/hg unbanip <ip>", "Unban an IP"));
 
         if (detectionRuntime != null) {
-            entries.add(new HelpEntry("/hg detection [player]", "Inspect Detection v2 evidence"));
-        }
-
-        if (aiManager != null) {
-            entries.add(new HelpEntry("/hg stats", "Show legacy AI status"));
-            entries.add(new HelpEntry("/hg learning <on|off>", "Toggle legacy AI learning mode"));
-            entries.add(new HelpEntry("/hg model <save|load>", "Save/load the legacy AI model"));
-            entries.add(new HelpEntry("/hg inspect <player>", "Inspect AI suspicion"));
-            entries.add(new HelpEntry("/hg label <player> <legit|cheat>", "Add a training label"));
-            entries.add(new HelpEntry("/hg threshold [value]", "Get/set AI suspicion threshold"));
+            entries.add(new HelpEntry("/hg detection [player]", "Inspect detection evidence"));
         }
         return entries;
     }
@@ -402,8 +308,8 @@ public class HackerGuardian extends JavaPlugin {
     }
 
     public void loadConfig() {
-        saveDefaultConfig();
-        reloadConfig();
+        configManager = new ConfigManager(this);
+        configManager.load();
     }
 
     @Override
@@ -418,7 +324,6 @@ public class HackerGuardian extends JavaPlugin {
             catch (Exception e) { getLogger().warning("Failed to stop Detection v2: " + e.getMessage()); }
         }
 
-        // Stop Bukkit-owned producers before draining component-owned I/O.
         Bukkit.getScheduler().cancelTasks(this);
 
         if (replayViewer != null) {
@@ -435,16 +340,7 @@ public class HackerGuardian extends JavaPlugin {
             catch (Exception e) { getLogger().warning("Failed to stop mod fingerprint listener: " + e.getMessage()); }
         }
 
-        if (aiManager != null && modelFile != null) {
-            try {
-                aiManager.trainFromBuffer();
-                aiManager.saveToFile(modelFile);
-            } catch (Exception e) {
-                getLogger().warning("Failed to persist AI model during shutdown: " + e.getMessage());
-            }
-        }
-
-        if (mysql != null) mysql.shutdown();
+        if (database != null) database.shutdown();
         instance = null;
     }
 
@@ -452,52 +348,16 @@ public class HackerGuardian extends JavaPlugin {
         return instance;
     }
 
-    public MySQL getMySQL() {
-        return mysql;
+    public DatabaseManager getDatabase() {
+        return database;
     }
 
     public DetectionRuntime getDetectionRuntime() {
         return detectionRuntime;
     }
 
-    public FeatureCollector getFeatureCollector() {
-        return featureCollector;
-    }
-
-    public AiManager getAiManager() {
-        return aiManager;
-    }
-
-    public AIService getAiService() {
-        return aiService;
-    }
-
-    public File getAiModelFile() {
-        return modelFile;
-    }
-
     public infoManager getInfoManager() {
         return infoManager;
-    }
-
-    public boolean isLearning() {
-        return learning;
-    }
-
-    public void setLearning(boolean learning) {
-        this.learning = learning;
-    }
-
-    public double getSuspicionThreshold() {
-        return suspicionThreshold;
-    }
-
-    public void setSuspicionThreshold(double suspicionThreshold) {
-        this.suspicionThreshold = suspicionThreshold;
-    }
-
-    public HGSuspicionManager getSuspicionManager() {
-        return suspicionManager;
     }
 
     public static final class CommandValidate {

@@ -1,14 +1,22 @@
 package me.hackerguardian.main.replay;
 
+import me.hackerguardian.database.DatabaseType;
+import me.hackerguardian.database.SqlSchema;
+
 import javax.sql.DataSource;
 import java.io.ByteArrayInputStream;
-import java.sql.*;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.sql.Types;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 
 public final class ReplayStorage {
 
@@ -22,9 +30,13 @@ public final class ReplayStorage {
 
     public void ensureTables() throws SQLException {
         try (Connection c = ds.getConnection()) {
+            DatabaseType type = SqlSchema.detectType(c);
+            String generatedId = type.generatedIdColumn();
+            String blobType = type.binaryLargeObjectType();
+
             try (PreparedStatement ps = c.prepareStatement(
                     "CREATE TABLE IF NOT EXISTS hg_replays (" +
-                            "id BIGINT AUTO_INCREMENT PRIMARY KEY," +
+                            "id " + generatedId + "," +
                             "player_uuid CHAR(36) NOT NULL," +
                             "player_name VARCHAR(16) NOT NULL," +
                             "server_name VARCHAR(64) NOT NULL," +
@@ -32,13 +44,11 @@ public final class ReplayStorage {
                             "ended_at BIGINT NULL," +
                             "trigger_type VARCHAR(16) NOT NULL," +
                             "trigger_meta TEXT NULL," +
-                            "ai_score DOUBLE NULL," +
+                            "ai_score DOUBLE PRECISION NULL," +
                             "format_version INT NOT NULL," +
                             "codec VARCHAR(16) NOT NULL," +
-                            "size_bytes BIGINT NOT NULL DEFAULT 0," +
-                            "INDEX idx_player_uuid (player_uuid)," +
-                            "INDEX idx_started_at (started_at)" +
-                            ");"
+                            "size_bytes BIGINT NOT NULL DEFAULT 0" +
+                            ")"
             )) { ps.executeUpdate(); }
 
             try (PreparedStatement ps = c.prepareStatement(
@@ -47,11 +57,10 @@ public final class ReplayStorage {
                             "seq INT NOT NULL," +
                             "start_ms BIGINT NOT NULL," +
                             "end_ms BIGINT NOT NULL," +
-                            "data LONGBLOB NOT NULL," +
+                            "data " + blobType + " NOT NULL," +
                             "size_bytes INT NOT NULL," +
-                            "PRIMARY KEY (replay_id, seq)," +
-                            "INDEX idx_replay_id (replay_id)" +
-                            ");"
+                            "PRIMARY KEY (replay_id, seq)" +
+                            ")"
             )) { ps.executeUpdate(); }
 
             try (PreparedStatement ps = c.prepareStatement(
@@ -60,13 +69,16 @@ public final class ReplayStorage {
                             "world VARCHAR(128) NOT NULL," +
                             "chunk_x INT NOT NULL," +
                             "chunk_z INT NOT NULL," +
-                            "data LONGBLOB NOT NULL," +
+                            "data " + blobType + " NOT NULL," +
                             "size_bytes INT NOT NULL," +
-                            "PRIMARY KEY (replay_id, world, chunk_x, chunk_z)," +
-                            "INDEX idx_replay_id (replay_id)" +
-                            ");"
+                            "PRIMARY KEY (replay_id, world, chunk_x, chunk_z)" +
+                            ")"
             )) { ps.executeUpdate(); }
 
+            SqlSchema.ensureIndex(c, "hg_replays", "idx_hg_replays_player_uuid", "player_uuid");
+            SqlSchema.ensureIndex(c, "hg_replays", "idx_hg_replays_started_at", "started_at");
+            SqlSchema.ensureIndex(c, "hg_replay_chunks", "idx_hg_replay_chunks_replay_id", "replay_id");
+            SqlSchema.ensureIndex(c, "hg_replay_world_chunks", "idx_hg_replay_world_chunks_replay_id", "replay_id");
         }
     }
 
@@ -110,7 +122,6 @@ public final class ReplayStorage {
             ps.executeUpdate();
         }
 
-        // update replay size
         try (Connection c = ds.getConnection();
              PreparedStatement ps = c.prepareStatement("UPDATE hg_replays SET size_bytes = size_bytes + ? WHERE id = ?")) {
             ps.setLong(1, compressed.length);
@@ -136,9 +147,10 @@ public final class ReplayStorage {
             }
             return baos.toByteArray();
         } catch (IOException e) {
-            return raw; // fallback
+            return raw;
         }
     }
+
     public static final class ReplayMeta {
         public final long id;
         public final String playerUuid;
@@ -180,7 +192,7 @@ public final class ReplayStorage {
         public final int seq;
         public final long startMs;
         public final long endMs;
-        public final byte[] data; // compressed
+        public final byte[] data;
 
         public ReplayChunk(int seq, long startMs, long endMs, byte[] data) {
             this.seq = seq;
@@ -190,8 +202,8 @@ public final class ReplayStorage {
         }
     }
 
-    public java.util.List<ReplayChunk> getChunks(long replayId) throws SQLException {
-        java.util.ArrayList<ReplayChunk> out = new java.util.ArrayList<>();
+    public List<ReplayChunk> getChunks(long replayId) throws SQLException {
+        ArrayList<ReplayChunk> out = new ArrayList<>();
         try (Connection c = ds.getConnection();
              PreparedStatement ps = c.prepareStatement(
                      "SELECT seq, start_ms, end_ms, data FROM hg_replay_chunks WHERE replay_id = ? ORDER BY seq ASC"
@@ -211,7 +223,6 @@ public final class ReplayStorage {
         return out;
     }
 
-    // ✅ NEW: full info meta
     public static final class ReplayInfoMeta {
         public final long id;
         public final String playerUuid;
@@ -219,11 +230,9 @@ public final class ReplayStorage {
         public final String serverName;
         public final long startedAt;
         public final Long endedAt;
-
-        public final String triggerType;     // MANUAL/MODERATION/AI
-        public final String triggerMeta;     // free text (reason, staff, etc.)
-        public final Double aiScore;         // nullable
-
+        public final String triggerType;
+        public final String triggerMeta;
+        public final Double aiScore;
         public final int formatVersion;
         public final String codec;
         public final long bytesTotal;
@@ -249,7 +258,7 @@ public final class ReplayStorage {
             this.bytesTotal = bytesTotal;
         }
     }
-    // ✅ NEW full meta
+
     public ReplayInfoMeta getReplayInfoMeta(long replayId) throws SQLException {
         try (Connection c = ds.getConnection();
              PreparedStatement ps = c.prepareStatement("SELECT * FROM hg_replays WHERE id = ?")) {
@@ -267,14 +276,11 @@ public final class ReplayStorage {
                         rs.getString("server_name"),
                         rs.getLong("started_at"),
                         ended,
-
                         rs.getString("trigger_type"),
                         rs.getString("trigger_meta"),
                         aiScore,
-
                         rs.getInt("format_version"),
                         rs.getString("codec"),
-
                         rs.getLong("size_bytes")
                 );
             }
@@ -285,7 +291,7 @@ public final class ReplayStorage {
         public final String world;
         public final int chunkX;
         public final int chunkZ;
-        public final byte[] data; // compressed blob
+        public final byte[] data;
 
         public WorldChunkSnapshot(String world, int chunkX, int chunkZ, byte[] data) {
             this.world = world;
@@ -297,19 +303,30 @@ public final class ReplayStorage {
 
     public void upsertWorldChunk(long replayId, String world, int chunkX, int chunkZ, byte[] raw) throws SQLException {
         byte[] compressed = gzip(raw);
-        String sql = "INSERT INTO hg_replay_world_chunks (replay_id, world, chunk_x, chunk_z, data, size_bytes) " +
-                "VALUES (?, ?, ?, ?, ?, ?) " +
-                "ON DUPLICATE KEY UPDATE data = VALUES(data), size_bytes = VALUES(size_bytes)";
 
-        try (Connection c = ds.getConnection();
-             PreparedStatement ps = c.prepareStatement(sql)) {
-            ps.setLong(1, replayId);
-            ps.setString(2, world);
-            ps.setInt(3, chunkX);
-            ps.setInt(4, chunkZ);
-            ps.setBytes(5, compressed);
-            ps.setInt(6, compressed.length);
-            ps.executeUpdate();
+        try (Connection c = ds.getConnection()) {
+            DatabaseType type = SqlSchema.detectType(c);
+            String sql;
+            if (type == DatabaseType.POSTGRESQL) {
+                sql = "INSERT INTO hg_replay_world_chunks (replay_id, world, chunk_x, chunk_z, data, size_bytes) " +
+                        "VALUES (?, ?, ?, ?, ?, ?) " +
+                        "ON CONFLICT (replay_id, world, chunk_x, chunk_z) DO UPDATE SET " +
+                        "data = EXCLUDED.data, size_bytes = EXCLUDED.size_bytes";
+            } else {
+                sql = "INSERT INTO hg_replay_world_chunks (replay_id, world, chunk_x, chunk_z, data, size_bytes) " +
+                        "VALUES (?, ?, ?, ?, ?, ?) " +
+                        "ON DUPLICATE KEY UPDATE data = VALUES(data), size_bytes = VALUES(size_bytes)";
+            }
+
+            try (PreparedStatement ps = c.prepareStatement(sql)) {
+                ps.setLong(1, replayId);
+                ps.setString(2, world);
+                ps.setInt(3, chunkX);
+                ps.setInt(4, chunkZ);
+                ps.setBytes(5, compressed);
+                ps.setInt(6, compressed.length);
+                ps.executeUpdate();
+            }
         }
     }
 
@@ -333,6 +350,7 @@ public final class ReplayStorage {
         }
         return out;
     }
+
     public static byte[] gunzip(byte[] compressed) {
         try (GZIPInputStream gis = new GZIPInputStream(new ByteArrayInputStream(compressed));
              ByteArrayOutputStream baos = new ByteArrayOutputStream()) {

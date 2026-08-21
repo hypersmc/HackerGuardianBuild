@@ -1,0 +1,27 @@
+# HackerGuardian Detection v2
+#
+# This is the new evidence pipeline that future ML/AI models plug into.
+# Detection output is evidence; enforcement remains a separate policy concern.
+DetectionV2:
+  enabled: true
+
+  # Rolling observation window used to build one BehaviorSnapshot.
+  window_ms: 5000
+
+  # 20 ticks = about one assessment per second.
+  assessment_interval_ticks: 20
+
+  # Recent assessments retained in RAM per online player.
+  history_size: 20
+
+  detectors:
+    reach:
+      enabled: true
+      soft_distance: 4.5
+      hard_distance: 6.0
+
+    click_burst:
+      enabled: true
+      soft_cps: 22.0
+      hard_cps: 35.0
+      minimum_swings: 20

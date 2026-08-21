@@ -1,0 +1,13 @@
+# HackerGuardian server-side API
+# The web panel talks to this API. Browser clients must never receive HMAC keys.
+SettingsWeb:
+  Api:
+    enabled: true
+    bind_host: "0.0.0.0"
+    bind_port: 8787
+    require_auth: true
+    allowed_skew_ms: 90000
+    nonce_ttl_ms: 300000
+
+    keys:
+      panel-1: "CHANGE_ME_TO_LONG_RANDOM_SECRET"

@@ -1,46 +1,12 @@
-# HackerGuardian Bungee / FlameCord configuration
-#
-# Supported database types: MYSQL, POSTGRESQL
-Database:
-  type: MYSQL
-  host: "127.0.0.1"
-  port: 3306
-  name: "hackerguardian"
-  username: "changeme"
-  password: "changeme"
-  ssl: false
-
-  pool:
-    maximum_size: 10
-    minimum_idle: 2
-    connection_timeout_ms: 10000
-    validation_timeout_ms: 5000
-    idle_timeout_ms: 60000
-    max_lifetime_ms: 600000
-
-debug: false
-
+# HackerGuardian moderation and report settings
 Settings:
-  shared_secret: "CHANGE_ME_TO_A_LONG_RANDOM_SECRET"
-  ticket_ttl_ms: 15000
-  verify_window_ms: 2000
-  hg_secure_link: false
-  behind_proxy: true
-  UseWebsiteFunction: false
-
-SettingsWeb:
-  Api:
-    enabled: true
-    bind_host: "0.0.0.0"
-    bind_port: 8787
-    require_auth: true
-    allowed_skew_ms: 90000
-    nonce_ttl_ms: 300000
-
-    keys:
-      panel-1: "CHANGE_ME_TO_LONG_RANDOM_SECRET"
+  report_window_ms: 86400000
+  reports_page_size: 5
+  max_reports_per_window: 10
 
 Punishments:
+  history_limit: 10
+
   # Usable placeholders: %expires% %reason% %id%
   messages:
     kick: "&cYou were kicked.\n&7Reason: &f%reason%"

@@ -1,7 +1,11 @@
 package me.hackerguardian.api.reports;
 
 import javax.sql.DataSource;
-import java.sql.*;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -38,22 +42,30 @@ public final class ReportRepository {
         perPage = clamp(perPage, 1, 100);
         int offset = (page - 1) * perPage;
 
-        String where = " WHERE 1=1 ";
+        StringBuilder where = new StringBuilder(" WHERE 1=1 ");
         List<Object> params = new ArrayList<>();
 
         if (status != null && !status.isBlank() && !"all".equalsIgnoreCase(status)) {
-            where += " AND status = ? ";
+            where.append(" AND status = ? ");
             params.add(status.toUpperCase(Locale.ROOT));
         }
 
         if (q != null && !q.isBlank()) {
-            where += " AND (reported_name LIKE ? OR reporter_name LIKE ? OR reported_uuid LIKE ? OR reporter_uuid LIKE ? OR CAST(id AS CHAR) = ?) ";
-            String like = "%" + q.trim() + "%";
+            String query = q.trim();
+            String like = "%" + query + "%";
+            Long reportId = tryParseLong(query);
+
+            where.append(" AND (reported_name LIKE ? OR reporter_name LIKE ? OR reported_uuid LIKE ? OR reporter_uuid LIKE ?");
             params.add(like);
             params.add(like);
             params.add(like);
             params.add(like);
-            params.add(q.trim());
+
+            if (reportId != null) {
+                where.append(" OR id = ?");
+                params.add(reportId);
+            }
+            where.append(") ");
         }
 
         long total;
@@ -68,12 +80,13 @@ public final class ReportRepository {
 
         List<ReportDto> out = new ArrayList<>();
         String sql = "SELECT * FROM hg_reports" + where + " ORDER BY created_at DESC LIMIT ? OFFSET ?";
-        params.add(perPage);
-        params.add(offset);
+        List<Object> pageParams = new ArrayList<>(params);
+        pageParams.add(perPage);
+        pageParams.add(offset);
 
         try (Connection c = ds.getConnection();
              PreparedStatement ps = c.prepareStatement(sql)) {
-            bind(ps, params);
+            bind(ps, pageParams);
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) out.add(mapReport(rs));
             }
@@ -116,7 +129,6 @@ public final class ReportRepository {
         return out;
     }
 
-    // Optional: panel-submitted reports
     public long create(String reportedUuid, String reportedName,
                        String reporterUuid, String reporterName,
                        String reason) throws SQLException {
@@ -146,42 +158,53 @@ public final class ReportRepository {
         throw new SQLException("No generated key for report");
     }
 
-    // NEW: add comment
     public long addComment(long reportId, String commenterUuid, String commenterName, String comment) throws SQLException {
         long now = System.currentTimeMillis();
 
-        // ensure report exists (nice error instead of FK explosion)
-        if (!exists(reportId)) throw new SQLException("Report not found");
+        try (Connection c = ds.getConnection()) {
+            c.setAutoCommit(false);
+            try {
+                if (!exists(c, reportId)) throw new SQLException("Report not found");
 
-        try (Connection c = ds.getConnection();
-             PreparedStatement ps = c.prepareStatement(
-                     "INSERT INTO hg_report_comments (report_id, commenter_uuid, commenter_name, comment, created_at) " +
-                             "VALUES (?, ?, ?, ?, ?)",
-                     Statement.RETURN_GENERATED_KEYS
-             )) {
-            ps.setLong(1, reportId);
-            ps.setString(2, commenterUuid);
-            ps.setString(3, commenterName);
-            ps.setString(4, comment);
-            ps.setLong(5, now);
-            ps.executeUpdate();
+                long commentId;
+                try (PreparedStatement ps = c.prepareStatement(
+                        "INSERT INTO hg_report_comments (report_id, commenter_uuid, commenter_name, comment, created_at) " +
+                                "VALUES (?, ?, ?, ?, ?)",
+                        Statement.RETURN_GENERATED_KEYS
+                )) {
+                    ps.setLong(1, reportId);
+                    ps.setString(2, commenterUuid);
+                    ps.setString(3, commenterName);
+                    ps.setString(4, comment);
+                    ps.setLong(5, now);
+                    ps.executeUpdate();
 
-            // bump updated_at
-            touch(reportId, now);
+                    try (ResultSet keys = ps.getGeneratedKeys()) {
+                        if (!keys.next()) throw new SQLException("No generated key for comment");
+                        commentId = keys.getLong(1);
+                    }
+                }
 
-            try (ResultSet keys = ps.getGeneratedKeys()) {
-                if (keys.next()) return keys.getLong(1);
+                try (PreparedStatement ps = c.prepareStatement("UPDATE hg_reports SET updated_at=? WHERE id=?")) {
+                    ps.setLong(1, now);
+                    ps.setLong(2, reportId);
+                    ps.executeUpdate();
+                }
+
+                c.commit();
+                return commentId;
+            } catch (Exception e) {
+                c.rollback();
+                if (e instanceof SQLException) throw (SQLException) e;
+                throw new SQLException("Failed to add report comment", e);
+            } finally {
+                c.setAutoCommit(true);
             }
         }
-
-        throw new SQLException("No generated key for comment");
     }
 
-    // NEW: change status OPEN/CLOSED
     public boolean setStatus(long reportId, String status, String resolverUuid) throws SQLException {
         long now = System.currentTimeMillis();
-
-        if (!exists(reportId)) return false;
 
         if ("CLOSED".equalsIgnoreCase(status)) {
             try (Connection c = ds.getConnection();
@@ -192,39 +215,26 @@ public final class ReportRepository {
                 ps.setString(2, resolverUuid);
                 ps.setLong(3, now);
                 ps.setLong(4, reportId);
-                ps.executeUpdate();
-                return true;
+                return ps.executeUpdate() == 1;
             }
         }
 
-        // OPEN (re-open)
         try (Connection c = ds.getConnection();
              PreparedStatement ps = c.prepareStatement(
                      "UPDATE hg_reports SET status='OPEN', updated_at=?, resolved_by_uuid=NULL, resolved_at=NULL WHERE id=?"
              )) {
             ps.setLong(1, now);
             ps.setLong(2, reportId);
-            ps.executeUpdate();
-            return true;
+            return ps.executeUpdate() == 1;
         }
     }
 
-    private boolean exists(long reportId) throws SQLException {
-        try (Connection c = ds.getConnection();
-             PreparedStatement ps = c.prepareStatement("SELECT 1 FROM hg_reports WHERE id=?")) {
+    private boolean exists(Connection c, long reportId) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement("SELECT 1 FROM hg_reports WHERE id=?")) {
             ps.setLong(1, reportId);
             try (ResultSet rs = ps.executeQuery()) {
                 return rs.next();
             }
-        }
-    }
-
-    private void touch(long reportId, long now) throws SQLException {
-        try (Connection c = ds.getConnection();
-             PreparedStatement ps = c.prepareStatement("UPDATE hg_reports SET updated_at=? WHERE id=?")) {
-            ps.setLong(1, now);
-            ps.setLong(2, reportId);
-            ps.executeUpdate();
         }
     }
 
@@ -253,6 +263,14 @@ public final class ReportRepository {
             if (v instanceof Integer) ps.setInt(idx, (Integer) v);
             else if (v instanceof Long) ps.setLong(idx, (Long) v);
             else ps.setString(idx, String.valueOf(v));
+        }
+    }
+
+    private static Long tryParseLong(String value) {
+        try {
+            return Long.parseLong(value);
+        } catch (NumberFormatException ignored) {
+            return null;
         }
     }
 

@@ -1,7 +1,15 @@
 package me.hackerguardian.main.moderation.punish;
 
+import me.hackerguardian.database.DatabaseType;
+import me.hackerguardian.database.SqlSchema;
+
 import javax.sql.DataSource;
-import java.sql.*;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.sql.Types;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -16,10 +24,12 @@ public final class PunishmentRepository {
 
     public void ensureTables() throws SQLException {
         try (Connection c = ds.getConnection()) {
+            DatabaseType type = SqlSchema.detectType(c);
+            String generatedId = type.generatedIdColumn();
 
             try (PreparedStatement ps = c.prepareStatement(
                     "CREATE TABLE IF NOT EXISTS hg_punishments (" +
-                            "id BIGINT AUTO_INCREMENT PRIMARY KEY," +
+                            "id " + generatedId + "," +
                             "type VARCHAR(16) NOT NULL," +
                             "target_uuid CHAR(36) NOT NULL," +
                             "target_name VARCHAR(16) NOT NULL," +
@@ -29,24 +39,16 @@ public final class PunishmentRepository {
                             "created_at BIGINT NOT NULL," +
                             "expires_at BIGINT NULL," +
                             "active BOOLEAN NOT NULL DEFAULT TRUE," +
-
-                            // NEW scope fields
                             "scope VARCHAR(16) NOT NULL DEFAULT 'SERVER'," +
-                            "scope_server VARCHAR(64) NULL," +
-
-                            // Indexes
-                            "INDEX idx_target_type_active (target_uuid, type, active)," +
-                            "INDEX idx_active_expires (active, expires_at)," +
-                            "INDEX idx_created_at (created_at)," +
-                            "INDEX idx_scope (scope, scope_server)" +
-                            ");"
+                            "scope_server VARCHAR(64) NULL" +
+                            ")"
             )) {
                 ps.executeUpdate();
             }
 
             try (PreparedStatement ps = c.prepareStatement(
                     "CREATE TABLE IF NOT EXISTS hg_ip_bans (" +
-                            "id BIGINT AUTO_INCREMENT PRIMARY KEY," +
+                            "id " + generatedId + "," +
                             "ip VARCHAR(64) NOT NULL," +
                             "actor_uuid CHAR(36) NOT NULL," +
                             "actor_name VARCHAR(16) NOT NULL," +
@@ -54,24 +56,16 @@ public final class PunishmentRepository {
                             "created_at BIGINT NOT NULL," +
                             "expires_at BIGINT NULL," +
                             "active BOOLEAN NOT NULL DEFAULT TRUE," +
-
-                            // NEW scope fields
                             "scope VARCHAR(16) NOT NULL DEFAULT 'SERVER'," +
-                            "scope_server VARCHAR(64) NULL," +
-
-                            // Indexes
-                            "UNIQUE KEY uq_ip_active (ip, active)," +
-                            "INDEX idx_ip_active (ip, active)," +
-                            "INDEX idx_active_expires (active, expires_at)," +
-                            "INDEX idx_scope (scope, scope_server)" +
-                            ");"
+                            "scope_server VARCHAR(64) NULL" +
+                            ")"
             )) {
                 ps.executeUpdate();
             }
 
             try (PreparedStatement ps = c.prepareStatement(
                     "CREATE TABLE IF NOT EXISTS hg_moderation_log (" +
-                            "id BIGINT AUTO_INCREMENT PRIMARY KEY," +
+                            "id " + generatedId + "," +
                             "action VARCHAR(16) NOT NULL," +
                             "target_uuid CHAR(36) NULL," +
                             "target_name VARCHAR(16) NULL," +
@@ -82,25 +76,32 @@ public final class PunishmentRepository {
                             "created_at BIGINT NOT NULL," +
                             "expires_at BIGINT NULL," +
                             "related_id BIGINT NULL," +
-
-                            // NEW scope fields
                             "scope VARCHAR(16) NOT NULL DEFAULT 'SERVER'," +
-                            "scope_server VARCHAR(64) NULL," +
-
-                            // Indexes
-                            "INDEX idx_target_uuid (target_uuid)," +
-                            "INDEX idx_target_ip (target_ip)," +
-                            "INDEX idx_action (action)," +
-                            "INDEX idx_created_at (created_at)," +
-                            "INDEX idx_scope (scope, scope_server)" +
-                            ");"
+                            "scope_server VARCHAR(64) NULL" +
+                            ")"
             )) {
                 ps.executeUpdate();
             }
+
+            SqlSchema.ensureIndex(c, "hg_punishments", "idx_hg_punishments_target_type_active",
+                    "target_uuid, type, active");
+            SqlSchema.ensureIndex(c, "hg_punishments", "idx_hg_punishments_active_expires",
+                    "active, expires_at");
+            SqlSchema.ensureIndex(c, "hg_punishments", "idx_hg_punishments_created_at", "created_at");
+            SqlSchema.ensureIndex(c, "hg_punishments", "idx_hg_punishments_scope", "scope, scope_server");
+
+            // Deliberately non-unique. We retain historical inactive IP-ban rows.
+            SqlSchema.ensureIndex(c, "hg_ip_bans", "idx_hg_ip_bans_ip_active", "ip, active");
+            SqlSchema.ensureIndex(c, "hg_ip_bans", "idx_hg_ip_bans_active_expires", "active, expires_at");
+            SqlSchema.ensureIndex(c, "hg_ip_bans", "idx_hg_ip_bans_scope", "scope, scope_server");
+
+            SqlSchema.ensureIndex(c, "hg_moderation_log", "idx_hg_mod_log_target_uuid", "target_uuid");
+            SqlSchema.ensureIndex(c, "hg_moderation_log", "idx_hg_mod_log_target_ip", "target_ip");
+            SqlSchema.ensureIndex(c, "hg_moderation_log", "idx_hg_mod_log_action", "action");
+            SqlSchema.ensureIndex(c, "hg_moderation_log", "idx_hg_mod_log_created_at", "created_at");
+            SqlSchema.ensureIndex(c, "hg_moderation_log", "idx_hg_mod_log_scope", "scope, scope_server");
         }
     }
-
-    // ---- create / deactivate ----
 
     public long createPunishment(PunishmentType type,
                                  String targetUuid, String targetName,
@@ -161,7 +162,7 @@ public final class PunishmentRepository {
             ps.setString(3, actorName);
             ps.setString(4, reason);
             ps.setLong(5, createdAt);
-            if (expiresAt == null) ps.setNull(6, Types.BIGINT);else ps.setLong(6, expiresAt);
+            if (expiresAt == null) ps.setNull(6, Types.BIGINT); else ps.setLong(6, expiresAt);
 
             ps.setString(7, scope.name());
             if (scope == PunishScope.SERVER) ps.setString(8, scopeServer);
@@ -184,7 +185,6 @@ public final class PunishmentRepository {
         }
     }
 
-
     public long logAction(ModerationActionType action,
                           String targetUuidOrNull,
                           String targetNameOrNull,
@@ -199,8 +199,8 @@ public final class PunishmentRepository {
 
         String sql =
                 "INSERT INTO hg_moderation_log " +
-                        "(action, target_uuid, target_name, target_ip, actor_uuid, actor_name, reason, created_at, expires_at, related_id) " +
-                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                        "(action, target_uuid, target_name, target_ip, actor_uuid, actor_name, reason, created_at, expires_at, related_id, scope, scope_server) " +
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
         try (Connection c = ds.getConnection();
              PreparedStatement ps = c.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
@@ -221,6 +221,10 @@ public final class PunishmentRepository {
             if (expiresAtOrNull == null) ps.setNull(9, Types.BIGINT); else ps.setLong(9, expiresAtOrNull);
             if (relatedIdOrNull == null) ps.setNull(10, Types.BIGINT); else ps.setLong(10, relatedIdOrNull);
 
+            ps.setString(11, scope.name());
+            if (scope == PunishScope.SERVER) ps.setString(12, scopeServer);
+            else ps.setNull(12, Types.VARCHAR);
+
             ps.executeUpdate();
 
             try (ResultSet keys = ps.getGeneratedKeys()) {
@@ -230,13 +234,9 @@ public final class PunishmentRepository {
         }
     }
 
-    // ---- queries ----
-
     public Optional<PunishmentRow> getActivePunishment(PunishmentType type, String targetUuid, long nowMs,
                                                        boolean behindProxy, String serverName) throws SQLException {
 
-        // If behindProxy=false: only SERVER scope for this server
-        // If behindProxy=true: WIDE OR SERVER(scope_server=this server)
         String scopeClause = behindProxy
                 ? " AND (scope = 'WIDE' OR (scope = 'SERVER' AND scope_server = ?)) "
                 : " AND (scope = 'SERVER' AND (scope_server = ? OR scope_server IS NULL)) ";
@@ -266,12 +266,9 @@ public final class PunishmentRepository {
     public Optional<IpBanRow> getActiveIpBan(String ip, long nowMs,
                                              boolean behindProxy, String serverName) throws SQLException {
 
-        // If behindProxy=false: only SERVER scope for this server
-        // If behindProxy=true: WIDE OR SERVER(scope_server=this server)
         String scopeClause = behindProxy
                 ? " AND (scope = 'WIDE' OR (scope = 'SERVER' AND scope_server = ?)) "
                 : " AND (scope = 'SERVER' AND (scope_server = ? OR scope_server IS NULL)) ";
-
 
         String sql =
                 "SELECT * FROM hg_ip_bans " +
@@ -291,8 +288,7 @@ public final class PunishmentRepository {
     }
 
     public List<PunishmentRow> listPunishmentsForTarget(String targetUuid, int limit) throws SQLException {
-        String sql =
-                "SELECT * FROM hg_punishments WHERE target_uuid = ? ORDER BY created_at DESC LIMIT ?";
+        String sql = "SELECT * FROM hg_punishments WHERE target_uuid = ? ORDER BY created_at DESC LIMIT ?";
         try (Connection c = ds.getConnection();
              PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setString(1, targetUuid);
@@ -323,8 +319,6 @@ public final class PunishmentRepository {
         }
         return total;
     }
-
-    // ---- nested row ----
 
     public record IpBanRow(
             long id,

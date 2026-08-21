@@ -1,0 +1,10 @@
+# HackerGuardian secure proxy/back-end link
+Settings:
+  hg_secure_link: false
+
+  # MUST match the proxy configuration. Generate a long random secret.
+  shared_secret: "CHANGE_ME_TO_A_LONG_RANDOM_SECRET"
+
+  verify_window_ms: 2000
+  db_grace_ms: 2000
+  verified_cache_ms: 30000
