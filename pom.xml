@@ -49,7 +49,7 @@
                             <resources>
                                 <resource>
                                     <directory>${basedir}/target</directory>
-                                    <include>${project.build.finalName}.jar</include> // your jar name
+                                    <include>${project.build.finalName}.jar</include>
                                     <filtering>false</filtering>
                                 </resource>
                             </resources>
@@ -113,6 +113,10 @@
         <repository>
             <id>spigot-repo</id>
             <url>https://hub.spigotmc.org/nexus/content/repositories/snapshots/</url>
+        </repository>
+        <repository>
+            <id>papermc</id>
+            <url>https://repo.papermc.io/repository/maven-public/</url>
         </repository>
         <repository>
             <id>viaversion-repo</id>
@@ -209,7 +213,7 @@
         <dependency>
             <groupId>net.md-5</groupId>
             <artifactId>bungeecord-api</artifactId>
-            <version>1.20-R0.1-SNAPSHOT</version>
+            <version>1.20-R0.2</version>
             <type>jar</type>
             <scope>provided</scope>
         </dependency>
