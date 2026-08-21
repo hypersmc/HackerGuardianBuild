@@ -15,12 +15,11 @@ import org.yaml.snakeyaml.Yaml;
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-@Plugin(id = "HGVelocity_Link", name = "HackerGuardian Linker", version = "0.0.1",
+@Plugin(id = "hackerguardian-link", name = "HackerGuardian Linker", version = "0.0.1",
 authors = {"HypersMC", "JumpWatch"})
 public class HackerGuardianV {
     public static final ChannelIdentifier CH = MinecraftChannelIdentifier.create("hg", "playerchannel");
