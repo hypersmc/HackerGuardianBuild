@@ -6,6 +6,8 @@ import me.hackerguardian.Util.LinkErrorHandler;
 import me.hackerguardian.api.HgApiServerBackend;
 import me.hackerguardian.main.aicore.*;
 import me.hackerguardian.main.aicore.aievents.*;
+import me.hackerguardian.main.detection.DetectionCommands;
+import me.hackerguardian.main.detection.DetectionRuntime;
 import me.hackerguardian.main.hglink.LinkVerifier;
 import me.hackerguardian.main.inv.InventoryClickListener;
 import me.hackerguardian.main.inv.info;
@@ -70,6 +72,9 @@ public class HackerGuardian extends JavaPlugin {
     private HGModFingerprintListener fpListener;
     private HgApiServerBackend api;
 
+    // New evidence-first detection pipeline. This is observe-only by design.
+    private DetectionRuntime detectionRuntime;
+
     // Current/legacy AI implementation. Kept isolated so it can be replaced.
     private FeatureCollector featureCollector;
     private AiManager aiManager;
@@ -99,6 +104,7 @@ public class HackerGuardian extends JavaPlugin {
 
         initializeAiIfEnabled();
         registerListeners();
+        initializeDetectionV2();
         registerCommands();
         initializeSecureLink();
         initializeFingerprinting();
@@ -131,9 +137,26 @@ public class HackerGuardian extends JavaPlugin {
         }
     }
 
+    private void initializeDetectionV2() {
+        if (!getConfig().getBoolean("DetectionV2.enabled", true)) {
+            getLogger().info("Detection v2 is disabled.");
+            return;
+        }
+
+        try {
+            detectionRuntime = new DetectionRuntime(this);
+            detectionRuntime.start();
+        } catch (Exception e) {
+            detectionRuntime = null;
+            getLogger().severe("Detection v2 failed to initialize; core moderation remains active: "
+                    + e.getMessage());
+            if (getConfig().getBoolean("debug")) e.printStackTrace();
+        }
+    }
+
     private void initializeAiIfEnabled() {
         if (!getConfig().getBoolean("Settings.EnableAI", false)) {
-            getLogger().info("HackerGuardian AI is disabled; moderation, reports and replays remain active.");
+            getLogger().info("Legacy HackerGuardian AI is disabled; moderation, reports, replays and Detection v2 remain independent.");
             return;
         }
 
@@ -149,9 +172,9 @@ public class HackerGuardian extends JavaPlugin {
 
             AIPermissions.setLearningFilesPermissions(this);
             startAiTrainingTask();
-            getLogger().info("HackerGuardian legacy AI subsystem initialized.");
+            getLogger().warning("Legacy Neuroph AI subsystem initialized. It is deprecated and separate from Detection v2.");
         } catch (Exception e) {
-            getLogger().severe("AI initialization failed; continuing with core HackerGuardian features only: "
+            getLogger().severe("Legacy AI initialization failed; continuing with core HackerGuardian features only: "
                     + e.getMessage());
             if (getConfig().getBoolean("debug")) e.printStackTrace();
 
@@ -243,6 +266,10 @@ public class HackerGuardian extends JavaPlugin {
             info infoInstance = infoManager.getInfo(staff, target.getName());
             infoInstance.open(staff);
         });
+
+        if (detectionRuntime != null) {
+            new DetectionCommands(detectionRuntime).register(commandManager);
+        }
 
         if (aiManager != null) {
             new LegacyAiCommands(this).register(commandManager);
@@ -336,6 +363,10 @@ public class HackerGuardian extends JavaPlugin {
         entries.add(new HelpEntry("/hg banip <player|ip> ...", "Ban an IP"));
         entries.add(new HelpEntry("/hg unbanip <ip>", "Unban an IP"));
 
+        if (detectionRuntime != null) {
+            entries.add(new HelpEntry("/hg detection [player]", "Inspect Detection v2 evidence"));
+        }
+
         if (aiManager != null) {
             entries.add(new HelpEntry("/hg stats", "Show legacy AI status"));
             entries.add(new HelpEntry("/hg learning <on|off>", "Toggle legacy AI learning mode"));
@@ -382,6 +413,11 @@ public class HackerGuardian extends JavaPlugin {
             catch (Exception e) { getLogger().warning("Failed to stop HG API: " + e.getMessage()); }
         }
 
+        if (detectionRuntime != null) {
+            try { detectionRuntime.stop(); }
+            catch (Exception e) { getLogger().warning("Failed to stop Detection v2: " + e.getMessage()); }
+        }
+
         // Stop Bukkit-owned producers before draining component-owned I/O.
         Bukkit.getScheduler().cancelTasks(this);
 
@@ -418,6 +454,10 @@ public class HackerGuardian extends JavaPlugin {
 
     public MySQL getMySQL() {
         return mysql;
+    }
+
+    public DetectionRuntime getDetectionRuntime() {
+        return detectionRuntime;
     }
 
     public FeatureCollector getFeatureCollector() {
