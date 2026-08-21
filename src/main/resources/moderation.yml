@@ -1,0 +1,58 @@
+# HackerGuardian moderation and report settings
+Settings:
+  report_window_ms: 86400000
+  reports_page_size: 5
+  max_reports_per_window: 10
+
+Punishments:
+  history_limit: 10
+
+  # Usable placeholders: %expires% %reason% %id%
+  messages:
+    kick: "&cYou were kicked.\n&7Reason: &f%reason%"
+    ban_kick: "&cYou are banned.\n&7Reason: &f%reason%"
+    ban_join: "&cYou are banned.\n&7Reason: &f%reason%\n&7Expires: &f%expires%"
+    ipban_join: "&cThe IP you are joining from is banned.\n&7Reason: &f%reason%"
+    ipban_kick: "&cYou are IP-banned.\n&7Reason: &f%reason%"
+
+    ban_join_temp: |
+      &cYou are temporarily banned for &f%expires% &cfrom this server!
+
+      &7Reason: &f%reason%
+      &7Find out more: &bhttps://your.site/appeal
+
+      &7Ban ID: &f#%id%
+      &7Sharing your Ban ID may affect the processing of your appeal!
+
+    ban_join_perm: |
+      &cYou are permanently banned from this server!
+
+      &7Reason: &f%reason%
+      &7Find out more: &bhttps://your.site/appeal
+
+      &7Ban ID: &f#%id%
+      &7Sharing your Ban ID may affect the processing of your appeal!
+
+    muted_chat: |
+      &cYou are muted.
+
+      &7Reason: &f%reason%
+      &7Expires in: &f%expires%
+
+    ipban_join_temp: |
+      &cYou are temporarily IP-banned for &f%expires% &cfrom this server!
+
+      &7Reason: &f%reason%
+      &7Find out more: &bhttps://your.site/appeal
+
+      &7IP Ban ID: &f#%id%
+      &7Sharing your Ban ID may affect the processing of your appeal!
+
+    ipban_join_perm: |
+      &cYou are permanently IP-banned from this server!
+
+      &7Reason: &f%reason%
+      &7Find out more: &bhttps://your.site/appeal
+
+      &7IP Ban ID: &f#%id%
+      &7Sharing your Ban ID may affect the processing of your appeal!
