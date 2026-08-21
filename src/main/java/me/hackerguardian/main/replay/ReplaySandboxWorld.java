@@ -4,6 +4,7 @@ import org.bukkit.*;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
+import java.util.UUID;
 
 public final class ReplaySandboxWorld {
 
@@ -13,9 +14,10 @@ public final class ReplaySandboxWorld {
         this.plugin = plugin;
     }
 
-    public World loadOrCreate(long replayId) {
+    public World loadOrCreate(long replayId, UUID viewerUuid) {
         String prefix = plugin.getConfig().getString("Replays.sandbox.world_prefix", "hg_replay_");
-        String name = prefix + replayId;
+        String viewer = viewerUuid == null ? "unknown" : viewerUuid.toString().replace("-", "");
+        String name = prefix + replayId + "_" + viewer;
 
         World existing = Bukkit.getWorld(name);
         if (existing != null) return existing;
@@ -38,26 +40,36 @@ public final class ReplaySandboxWorld {
     }
 
     public void deleteWorld(String worldName) {
+        if (worldName == null || worldName.isBlank()) return;
+
+        String prefix = plugin.getConfig().getString("Replays.sandbox.world_prefix", "hg_replay_");
+        if (!worldName.startsWith(prefix)) {
+            plugin.getLogger().warning("[Replay] Refusing to delete non-sandbox world: " + worldName);
+            return;
+        }
+
         World w = Bukkit.getWorld(worldName);
-        if (w == null) return;
+        File folder;
 
-        String name = w.getName();
-        Bukkit.unloadWorld(w, false);
+        if (w != null) {
+            folder = w.getWorldFolder();
+            Bukkit.unloadWorld(w, false);
+        } else {
+            folder = new File(Bukkit.getWorldContainer(), worldName);
+        }
 
-        // Delete folder
-        File folder = w.getWorldFolder();
         deleteRecursive(folder);
-
-        plugin.getLogger().info("[Replay] Deleted sandbox world " + name);
+        plugin.getLogger().info("[Replay] Deleted sandbox world " + worldName);
     }
 
     private void deleteRecursive(File f) {
         if (f == null || !f.exists()) return;
         File[] files = f.listFiles();
         if (files != null) {
-            for (File c : files) deleteRecursive(c);
+            for (File child : files) deleteRecursive(child);
         }
-        f.delete();
+        if (!f.delete() && f.exists()) {
+            plugin.getLogger().warning("[Replay] Could not delete " + f.getAbsolutePath());
+        }
     }
 }
-
