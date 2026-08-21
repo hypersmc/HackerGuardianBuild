@@ -74,20 +74,20 @@ public final class DetectionEngine {
 
         double weightedMax = 0.0;
         double weightedSum = 0.0;
-        double reliabilitySum = 0.0;
         double strongestReliability = 0.0;
 
         for (DetectionFinding finding : findings) {
             double weighted = finding.getWeightedScore();
             weightedMax = Math.max(weightedMax, weighted);
-            weightedSum += finding.getScore() * finding.getReliability();
-            reliabilitySum += finding.getReliability();
+            weightedSum += weighted;
             strongestReliability = Math.max(strongestReliability, finding.getReliability());
         }
 
-        // Deliberately conservative aggregation: one strong finding matters,
-        // while many weak/noisy findings cannot simply add their way to 100%.
-        double weightedMean = reliabilitySum <= 0.0 ? 0.0 : weightedSum / reliabilitySum;
+        // Deliberately conservative aggregation: reliability stays part of the
+        // score. A finding with score=1.0 but reliability=0.35 contributes 0.35,
+        // not 1.0. Multiple weak findings therefore cannot cancel out their own
+        // uncertainty simply by being numerous.
+        double weightedMean = findings.isEmpty() ? 0.0 : weightedSum / findings.size();
         double risk = clamp((weightedMax * 0.70) + (weightedMean * 0.30));
 
         DetectionAssessment assessment = new DetectionAssessment(
