@@ -1,10 +1,10 @@
 package me.hackerguardian.main;
 
 import me.hackerguardian.Util.TicketPayload;
+import me.hackerguardian.database.CoreDatabaseSchema;
 import me.hackerguardian.database.DatabaseSettings;
 import me.hackerguardian.database.DatabaseType;
 import me.hackerguardian.database.HikariDatabase;
-import me.hackerguardian.database.SqlSchema;
 import org.bukkit.Bukkit;
 
 import javax.sql.DataSource;
@@ -41,7 +41,9 @@ public final class DatabaseManager {
         try {
             database = new HikariDatabase(settings);
             database.start();
-            ensureCoreTables();
+            try (Connection c = database.connection()) {
+                CoreDatabaseSchema.ensure(c);
+            }
             plugin.getLogger().info("Database pool initialized: " + settings.type()
                     + " @ " + settings.host() + ":" + settings.port() + "/" + settings.database());
             return true;
@@ -83,27 +85,6 @@ public final class DatabaseManager {
         plugin.getLogger().warning("============================================================");
     }
 
-    private void ensureCoreTables() throws SQLException {
-        try (Connection c = database.connection()) {
-            try (PreparedStatement ps = c.prepareStatement(
-                    "CREATE TABLE IF NOT EXISTS hg_player_tickets (" +
-                            "ticket_id CHAR(36) PRIMARY KEY," +
-                            "player_uuid CHAR(36) NOT NULL," +
-                            "player_name VARCHAR(16) NOT NULL," +
-                            "issued_at BIGINT NOT NULL," +
-                            "expires_at BIGINT NOT NULL," +
-                            "used_at BIGINT NULL," +
-                            "target_server VARCHAR(64) NOT NULL" +
-                            ")"
-            )) {
-                ps.executeUpdate();
-            }
-            SqlSchema.ensureIndex(c, "hg_player_tickets", "idx_hg_tickets_player_uuid", "player_uuid");
-            SqlSchema.ensureIndex(c, "hg_player_tickets", "idx_hg_tickets_expires_at", "expires_at");
-            SqlSchema.ensureIndex(c, "hg_player_tickets", "idx_hg_tickets_used_at", "used_at");
-        }
-    }
-
     public void shutdown() {
         if (database != null) {
             database.close();
@@ -120,7 +101,6 @@ public final class DatabaseManager {
         return database == null ? null : database.type();
     }
 
-    /** Thread-safe and atomic secure-link ticket consume. */
     public boolean consumeTicket(TicketPayload payload, long nowMs) {
         String sql = "UPDATE hg_player_tickets SET used_at = ? " +
                 "WHERE ticket_id = ? AND player_uuid = ? AND target_server = ? " +
