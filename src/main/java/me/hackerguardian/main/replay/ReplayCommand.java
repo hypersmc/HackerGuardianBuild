@@ -12,7 +12,7 @@ import org.bukkit.entity.Player;
 public final class ReplayCommand {
 
     private final ReplayManager rm;
-    private final textHandling tx; // your text wrapper
+    private final textHandling tx;
     private final ReplayViewer replayViewer;
 
     public ReplayCommand(ReplayManager rm, textHandling tx, ReplayViewer replayViewer) {
@@ -32,14 +32,19 @@ public final class ReplayCommand {
             }
 
             if (params.length < 1) {
-                staff.sendMessage(tx.playerText(tx.prefix + "Usage: /hg replay <start|stop|ai|view|info> ..."));
+                staff.sendMessage(tx.playerText(tx.prefix + "Usage: /hg replay <start|stop|ai|view|info|exit> ..."));
                 return;
             }
 
             String sub = params[0].toLowerCase();
 
-            // ID-based commands
-            if (sub.equals("view") || sub.equals("info") || sub.equals("exit")) {
+            if (sub.equals("exit")) {
+                replayViewer.stopViewing(staff);
+                staff.sendMessage(tx.playerText(tx.shortprefix + "Stopped replay viewing."));
+                return;
+            }
+
+            if (sub.equals("view") || sub.equals("info")) {
                 if (params.length < 2) {
                     staff.sendMessage(tx.playerText(tx.prefix + "Usage: /hg replay " + sub + " <id>"));
                     return;
@@ -77,7 +82,6 @@ public final class ReplayCommand {
                             String started = TimeFormat.dateTime(finalMeta.startedAt);
                             String ended = (finalMeta.endedAt == null) ? "Still recording" : TimeFormat.dateTime(finalMeta.endedAt);
                             String duration = TimeFormat.remaining(finalMeta.startedAt, endForDuration);
-
                             String aiScore = (finalMeta.aiScore == null) ? "N/A" : String.format("%.4f", finalMeta.aiScore);
 
                             staff.sendMessage(tx.playerText(tx.prefix + "Replay Info"));
@@ -85,7 +89,6 @@ public final class ReplayCommand {
                             staff.sendMessage(tx.playerText(tx.shortprefix + "Player: " + ChatColor.RED + finalMeta.playerName
                                     + ChatColor.GRAY + " (" + ChatColor.RED + finalMeta.playerUuid + ChatColor.GRAY + ")"));
                             staff.sendMessage(tx.playerText(tx.shortprefix + "Server: " + ChatColor.RED + finalMeta.serverName));
-
                             staff.sendMessage(tx.playerText(tx.shortprefix + "Trigger: " + ChatColor.RED + safe(finalMeta.triggerType)
                                     + ChatColor.GRAY + " | AI score: " + ChatColor.RED + aiScore));
 
@@ -96,14 +99,9 @@ public final class ReplayCommand {
                             staff.sendMessage(tx.playerText(tx.shortprefix + "Started: " + ChatColor.RED + started));
                             staff.sendMessage(tx.playerText(tx.shortprefix + "Ended: " + ChatColor.RED + ended));
                             staff.sendMessage(tx.playerText(tx.shortprefix + "Duration: " + ChatColor.RED + duration));
-
                             staff.sendMessage(tx.playerText(tx.shortprefix + "Format: " + ChatColor.RED + "v" + finalMeta.formatVersion
                                     + ChatColor.GRAY + " | Codec: " + ChatColor.RED + safe(finalMeta.codec)));
-
-
                             staff.sendMessage(tx.playerText(tx.shortprefix + "Bytes: " + ChatColor.RED + humanBytes(finalMeta.bytesTotal)));
-
-
                             staff.sendMessage(tx.playerText(tx.shortprefix + "Commands: "
                                     + ChatColor.RED + "/hg replay view " + finalMeta.id
                                     + ChatColor.GRAY + " | "
@@ -112,17 +110,11 @@ public final class ReplayCommand {
                     });
                     return;
                 }
-                if (sub.equals("exit")) {
-                    replayViewer.stopViewing(staff);
-                    staff.sendMessage(tx.playerText(tx.shortprefix + "Stopped replay viewing."));
-                    return;
-                }
 
                 replayViewer.view(staff, id);
                 return;
             }
 
-            // Player-based commands
             if (params.length < 2) {
                 staff.sendMessage(tx.playerText(tx.prefix + "Usage: /hg replay <start|stop|ai> <player> [score]"));
                 return;
@@ -145,7 +137,6 @@ public final class ReplayCommand {
                 staff.sendMessage(tx.playerText(tx.shortprefix + "Stopped recording for " + target.getName()));
                 return;
             }
-
 
             if (sub.equals("ai")) {
                 double score = 0.95;
