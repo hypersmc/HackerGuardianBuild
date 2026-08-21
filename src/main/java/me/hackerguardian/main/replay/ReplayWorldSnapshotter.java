@@ -1,6 +1,5 @@
 package me.hackerguardian.main.replay;
 
-import org.bukkit.Bukkit;
 import org.bukkit.Chunk;
 import org.bukkit.Location;
 import org.bukkit.World;
@@ -9,40 +8,37 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
 
 public final class ReplayWorldSnapshotter {
 
     private final JavaPlugin plugin;
     private final ReplayStorage storage;
+    private final Executor ioExecutor;
 
     private final boolean enabled;
     private final int chunkRadius;
     private final int maxChunks;
-    private final boolean includePrebuffer;
-    private final int intervalTicks;
 
     // replayId -> set of captured chunk keys
     private final ConcurrentHashMap<Long, Set<Long>> captured = new ConcurrentHashMap<>();
 
-    public ReplayWorldSnapshotter(JavaPlugin plugin, ReplayStorage storage) {
+    public ReplayWorldSnapshotter(JavaPlugin plugin, ReplayStorage storage, Executor ioExecutor) {
         this.plugin = plugin;
         this.storage = storage;
+        this.ioExecutor = ioExecutor;
 
         this.enabled = plugin.getConfig().getBoolean("Replays.sandbox.enabled", false);
         this.chunkRadius = Math.max(0, plugin.getConfig().getInt("Replays.sandbox.chunk_radius", 2));
         this.maxChunks = Math.max(1, plugin.getConfig().getInt("Replays.sandbox.max_chunks", 200));
-        this.includePrebuffer = plugin.getConfig().getBoolean("Replays.sandbox.include_prebuffer", false);
-        this.intervalTicks = Math.max(1, plugin.getConfig().getInt("Replays.sandbox.snapshot_interval_ticks", 20));
     }
 
     public boolean isEnabled() { return enabled; }
 
-    // Call from ReplayManager when a replay is created
     public void onReplayCreated(long replayId) {
         captured.putIfAbsent(replayId, ConcurrentHashMap.newKeySet());
     }
 
-    // Call from ReplayManager when replay ends
     public void onReplayFinished(long replayId) {
         captured.remove(replayId);
     }
@@ -54,8 +50,6 @@ public final class ReplayWorldSnapshotter {
         Location loc = target.getLocation();
         int pcx = loc.getBlockX() >> 4;
         int pcz = loc.getBlockZ() >> 4;
-
-        // Height range to snapshot (v1: full build height)
         int minY = w.getMinHeight();
         int maxY = w.getMaxHeight() - 1;
 
@@ -71,25 +65,28 @@ public final class ReplayWorldSnapshotter {
                 if (set.size() >= maxChunks) return;
 
                 set.add(key);
-
-                // Capture chunk on main thread (block reads)
                 Chunk chunk = w.getChunkAt(cx, cz);
 
                 try {
                     byte[] raw = ReplayChunkSnapshotCodec.encodeChunk(chunk, minY, maxY);
-
-                    // Write async to DB
-                    Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+                    String worldName = w.getName();
+                    ioExecutor.execute(() -> {
                         try {
-                            storage.upsertWorldChunk(replayId, w.getName(), cx, cz, raw);
-                        } catch (Exception ignored) {}
+                            storage.upsertWorldChunk(replayId, worldName, cx, cz, raw);
+                        } catch (Exception e) {
+                            // Allow a later capture tick to retry a failed DB write.
+                            set.remove(key);
+                            plugin.getLogger().warning("[Replay] Failed to store world snapshot for replay "
+                                    + replayId + " chunk " + cx + "," + cz + ": " + e.getMessage());
+                        }
                     });
-
                 } catch (Exception ex) {
+                    set.remove(key);
+                    plugin.getLogger().warning("[Replay] Failed to capture chunk " + cx + "," + cz
+                            + " for replay " + replayId + ": " + ex.getMessage());
                     if (plugin.getConfig().getBoolean("debug")) ex.printStackTrace();
                 }
             }
         }
     }
 }
-

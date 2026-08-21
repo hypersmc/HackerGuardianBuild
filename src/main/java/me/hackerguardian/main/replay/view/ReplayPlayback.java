@@ -18,7 +18,7 @@ public final class ReplayPlayback {
     private final JavaPlugin plugin;
     private final Player staff;
     private final List<ReplayStorage.ReplayChunk> chunks;
-    private final long seekToMs; // meta.startedAt
+    private final long seekToMs;
 
     private int chunkIndex = 0;
     private ReplayCodec.In chunkIn;
@@ -28,22 +28,18 @@ public final class ReplayPlayback {
     private BukkitTask scheduled;
     private final AtomicBoolean stopped = new AtomicBoolean(false);
 
-    // Track fake blocks so we can restore them when stopping
     private final Map<String, BlockData> originalBlocks = new HashMap<>();
-
-    // Seeking mode: fast-forward (apply instantly) until we hit first snapshot >= seekToMs
     private boolean seeking = true;
     private boolean seekSatisfied = false;
 
-    // Keeping track of nearby players
     private final Map<UUID, FakeReplayPlayer> nearbyGhosts = new HashMap<>();
     private final Map<UUID, Long> nearbyLastSeen = new HashMap<>();
     private final Map<UUID, UUID> nearbyFakeUuids = new HashMap<>();
     private final long nearbyDespawnGraceMs = 4000L;
     private final ReplayViewer replayViewer;
 
-
-    public ReplayPlayback(JavaPlugin plugin, Player staff, List<ReplayStorage.ReplayChunk> chunks, long seekToMs, ReplayViewer replayViewer) {
+    public ReplayPlayback(JavaPlugin plugin, Player staff, List<ReplayStorage.ReplayChunk> chunks,
+                          long seekToMs, ReplayViewer replayViewer) {
         this.plugin = plugin;
         this.staff = staff;
         this.chunks = chunks;
@@ -52,7 +48,6 @@ public final class ReplayPlayback {
     }
 
     public void start(Location startLoc, String displayName, WrappedGameProfile skinOrNull) {
-        int entityId = 2_000_000 + (int)(System.nanoTime() & 0x3FFFFF);
         ghost = new FakeReplayPlayer(plugin, staff, null, displayName, skinOrNull);
         ghost.spawn(startLoc);
 
@@ -66,30 +61,36 @@ public final class ReplayPlayback {
             } catch (Exception e) {
                 staff.sendMessage(ChatColor.RED + "Replay start failed.");
                 if (plugin.getConfig().getBoolean("debug")) e.printStackTrace();
-                stop();
+                finish();
             }
         });
     }
 
+    /** Stop playback resources only. Viewer restoration is owned by ReplayViewer. */
     public void stop() {
         if (!stopped.compareAndSet(false, true)) return;
         if (scheduled != null) scheduled.cancel();
         if (ghost != null) ghost.destroy();
         restoreFakeBlocks();
         despawnNearby();
+    }
+
+    /** Natural playback completion: stop resources and ask the viewer owner to restore the staff member. */
+    private void finish() {
+        stop();
         replayViewer.stopViewing(staff);
     }
 
     private void scheduleNext() {
         if (stopped.get()) return;
-        if (!staff.isOnline()) { stop(); return; }
+        if (!staff.isOnline()) { finish(); return; }
 
         try {
             Record rec = readNextRecord();
             if (rec == null) {
                 plugin.getLogger().info("Replay finished early. chunkIndex=" + chunkIndex + " currentTs=" + currentTs);
                 staff.sendMessage(ChatColor.GRAY + "Replay finished.");
-                stop();
+                finish();
                 return;
             }
 
@@ -102,7 +103,7 @@ public final class ReplayPlayback {
         } catch (Exception ex) {
             staff.sendMessage(ChatColor.RED + "Replay playback error (decode).");
             if (plugin.getConfig().getBoolean("debug")) ex.printStackTrace();
-            stop();
+            finish();
         }
     }
 
@@ -128,6 +129,7 @@ public final class ReplayPlayback {
             }
         }
     }
+
     private boolean nextChunk() {
         chunkIndex++;
         if (chunkIndex >= chunks.size()) return false;
@@ -146,16 +148,13 @@ public final class ReplayPlayback {
         }
     }
 
-    /** Fast-forward until we pass seekToMs and have applied one snapshot. */
     private void fastSeekTo(long seekToMs) throws IOException {
-        // If we're already at/after the seek timestamp, do nothing.
         if (currentTs >= seekToMs) return;
 
-        // Decode+apply events instantly until currentTs reaches seekToMs
         while (currentTs < seekToMs) {
             Record rec = readNextRecord();
-            if (rec == null) return; // reached end of stream
-            applyEvent(rec.eventBytes); // instant apply (no scheduling)
+            if (rec == null) return;
+            applyEvent(rec.eventBytes);
         }
     }
 
@@ -165,19 +164,18 @@ public final class ReplayPlayback {
             int ord = evIn.readVarInt();
 
             ReplayEventType[] values = ReplayEventType.values();
-            if (ord < 0 || ord >= values.length) return; // unknown/old/new enum mismatch
+            if (ord < 0 || ord >= values.length) return;
             ReplayEventType type = values[ord];
 
             switch (type) {
                 case PLAYER_SNAPSHOT -> {
-                    String world = evIn.readString(128);
+                    evIn.readString(128); // original world; playback uses viewer/sandbox world
                     double x = evIn.readDouble();
                     double y = evIn.readDouble();
                     double z = evIn.readDouble();
                     float yaw = evIn.readFloat();
                     float pitch = evIn.readFloat();
 
-                    //World w = Bukkit.getWorld(world);
                     World w = staff.getWorld();
                     if (w != null) {
                         ghost.moveTo(new Location(w, x, y, z, yaw, pitch));
@@ -192,7 +190,6 @@ public final class ReplayPlayback {
                     int bz = evIn.readInt();
                     String bt = evIn.readString(64);
 
-                    //World w = Bukkit.getWorld(world);
                     World w = staff.getWorld();
                     if (w == null) return;
 
@@ -216,61 +213,40 @@ public final class ReplayPlayback {
                     }
                 }
 
-                case ARM_SWING -> {
-                    // IMPORTANT: must match your encoder format.
-                    // Recommended layout: VarInt hand (0=main,1=off)
-                    ghost.swingMainHand();
-                }
+                case ARM_SWING -> ghost.swingMainHand();
 
-                case SNEAK_TOGGLE -> {
-                    // Recommended layout: boolean sneaking
-                    boolean sneaking = evIn.readBoolean();
-                    //ghost.setSneaking(sneaking);
-                }
+                case SNEAK_TOGGLE -> evIn.readBoolean();
 
-                case SPRINT_TOGGLE -> {
-                    // Recommended layout: boolean sprinting
-                    boolean sprinting = evIn.readBoolean();
-                    //ghost.setSprinting(sprinting);
-                }
+                case SPRINT_TOGGLE -> evIn.readBoolean();
 
                 case ITEM_CONSUME -> {
-                    // Recommended layout: String materialName (64)
                     String mat = evIn.readString(64);
-                    // best-effort: hold item + “use/eat” style animation
                     Material m = Material.matchMaterial(mat);
                     if (m != null) ghost.setMainHand(m);
-                    //ghost.playConsumeAnimation();
                 }
 
                 case INVENTORY_CLICK -> {
-                    // This one is very format-dependent. Minimum viable:
-                    // - Update main hand/armor if you record it
-                    // If you don’t have encode yet, just ignore safely.
-                    // TODO: implement once you confirm encoding.
+                    // TODO: render inventory state once the event schema is finalized.
                 }
 
                 case ITEM_DROP -> {
-                    // Recommended layout: world(128), x,y,z doubles, material(64), amount(varint)
-                    // TODO: implement viewer-only dropped item entities if you want
+                    // TODO: render viewer-only dropped item entities.
                 }
 
                 case ITEM_PICKUP -> {
-                    // TODO: implement item pickup visuals (destroy dropped entity)
+                    // TODO: render item pickup visuals.
                 }
 
                 case PROJECTILE_LAUNCH -> {
-                    // TODO: spawn projectile ghost entity and move it
+                    // TODO: render replay projectile entities.
                 }
 
                 case PROJECTILE_HIT -> {
-                    // TODO: despawn projectile + particles
+                    // TODO: render projectile hit effects.
                 }
 
                 case NEARBY_SNAPSHOT -> {
-
-                    String world = evIn.readString(128);
-                    //World w = Bukkit.getWorld(world);
+                    evIn.readString(128); // original world; playback uses viewer/sandbox world
                     World w = staff.getWorld();
                     if (w == null) return;
 
@@ -298,7 +274,8 @@ public final class ReplayPlayback {
                             try {
                                 g.spawn(new Location(w, x, y, z, yaw, pitch));
                             } catch (Exception ex) {
-                                plugin.getLogger().warning("[ReplayView] Failed to spawn nearby ghost name=" + name + " uid=" + uid + " : " + ex);
+                                plugin.getLogger().warning("[ReplayView] Failed to spawn nearby ghost name=" + name
+                                        + " uid=" + uid + " : " + ex);
                                 if (plugin.getConfig().getBoolean("debug")) ex.printStackTrace();
                             }
                             nearbyGhosts.put(uid, g);
@@ -310,7 +287,6 @@ public final class ReplayPlayback {
                         g.setMainHand(mh == null ? Material.AIR : mh);
                     }
 
-                    // despawn old nearby ghosts
                     long cutoff = currentTs - nearbyDespawnGraceMs;
                     Iterator<Map.Entry<UUID, Long>> it = nearbyLastSeen.entrySet().iterator();
                     while (it.hasNext()) {
@@ -331,7 +307,8 @@ public final class ReplayPlayback {
 
         } catch (Exception ex) {
             if (plugin.getConfig().getBoolean("debug")) {
-                plugin.getLogger().warning("Replay applyEvent failed at ts=" + currentTs + " bytes=" + evBytes.length + " : " + ex);
+                plugin.getLogger().warning("Replay applyEvent failed at ts=" + currentTs
+                        + " bytes=" + evBytes.length + " : " + ex);
                 ex.printStackTrace();
             }
         }
@@ -351,6 +328,7 @@ public final class ReplayPlayback {
         }
         originalBlocks.clear();
     }
+
     private void despawnNearby() {
         for (FakeReplayPlayer g : nearbyGhosts.values()) {
             try { g.destroy(); } catch (Exception ignored) {}

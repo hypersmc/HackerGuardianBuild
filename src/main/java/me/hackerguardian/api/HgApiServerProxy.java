@@ -3,22 +3,22 @@ package me.hackerguardian.api;
 import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
-import me.hackerguardian.api.reports.ReportRepository;
 import me.hackerguardian.api.reports.ReportsApiHandler;
 import me.hackerguardian.bungee.HackerGuardianB;
-import me.hackerguardian.bungee.utils.BMySQL;
 
-
-import javax.sql.DataSource;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.net.InetSocketAddress;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class HgApiServerProxy {
     private final HackerGuardianB plugin;
     private HttpServer server;
+    private ExecutorService executor;
     private HgApiAuth auth;
     private ReportsApiHandler reportsHandler;
 
@@ -26,7 +26,12 @@ public class HgApiServerProxy {
         this.plugin = plugin;
     }
 
-    public void startIfEnabled() {
+    public synchronized void startIfEnabled() {
+        if (server != null) {
+            plugin.getLogger().warning("[HG-API] API is already running");
+            return;
+        }
+
         boolean useWebsite = plugin.getConfiguration().getBoolean("Settings.UseWebsiteFunction", false);
         if (!useWebsite) {
             plugin.getLogger().info("[HG-API] Not starting (UseWebsiteFunction=false)");
@@ -39,7 +44,6 @@ public class HgApiServerProxy {
             return;
         }
 
-
         String host = plugin.getConfiguration().getString("SettingsWeb.Api.bind_host", "127.0.0.1");
         int port = plugin.getConfiguration().getInt("SettingsWeb.Api.bind_port", 8787);
         boolean requireAuth = plugin.getConfiguration().getBoolean("SettingsWeb.Api.require_auth", true);
@@ -49,7 +53,10 @@ public class HgApiServerProxy {
         Map<String, Object> keysSection = plugin.getConfiguration().getSection("SettingsWeb.Api.keys") == null
                 ? Map.of()
                 : plugin.getConfiguration().getSection("SettingsWeb.Api.keys").getKeys().stream()
-                .collect(java.util.stream.Collectors.toMap(k -> k, k -> plugin.getConfiguration().getString("SettingsWeb.Api.keys." + k)));
+                .collect(java.util.stream.Collectors.toMap(
+                        k -> k,
+                        k -> plugin.getConfiguration().getString("SettingsWeb.Api.keys." + k)
+                ));
 
         java.util.HashMap<String, String> keys = new java.util.HashMap<>();
         for (Map.Entry<String, Object> e : keysSection.entrySet()) {
@@ -57,12 +64,18 @@ public class HgApiServerProxy {
         }
 
         this.auth = new HgApiAuth(keys, requireAuth, skew, nonceTtl);
-
-
         this.reportsHandler = new ReportsApiHandler(auth, plugin.reportsRepo);
+
         try {
             server = HttpServer.create(new InetSocketAddress(host, port), 0);
-            server.setExecutor(Executors.newFixedThreadPool(4));
+
+            AtomicInteger threadNumber = new AtomicInteger();
+            executor = Executors.newFixedThreadPool(4, runnable -> {
+                Thread thread = new Thread(runnable, "HackerGuardian-ProxyApi-" + threadNumber.incrementAndGet());
+                thread.setDaemon(true);
+                return thread;
+            });
+            server.setExecutor(executor);
 
             server.createContext("/v1/health", this::handleHealth);
             server.createContext("/v1/reports", this::handleReports);
@@ -71,16 +84,32 @@ public class HgApiServerProxy {
             plugin.getLogger().info("[HG-API] Proxy API listening on " + host + ":" + port);
         } catch (Exception e) {
             plugin.getLogger().severe("[HG-API] Failed to start API: " + e.getMessage());
+            stop();
         }
     }
 
-    public void stop() {
+    public synchronized void stop() {
+        boolean wasRunning = server != null || executor != null;
+
         if (server != null) {
             server.stop(0);
             server = null;
-            plugin.getLogger().info("[HG-API] Stopped");
         }
+
+        if (executor != null) {
+            executor.shutdown();
+            try {
+                if (!executor.awaitTermination(2, TimeUnit.SECONDS)) executor.shutdownNow();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                executor.shutdownNow();
+            }
+            executor = null;
+        }
+
+        if (wasRunning) plugin.getLogger().info("[HG-API] Stopped");
     }
+
     private void handleReports(HttpExchange ex) {
         try {
             String method = ex.getRequestMethod();
@@ -91,8 +120,6 @@ public class HgApiServerProxy {
             Map<String, String> query = parseQuery(ex.getRequestURI().getRawQuery());
 
             byte[] body = ex.getRequestBody().readAllBytes();
-
-            // Adapt HttpExchange -> ReportsApiHandler.Request
             String finalFullPath = fullPath;
             String finalMethod = method;
 
@@ -103,7 +130,6 @@ public class HgApiServerProxy {
 
                 @Override public String header(String name) {
                     if (name == null) return null;
-                    // your auth uses lower-case in code, but HTTP headers are case-insensitive
                     return ex.getRequestHeaders().getFirst(name);
                 }
 
@@ -113,10 +139,7 @@ public class HgApiServerProxy {
             };
 
             ReportsApiHandler.Response resp = reportsHandler.handle(req);
-
             ex.getResponseHeaders().set("Content-Type", resp.contentType);
-            // Optional CORS (handy for local dev)
-
 
             if ("OPTIONS".equalsIgnoreCase(method)) {
                 ex.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
@@ -133,7 +156,7 @@ public class HgApiServerProxy {
             ex.close();
 
         } catch (Exception e) {
-            plugin.getLogger().info("[HG-API] /v1/reports crashed " + e);
+            plugin.getLogger().warning("[HG-API] /v1/reports crashed: " + e.getMessage());
 
             try {
                 byte[] out = ("{\"ok\":false,\"message\":\"server error\"}")
@@ -145,6 +168,7 @@ public class HgApiServerProxy {
             } catch (Exception ignored) {}
         }
     }
+
     private void handleHealth(HttpExchange ex) {
         try {
             String method = ex.getRequestMethod();
@@ -208,6 +232,7 @@ public class HgApiServerProxy {
             ex.close();
         } catch (Exception ignored) {}
     }
+
     private static Map<String, String> parseQuery(String rawQuery) {
         Map<String, String> out = new java.util.HashMap<>();
         if (rawQuery == null || rawQuery.isEmpty()) return out;
