@@ -1,11 +1,9 @@
 package me.hackerguardian.main.aicore.aievents;
 
 import me.hackerguardian.main.HackerGuardian;
-import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerToggleSneakEvent;
-import org.neuroph.core.data.DataSet;
 
 /**
  * @author JumpWatch on 07-04-2023
@@ -17,9 +15,7 @@ public class HGPlayerToggleStateListener implements Listener {
 
     @EventHandler
     public void onPlayerToggleSneak(PlayerToggleSneakEvent event) {
-        if (main.learning) {
-
+        if (main.isLearning()) {
         }
-
     }
 }
