@@ -20,6 +20,7 @@ import me.hackerguardian.main.replay.view.ReplayViewer;
 import me.hackerguardian.main.report.ReportCommands;
 import me.hackerguardian.main.report.ReportRepository;
 import me.hackerguardian.main.report.ReportService;
+import me.hackerguardian.main.utils.AIPermissions;
 import me.hackerguardian.main.utils.CommandManager;
 import me.hackerguardian.main.utils.Tps;
 import me.hackerguardian.main.utils.textHandling;
@@ -35,7 +36,6 @@ import org.bukkit.scheduler.BukkitRunnable;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 
 /**
  * Paper/Spigot entry point for HackerGuardian.
