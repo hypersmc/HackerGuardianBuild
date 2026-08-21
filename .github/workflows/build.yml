@@ -6,11 +6,55 @@ on:
     branches:
       - master
       - "stabilize/**"
+      - "refactor/**"
+      - "ml/**"
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
+
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root-test-password
+          MYSQL_DATABASE: hackerguardian_test
+          MYSQL_USER: hgtest
+          MYSQL_PASSWORD: hgtest
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uhgtest -phgtest"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: hackerguardian_test
+          POSTGRES_USER: hgtest
+          POSTGRES_PASSWORD: hgtest
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U hgtest -d hackerguardian_test"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      HG_TEST_MYSQL_HOST: 127.0.0.1
+      HG_TEST_MYSQL_PORT: 3306
+      HG_TEST_MYSQL_DATABASE: hackerguardian_test
+      HG_TEST_MYSQL_USERNAME: hgtest
+      HG_TEST_MYSQL_PASSWORD: hgtest
+      HG_TEST_POSTGRES_HOST: 127.0.0.1
+      HG_TEST_POSTGRES_PORT: 5432
+      HG_TEST_POSTGRES_DATABASE: hackerguardian_test
+      HG_TEST_POSTGRES_USERNAME: hgtest
+      HG_TEST_POSTGRES_PASSWORD: hgtest
 
     steps:
       - name: Checkout
@@ -23,5 +67,5 @@ jobs:
           java-version: "17"
           cache: maven
 
-      - name: Build
-        run: mvn -B -DskipTests package
+      - name: Build and test
+        run: mvn -B package
