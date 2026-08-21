@@ -9,26 +9,34 @@ import org.bukkit.plugin.java.JavaPlugin;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.net.InetSocketAddress;
-import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class HgApiServerBackend {
     private final JavaPlugin plugin;
     private HttpServer server;
+    private ExecutorService executor;
     private HgApiAuth auth;
 
     public HgApiServerBackend(JavaPlugin plugin) {
         this.plugin = plugin;
     }
 
-    public void startIfEnabled() {
+    public synchronized void startIfEnabled() {
+        if (server != null) {
+            plugin.getLogger().warning("[HG-API] API is already running");
+            return;
+        }
+
         boolean useWebsite = plugin.getConfig().getBoolean("Settings.UseWebsiteFunction", false);
         boolean behindProxy = plugin.getConfig().getBoolean("Settings.behind_proxy", false);
 
-        // Backend rule: behind_proxy=true => do not expose HTTP API (proxy hosts it)
         if (!useWebsite || behindProxy) {
-            plugin.getLogger().info("[HG-API] Not starting (UseWebsiteFunction=" + useWebsite + ", behind_proxy=" + behindProxy + ")");
+            plugin.getLogger().info("[HG-API] Not starting (UseWebsiteFunction=" + useWebsite
+                    + ", behind_proxy=" + behindProxy + ")");
             return;
         }
 
@@ -48,7 +56,6 @@ public class HgApiServerBackend {
                 ? Map.of()
                 : plugin.getConfig().getConfigurationSection("SettingsWeb.Api.keys").getValues(false);
 
-        // Convert to Map<String,String>
         java.util.HashMap<String, String> keys = new java.util.HashMap<>();
         for (Map.Entry<String, Object> e : keysSection.entrySet()) {
             keys.put(e.getKey(), String.valueOf(e.getValue()));
@@ -58,24 +65,45 @@ public class HgApiServerBackend {
 
         try {
             server = HttpServer.create(new InetSocketAddress(host, port), 0);
-            server.setExecutor(Executors.newFixedThreadPool(4));
+
+            AtomicInteger threadNumber = new AtomicInteger();
+            executor = Executors.newFixedThreadPool(4, runnable -> {
+                Thread thread = new Thread(runnable, "HackerGuardian-Api-" + threadNumber.incrementAndGet());
+                thread.setDaemon(true);
+                return thread;
+            });
+            server.setExecutor(executor);
 
             server.createContext("/v1/health", this::handleHealth);
-
             server.start();
             plugin.getLogger().info("[HG-API] Paper API listening on " + host + ":" + port);
         } catch (Exception e) {
             plugin.getLogger().severe("[HG-API] Failed to start API: " + e.getMessage());
             if (plugin.getConfig().getBoolean("debug")) e.printStackTrace();
+            stop();
         }
     }
 
-    public void stop() {
+    public synchronized void stop() {
+        boolean wasRunning = server != null || executor != null;
+
         if (server != null) {
             server.stop(0);
             server = null;
-            plugin.getLogger().info("[HG-API] Stopped");
         }
+
+        if (executor != null) {
+            executor.shutdown();
+            try {
+                if (!executor.awaitTermination(2, TimeUnit.SECONDS)) executor.shutdownNow();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                executor.shutdownNow();
+            }
+            executor = null;
+        }
+
+        if (wasRunning) plugin.getLogger().info("[HG-API] Stopped");
     }
 
     private void handleHealth(HttpExchange ex) {
@@ -140,6 +168,7 @@ public class HgApiServerBackend {
             ex.sendResponseHeaders(status, out.length);
             ex.getResponseBody().write(out);
             ex.close();
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+        }
     }
 }
