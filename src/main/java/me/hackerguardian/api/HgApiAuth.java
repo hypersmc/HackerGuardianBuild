@@ -34,6 +34,10 @@ public class HgApiAuth {
 
         if (!requireAuth) return AuthResult.success();
 
+        if (isBlank(method) || isBlank(path)) {
+            return AuthResult.fail(400, "Invalid request method/path");
+        }
+
         if (isBlank(keyId) || isBlank(timestamp) || isBlank(nonce) || isBlank(signatureHex)) {
             return AuthResult.fail(401, "Missing auth headers");
         }
@@ -56,15 +60,6 @@ public class HgApiAuth {
             return AuthResult.fail(401, "Timestamp outside allowed skew");
         }
 
-        // replay protection (keyId:nonce)
-        String nonceKey = keyId + ":" + nonce;
-        cleanupNonces(now);
-
-        Long existing = seenNonces.putIfAbsent(nonceKey, now);
-        if (existing != null) {
-            return AuthResult.fail(401, "Replay detected (nonce already used)");
-        }
-
         String bodyHash = sha256Hex(body == null ? new byte[0] : body);
         String base = method.toUpperCase(Locale.ROOT) + "\n" +
                 path + "\n" +
@@ -73,9 +68,17 @@ public class HgApiAuth {
                 bodyHash;
 
         String expectedHex = hmacSha256Hex(secret, base);
-
         if (!constantTimeEquals(expectedHex, signatureHex)) {
             return AuthResult.fail(401, "Signature invalid");
+        }
+
+        // Consume the nonce only after the signature is known to be valid. This
+        // prevents unauthenticated requests from poisoning the replay cache.
+        String nonceKey = keyId + ":" + nonce;
+        cleanupNonces(now);
+        Long existing = seenNonces.putIfAbsent(nonceKey, now);
+        if (existing != null) {
+            return AuthResult.fail(401, "Replay detected (nonce already used)");
         }
 
         return AuthResult.success();
@@ -117,11 +120,10 @@ public class HgApiAuth {
 
     private static boolean constantTimeEquals(String a, String b) {
         if (a == null || b == null) return false;
-        byte[] x = a.getBytes(StandardCharsets.UTF_8);
-        byte[] y = b.getBytes(StandardCharsets.UTF_8);
-        int diff = x.length ^ y.length;
-        for (int i = 0; i < Math.min(x.length, y.length); i++) diff |= (x[i] ^ y[i]);
-        return diff == 0;
+        return MessageDigest.isEqual(
+                a.getBytes(StandardCharsets.UTF_8),
+                b.getBytes(StandardCharsets.UTF_8)
+        );
     }
 
     private static boolean isBlank(String s) {
