@@ -3,8 +3,9 @@ package me.hackerguardian.bungee;
 import me.hackerguardian.api.HgApiServerProxy;
 import me.hackerguardian.api.reports.ReportRepository;
 import me.hackerguardian.bungee.moderation.ProxyPunishEnforcer;
-import me.hackerguardian.bungee.utils.BMySQL;
+import me.hackerguardian.bungee.utils.BDatabase;
 import me.hackerguardian.bungee.utils.TicketIssuer;
+import me.hackerguardian.main.moderation.punish.PunishmentRepository;
 import net.md_5.bungee.api.plugin.Plugin;
 import net.md_5.bungee.config.Configuration;
 import net.md_5.bungee.config.ConfigurationProvider;
@@ -17,52 +18,70 @@ import java.io.InputStream;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 
-/**
- * @author JumpWatch on 19-04-2024
- * @Project HackerGuardian
- * v1.0.0
- */
 public class HackerGuardianB extends Plugin {
     public static Configuration configuration;
     private static HackerGuardianB instance;
+
     private HgApiServerProxy api;
-    private BMySQL mysql;
+    private BDatabase database;
     public ReportRepository reportsRepo;
-    Logger logger = Logger.getLogger("HGBungee_Link");
+
+    private final Logger logger = Logger.getLogger("HGBungee_Link");
+
     @Override
     public void onEnable() {
-        logger.info("Initialising plugin!");
+        logger.info("Initialising HackerGuardian proxy plugin.");
         instance = this;
+
         try {
             makeConfig();
-            configuration = ConfigurationProvider.getProvider(YamlConfiguration.class).load(new File(getDataFolder(), "configbungee.yml"));
-            logger.info("Configuration registered!");
-        } catch (IOException ignore) {}
-        logger.info("Starting MySQL system");
-        mysql = new BMySQL();
-        mysql.setupCoreSystem();
+            configuration = ConfigurationProvider.getProvider(YamlConfiguration.class)
+                    .load(new File(getDataFolder(), "configbungee.yml"));
+            logger.info("Configuration registered.");
+        } catch (IOException e) {
+            logger.severe("Unable to load configbungee.yml: " + e.getMessage());
+            return;
+        }
+
+        database = new BDatabase(this);
+        if (!database.init()) {
+            logger.severe("HackerGuardian proxy startup stopped because database setup is incomplete or invalid.");
+            return;
+        }
+
+        try {
+            // The proxy can start before any backend server, so it must also be
+            // capable of creating the shared moderation/report schema.
+            new PunishmentRepository(database.getDataSource()).ensureTables();
+            new me.hackerguardian.main.report.ReportRepository(database.getDataSource()).ensureTables();
+        } catch (Exception e) {
+            logger.severe("Unable to initialize shared HackerGuardian database schema: " + e.getMessage());
+            database.shutdown();
+            return;
+        }
 
         if (getConfiguration().getBoolean("Settings.hg_secure_link")) {
             getProxy().registerChannel("hg:playerchannel");
-            getProxy().getPluginManager().registerListener(this, new TicketIssuer(this));
+            getProxy().getPluginManager().registerListener(this, new TicketIssuer(this, database));
 
-
-            // cleanup job (optional)
             getProxy().getScheduler().schedule(
                     this,
-                    () -> mysql.cleanupExpired(this),
+                    database::cleanupExpired,
                     5, 30, TimeUnit.MINUTES
             );
             getLogger().info("HG Link (Bungee) enabled.");
         }
-        getProxy().getPluginManager().registerListener(this, new ProxyPunishEnforcer(this, mysql));
-        this.reportsRepo = new ReportRepository(getMysql().getDataSource());
+
+        getProxy().getPluginManager().registerListener(this, new ProxyPunishEnforcer(this, database));
+        reportsRepo = new ReportRepository(database.getDataSource());
+
         api = new HgApiServerProxy(this);
         api.startIfEnabled();
-
     }
 
-    public BMySQL getMysql() { return mysql; }
+    public BDatabase getDatabase() {
+        return database;
+    }
 
     @Override
     public void onDisable() {
@@ -70,29 +89,34 @@ public class HackerGuardianB extends Plugin {
             api.stop();
             api = null;
         }
-        if (mysql != null) {
-            mysql.shutdown();
-            mysql = null;
+        if (database != null) {
+            database.shutdown();
+            database = null;
         }
         instance = null;
     }
 
     public void makeConfig() throws IOException {
-        // Create plugin config folder if it doesn't exist
-        if (!getDataFolder().exists()) {
-            logger.info("Created config folder: " + getDataFolder().mkdir());
+        if (!getDataFolder().exists() && !getDataFolder().mkdirs()) {
+            throw new IOException("Could not create plugin data folder: " + getDataFolder());
         }
 
         File configFile = new File(getDataFolder(), "configbungee.yml");
-        // Copy default config if it doesn't exist
         if (!configFile.exists()) {
-            FileOutputStream outputStream = new FileOutputStream(configFile); // Throws IOException
-            InputStream in = getResourceAsStream("configbungee.yml"); // This file must exist in the jar resources folder
-            in.transferTo(outputStream); // Throws IOException
+            try (InputStream in = getResourceAsStream("configbungee.yml")) {
+                if (in == null) throw new IOException("Bundled configbungee.yml was not found");
+                try (FileOutputStream outputStream = new FileOutputStream(configFile)) {
+                    in.transferTo(outputStream);
+                }
+            }
         }
     }
+
     public static HackerGuardianB getInstance() {
         return instance;
     }
-    public static Configuration getConfiguration() { return configuration;}
+
+    public static Configuration getConfiguration() {
+        return configuration;
+    }
 }
