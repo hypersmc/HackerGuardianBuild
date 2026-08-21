@@ -1,16 +1,32 @@
-SQLHost: '127.0.0.1' #This should be the ip to your database
-SQLPort: '3306' #This should be the port to your database.
-SQLDatabaseName: 'myDatabase' #This should be the database name to your database.
-SQLUsername: 'changeme' #This should be the database username to your database
-SQLPassword: 'changeme' #This should be the database password to your database
-debug: false #Enable if I ask you to.
+# HackerGuardian Bungee / FlameCord configuration
+#
+# Supported database types: MYSQL, POSTGRESQL
+Database:
+  type: MYSQL
+  host: "127.0.0.1"
+  port: 3306
+  name: "hackerguardian"
+  username: "changeme"
+  password: "changeme"
+  ssl: false
+
+  pool:
+    maximum_size: 10
+    minimum_idle: 2
+    connection_timeout_ms: 10000
+    validation_timeout_ms: 5000
+    idle_timeout_ms: 60000
+    max_lifetime_ms: 600000
+
+debug: false
 
 Settings:
   shared_secret: "CHANGE_ME_TO_A_LONG_RANDOM_SECRET"
+  ticket_ttl_ms: 15000
   verify_window_ms: 2000
-  hg_secure_link: false #HackerGuardian secure link system to prevent none authorized proxies and direct connection.
-  behind_proxy: true #Often true for API access for the webaddon
-  UseWebsiteFunction: false # true if you use webaddon
+  hg_secure_link: false
+  behind_proxy: true
+  UseWebsiteFunction: false
 
 SettingsWeb:
   Api:
@@ -24,15 +40,13 @@ SettingsWeb:
     keys:
       panel-1: "CHANGE_ME_TO_LONG_RANDOM_SECRET"
 
-
-#Moderation settings
 Punishments:
-  #Usable inputs %expires% %reason% %id%
+  # Usable placeholders: %expires% %reason% %id%
   messages:
     kick: "&cYou were kicked.\n&7Reason: &f%reason%"
     ban_kick: "&cYou are banned.\n&7Reason: &f%reason%"
     ban_join: "&cYou are banned.\n&7Reason: &f%reason%\n&7Expires: &f%expires%"
-    ipban_join: "&cThe ip you are joining from is banned.\n&7Reason: &f%reason%"
+    ipban_join: "&cThe IP you are joining from is banned.\n&7Reason: &f%reason%"
     ipban_kick: "&cYou are IP-banned.\n&7Reason: &f%reason%"
 
     ban_join_temp: |
