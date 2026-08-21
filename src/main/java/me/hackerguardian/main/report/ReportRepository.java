@@ -1,7 +1,15 @@
 package me.hackerguardian.main.report;
 
+import me.hackerguardian.database.DatabaseType;
+import me.hackerguardian.database.SqlSchema;
+
 import javax.sql.DataSource;
-import java.sql.*;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.sql.Types;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -16,9 +24,12 @@ public final class ReportRepository {
 
     public void ensureTables() throws SQLException {
         try (Connection c = ds.getConnection()) {
+            DatabaseType type = SqlSchema.detectType(c);
+            String generatedId = type.generatedIdColumn();
+
             try (PreparedStatement ps = c.prepareStatement(
                     "CREATE TABLE IF NOT EXISTS hg_reports (" +
-                            "id BIGINT AUTO_INCREMENT PRIMARY KEY," +
+                            "id " + generatedId + "," +
                             "reported_uuid CHAR(36) NOT NULL," +
                             "reported_name VARCHAR(16) NOT NULL," +
                             "reporter_uuid CHAR(36) NOT NULL," +
@@ -28,30 +39,31 @@ public final class ReportRepository {
                             "created_at BIGINT NOT NULL," +
                             "updated_at BIGINT NOT NULL," +
                             "resolved_by_uuid CHAR(36) NULL," +
-                            "resolved_at BIGINT NULL," +
-                            "INDEX idx_reported_uuid (reported_uuid)," +
-                            "INDEX idx_reporter_uuid (reporter_uuid)," +
-                            "INDEX idx_status (status)," +
-                            "INDEX idx_created_at (created_at)" +
-                            ");"
+                            "resolved_at BIGINT NULL" +
+                            ")"
             )) {
                 ps.executeUpdate();
             }
 
             try (PreparedStatement ps = c.prepareStatement(
                     "CREATE TABLE IF NOT EXISTS hg_report_comments (" +
-                            "id BIGINT AUTO_INCREMENT PRIMARY KEY," +
+                            "id " + generatedId + "," +
                             "report_id BIGINT NOT NULL," +
                             "commenter_uuid CHAR(36) NOT NULL," +
                             "commenter_name VARCHAR(16) NOT NULL," +
                             "comment TEXT NOT NULL," +
                             "created_at BIGINT NOT NULL," +
-                            "INDEX idx_report_id (report_id)," +
                             "CONSTRAINT fk_report_comments FOREIGN KEY (report_id) REFERENCES hg_reports(id) ON DELETE CASCADE" +
-                            ");"
+                            ")"
             )) {
                 ps.executeUpdate();
             }
+
+            SqlSchema.ensureIndex(c, "hg_reports", "idx_hg_reports_reported_uuid", "reported_uuid");
+            SqlSchema.ensureIndex(c, "hg_reports", "idx_hg_reports_reporter_uuid", "reporter_uuid");
+            SqlSchema.ensureIndex(c, "hg_reports", "idx_hg_reports_status", "status");
+            SqlSchema.ensureIndex(c, "hg_reports", "idx_hg_reports_created_at", "created_at");
+            SqlSchema.ensureIndex(c, "hg_report_comments", "idx_hg_report_comments_report_id", "report_id");
         }
     }
 
