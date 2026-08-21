@@ -208,6 +208,12 @@ public final class ReplayManager {
                 ReplaySession session = new ReplaySession(plugin, replayId, storage, chunkMs, now, ioExecutor);
                 for (ReplayBuffer.Entry entry : pre) session.append(entry.tsMs, entry.eventBytes);
 
+                // DB creation happens off-thread. Preserve events that arrived after the
+                // trigger but before the session became active so the recording has no gap.
+                for (ReplayBuffer.Entry entry : buffer.snapshot(System.currentTimeMillis())) {
+                    if (entry.tsMs > now) session.append(entry.tsMs, entry.eventBytes);
+                }
+
                 if (shuttingDown) {
                     session.close(System.currentTimeMillis());
                     return;
