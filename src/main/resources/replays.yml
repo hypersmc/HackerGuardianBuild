@@ -1,0 +1,42 @@
+# HackerGuardian replay system
+Replays:
+  enabled: true
+
+  # Seconds kept in RAM before a replay is triggered.
+  prebuffer_seconds: 30
+
+  # Seconds recorded after a trigger.
+  postbuffer_seconds: 20
+
+  # 1 tick = 50 ms. Lower values are smoother but heavier.
+  snapshot_interval_ticks: 2
+
+  # Milliseconds grouped into each compressed DB chunk.
+  chunk_ms: 2000
+
+  # Reserved for the future detection policy layer. Detection v2 does not
+  # automatically trigger replays yet.
+  ai_trigger_threshold: 0.92
+
+  max_triggers_per_player_per_hour: 6
+
+  codec: "gzip"
+  format_version: 1
+
+  context:
+    debug: false
+    enabled: true
+    record_in_prebuffer: true
+    radius: 32
+    max_players: 6
+    include_items: true
+    interval_ticks: 2
+
+  sandbox:
+    enabled: true
+    mode: CHUNKS
+    chunk_radius: 2
+    max_chunks: 200
+    include_prebuffer: true
+    world_prefix: "hg_replay_"
+    delete_world_on_exit: true
