@@ -52,7 +52,9 @@ public final class PunishListeners implements Listener {
                     e.disallow(AsyncPlayerPreLoginEvent.Result.KICK_BANNED, color(msg));
                     return;
                 }
-            } catch (Exception ignored) {}
+            } catch (Exception ex) {
+                plugin.getLogger().warning("Failed to check IP ban for " + e.getName() + ": " + ex.getMessage());
+            }
         }
 
         // Ban check
@@ -77,7 +79,9 @@ public final class PunishListeners implements Listener {
                 e.disallow(AsyncPlayerPreLoginEvent.Result.KICK_BANNED, color(msg));
                 return;
             }
-        } catch (Exception ignored) {}
+        } catch (Exception ex) {
+            plugin.getLogger().warning("Failed to check player ban for " + e.getName() + ": " + ex.getMessage());
+        }
     }
 
     @EventHandler
@@ -106,7 +110,9 @@ public final class PunishListeners implements Listener {
                     .replace("%id%", String.valueOf(m.id()));
 
             e.getPlayer().sendMessage(color(msg));
-        } catch (Exception ignored) {}
+        } catch (Exception ex) {
+            plugin.getLogger().warning("Failed to check mute for " + e.getPlayer().getName() + ": " + ex.getMessage());
+        }
     }
 
     private String color(String s) {
