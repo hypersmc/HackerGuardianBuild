@@ -1,5 +1,6 @@
 package me.hackerguardian.main.detection;
 
+import me.hackerguardian.compat.ServerCompatibility;
 import me.hackerguardian.main.HackerGuardian;
 import me.hackerguardian.main.detection.detectors.ClickBurstDetector;
 import me.hackerguardian.main.detection.detectors.ReachEnvelopeDetector;
@@ -23,6 +24,7 @@ public final class DetectionRuntime {
     private final HackerGuardian plugin;
     private final BehaviorTelemetryCollector collector;
     private final DetectionEngine engine;
+    private final ServerCompatibility compatibility;
     private final long assessmentIntervalTicks;
     private final int defaultCaptureMinutes;
     private final LearningRuntime learningRuntime;
@@ -50,6 +52,8 @@ public final class DetectionRuntime {
                 120L
         );
 
+        this.compatibility = ServerCompatibility.detect();
+        this.compatibility.log(plugin.getLogger());
         this.collector = new BehaviorTelemetryCollector(windowMs);
         this.engine = new DetectionEngine(plugin.getLogger(), historySize);
         this.learningRuntime = new LearningRuntime(plugin, config);
@@ -154,7 +158,8 @@ public final class DetectionRuntime {
                 + engine.getDetectorCount() + " detector(s), window=" + collector.getWindowMs()
                 + "ms, supervised-ML=" + supervisedState
                 + ", population-normality=" + normalityState
-                + ", learning=" + (learningRuntime.isEnabled() ? "enabled" : "disabled") + ".");
+                + ", learning=" + (learningRuntime.isEnabled() ? "enabled" : "disabled")
+                + ", mc-family=" + compatibility.familyId() + ".");
     }
 
     private void assessOnlinePlayers() {
@@ -212,6 +217,7 @@ public final class DetectionRuntime {
     public NormalityDetector getNormalityDetector() { return normalityDetector; }
     public MlDatasetRecorder getDatasetRecorder() { return datasetRecorder; }
     public LearningRuntime getLearningRuntime() { return learningRuntime; }
+    public ServerCompatibility getCompatibility() { return compatibility; }
     public int getDefaultCaptureMinutes() { return defaultCaptureMinutes; }
 
     private File resolveDataFile(String configured, String fallback) {
