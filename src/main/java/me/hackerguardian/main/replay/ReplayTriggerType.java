@@ -4,5 +4,8 @@ public enum ReplayTriggerType {
     MANUAL,
     AI,
     MODERATION,
-    REPORT
+    REPORT,
+
+    /** Detection v2 evidence trigger; distinct from the legacy AI trigger. */
+    DETECTION
 }

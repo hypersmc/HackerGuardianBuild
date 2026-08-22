@@ -25,6 +25,18 @@ DetectionV2:
       hard_cps: 35.0
       minimum_swings: 20
 
+  # Sanitized finding history for the server-side Laravel API. This is not a
+  # training label source and contains no API/database/config secrets.
+  web_journal:
+    enabled: true
+    retention_days: 30
+    queue_capacity: 4096
+
+    # The periodic detector loop can see the same condition across many adjacent
+    # windows. Suppress near-identical repeats instead of storing one row/second.
+    repeat_suppression_ms: 5000
+    score_delta: 0.10
+
   # Deterministic checks do not need ML or Learning Mode. They observe Bukkit
   # events and feed recent physics/geometry evidence into the same assessment.
   # They are evidence-only for now; a separate policy layer decides actions.

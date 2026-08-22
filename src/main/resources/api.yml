@@ -1,5 +1,6 @@
 # HackerGuardian server-side API
-# The web panel talks to this API. Browser clients must never receive HMAC keys.
+# Browser clients must never receive these credentials. The supported flow is:
+# Browser -> Laravel -> signed HackerGuardian API.
 SettingsWeb:
   Api:
     enabled: true
@@ -9,5 +10,15 @@ SettingsWeb:
     allowed_skew_ms: 90000
     nonce_ttl_ms: 300000
 
+    # HTTP worker pool. API handlers perform bounded read-only database work.
+    worker_threads: 4
+
+    # Paper publishes secret-free status to the shared DB even when behind_proxy
+    # prevents it from opening a public HTTP listener.
+    server_status_interval_ticks: 400
+    server_status_stale_ms: 60000
+
+    # The API refuses to start with the placeholder below while require_auth=true.
+    # Use at least 32 random characters; substantially longer is recommended.
     keys:
       panel-1: "CHANGE_ME_TO_LONG_RANDOM_SECRET"

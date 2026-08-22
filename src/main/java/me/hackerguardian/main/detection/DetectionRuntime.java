@@ -5,6 +5,7 @@ import me.hackerguardian.main.HackerGuardian;
 import me.hackerguardian.main.detection.deterministic.DeterministicCheckRuntime;
 import me.hackerguardian.main.detection.detectors.ClickBurstDetector;
 import me.hackerguardian.main.detection.detectors.ReachEnvelopeDetector;
+import me.hackerguardian.main.detection.journal.DetectionEventJournal;
 import me.hackerguardian.main.detection.learning.LearningRuntime;
 import me.hackerguardian.main.detection.ml.MlBehaviorDetector;
 import me.hackerguardian.main.detection.ml.MlDatasetRecorder;
@@ -20,7 +21,7 @@ import java.io.File;
 import java.nio.file.Path;
 import java.util.List;
 
-/** Lifecycle owner for Detection v2, deterministic checks, ML, and normality learning. */
+/** Lifecycle owner for Detection v2, deterministic checks, ML, normality, and the web evidence journal. */
 public final class DetectionRuntime {
 
     private final HackerGuardian plugin;
@@ -35,6 +36,7 @@ public final class DetectionRuntime {
     private MlBehaviorDetector mlDetector;
     private NormalityDetector normalityDetector;
     private MlDatasetRecorder datasetRecorder;
+    private DetectionEventJournal eventJournal;
     private BukkitTask assessmentTask;
     private boolean running;
 
@@ -64,6 +66,7 @@ public final class DetectionRuntime {
 
         initializeDatasetRecorder(config);
         registerConfiguredDetectors(config);
+        initializeEventJournal(config);
     }
 
     private void initializeDatasetRecorder(FileConfiguration config) {
@@ -82,6 +85,27 @@ public final class DetectionRuntime {
         } catch (Exception e) {
             datasetRecorder = null;
             plugin.getLogger().warning("ML dataset recorder is unavailable: " + e.getMessage());
+        }
+    }
+
+    private void initializeEventJournal(FileConfiguration config) {
+        boolean website = config.getBoolean("Settings.UseWebsiteFunction", false);
+        boolean enabled = config.getBoolean("DetectionV2.web_journal.enabled", true);
+        if (!website || !enabled || plugin.getDatabase() == null || plugin.getDatabase().getDataSource() == null) return;
+        try {
+            eventJournal = new DetectionEventJournal(
+                    plugin.getDatabase().getDataSource(),
+                    plugin.getLogger(),
+                    config.getString("Settings.server_name", "default"),
+                    config.getLong("DetectionV2.web_journal.repeat_suppression_ms", 5000L),
+                    config.getDouble("DetectionV2.web_journal.score_delta", 0.10),
+                    config.getInt("DetectionV2.web_journal.queue_capacity", 4096),
+                    config.getInt("DetectionV2.web_journal.retention_days", 30)
+            );
+            plugin.getLogger().info("Detection web evidence journal enabled.");
+        } catch (Exception e) {
+            eventJournal = null;
+            plugin.getLogger().warning("Detection web evidence journal is unavailable: " + e.getMessage());
         }
     }
 
@@ -165,6 +189,7 @@ public final class DetectionRuntime {
                 + "ms, supervised-ML=" + supervisedState
                 + ", population-normality=" + normalityState
                 + ", learning=" + (learningRuntime.isEnabled() ? "enabled" : "disabled")
+                + ", web-journal=" + (eventJournal == null ? "disabled" : "enabled")
                 + ", mc-family=" + compatibility.familyId() + ".");
     }
 
@@ -181,18 +206,20 @@ public final class DetectionRuntime {
         return player == null ? null : collector.snapshot(player);
     }
 
-    private DetectionAssessment assess(Player player, boolean recordTrainingSample) {
+    private DetectionAssessment assess(Player player, boolean periodicAssessment) {
         if (player == null) return null;
         BehaviorSnapshot snapshot = collector.snapshot(player);
         if (snapshot == null) return null;
 
-        if (recordTrainingSample) {
+        if (periodicAssessment) {
             if (datasetRecorder != null) datasetRecorder.record(snapshot);
             learningRuntime.observe(player, snapshot);
         }
         List<DetectionFinding> deterministic = deterministicRuntime.recentFindings(
                 player.getUniqueId(), snapshot.getWindowMs());
-        return engine.assess(snapshot, deterministic);
+        DetectionAssessment assessment = engine.assess(snapshot, deterministic);
+        if (periodicAssessment && eventJournal != null) eventJournal.record(assessment);
+        return assessment;
     }
 
     public boolean reloadMlModel() {
@@ -215,6 +242,10 @@ public final class DetectionRuntime {
             datasetRecorder.shutdown();
             datasetRecorder = null;
         }
+        if (eventJournal != null) {
+            eventJournal.shutdown();
+            eventJournal = null;
+        }
         collector.clear();
         engine.clear();
     }
@@ -226,6 +257,7 @@ public final class DetectionRuntime {
     public MlBehaviorDetector getMlDetector() { return mlDetector; }
     public NormalityDetector getNormalityDetector() { return normalityDetector; }
     public MlDatasetRecorder getDatasetRecorder() { return datasetRecorder; }
+    public DetectionEventJournal getEventJournal() { return eventJournal; }
     public LearningRuntime getLearningRuntime() { return learningRuntime; }
     public ServerCompatibility getCompatibility() { return compatibility; }
     public int getDefaultCaptureMinutes() { return defaultCaptureMinutes; }
