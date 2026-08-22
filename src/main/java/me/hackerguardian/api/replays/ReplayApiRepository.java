@@ -139,6 +139,61 @@ public final class ReplayApiRepository {
         }
     }
 
+    /** Metadata for the immutable world snapshots captured for replay sandbox/web reconstruction. */
+    public List<WorldChunkMeta> worldChunks(long replayId) throws SQLException {
+        List<WorldChunkMeta> chunks = new ArrayList<>();
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                     "SELECT world, chunk_x, chunk_z, size_bytes FROM hg_replay_world_chunks "
+                             + "WHERE replay_id=? ORDER BY world ASC, chunk_x ASC, chunk_z ASC"
+             )) {
+            statement.setLong(1, replayId);
+            try (ResultSet result = statement.executeQuery()) {
+                while (result.next()) {
+                    chunks.add(new WorldChunkMeta(
+                            result.getString("world"),
+                            result.getInt("chunk_x"),
+                            result.getInt("chunk_z"),
+                            result.getInt("size_bytes")
+                    ));
+                }
+            }
+        }
+        return chunks;
+    }
+
+    /**
+     * Returns one private stored world snapshot. A null/blank world is accepted only
+     * as a convenience for single-world replays and resolves deterministically.
+     */
+    public WorldChunkData worldChunk(long replayId, String world, int chunkX, int chunkZ) throws SQLException {
+        boolean scoped = notBlank(world);
+        String sql = scoped
+                ? "SELECT world, chunk_x, chunk_z, size_bytes, data FROM hg_replay_world_chunks "
+                    + "WHERE replay_id=? AND world=? AND chunk_x=? AND chunk_z=?"
+                : "SELECT world, chunk_x, chunk_z, size_bytes, data FROM hg_replay_world_chunks "
+                    + "WHERE replay_id=? AND chunk_x=? AND chunk_z=? ORDER BY world ASC";
+
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+            int i = 1;
+            statement.setLong(i++, replayId);
+            if (scoped) statement.setString(i++, world.trim());
+            statement.setInt(i++, chunkX);
+            statement.setInt(i, chunkZ);
+            try (ResultSet result = statement.executeQuery()) {
+                if (!result.next()) return null;
+                return new WorldChunkData(
+                        result.getString("world"),
+                        result.getInt("chunk_x"),
+                        result.getInt("chunk_z"),
+                        result.getInt("size_bytes"),
+                        result.getBytes("data")
+                );
+            }
+        }
+    }
+
     private static ReplayRecord mapReplay(ResultSet result) throws SQLException {
         Long endedAt = nullableLong(result, "ended_at");
         Long captureStart = nullableLong(result, "capture_start_ms");
@@ -228,4 +283,6 @@ public final class ReplayApiRepository {
 
     public record ChunkMeta(int seq, long startMs, long endMs, int sizeBytes) {}
     public record ChunkData(int seq, long startMs, long endMs, int sizeBytes, byte[] data) {}
+    public record WorldChunkMeta(String world, int chunkX, int chunkZ, int sizeBytes) {}
+    public record WorldChunkData(String world, int chunkX, int chunkZ, int sizeBytes, byte[] data) {}
 }

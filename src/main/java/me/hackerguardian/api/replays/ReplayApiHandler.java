@@ -58,6 +58,20 @@ public final class ReplayApiHandler {
                 chunk(exchange, replayId, seq);
                 return;
             }
+            if (parts.length == 2 && "world".equals(parts[1])) {
+                world(exchange, replayId);
+                return;
+            }
+            if (parts.length == 5 && "world".equals(parts[1]) && "chunks".equals(parts[2])) {
+                Integer chunkX = integer(parts[3]);
+                Integer chunkZ = integer(parts[4]);
+                if (chunkX == null || chunkZ == null) {
+                    HgApiHttp.writeError(exchange, 400, "INVALID_WORLD_CHUNK", "Invalid world chunk coordinates");
+                    return;
+                }
+                worldChunk(exchange, request, replayId, chunkX, chunkZ);
+                return;
+            }
 
             HgApiHttp.writeError(exchange, 404, "NOT_FOUND", "Replay route not found");
         } catch (java.io.IOException tooLarge) {
@@ -122,6 +136,7 @@ public final class ReplayApiHandler {
         data.put("trigger_offset_ms", replay.triggerOffsetMs());
         data.put("world", world == null ? null : Map.of("name", world));
         data.put("chunks", chunks);
+        data.put("world_snapshot", worldManifest(repository.worldChunks(replayId), replay.triggerOffsetMs()));
 
         LinkedHashMap<String, Object> triggerEvent = new LinkedHashMap<>();
         triggerEvent.put("time_ms", replay.triggerOffsetMs());
@@ -155,6 +170,77 @@ public final class ReplayApiHandler {
         data.put("format", "hg-web-replay-v1");
         data.put("frames", decoded.frames());
         HgApiHttp.writeOk(exchange, 200, data);
+    }
+
+    private void world(HttpExchange exchange, long replayId) throws Exception {
+        ReplayApiRepository.ReplayRecord replay = repository.get(replayId);
+        if (replay == null) {
+            HgApiHttp.writeError(exchange, 404, "NOT_FOUND", "Replay not found");
+            return;
+        }
+
+        List<ReplayApiRepository.WorldChunkMeta> chunks = repository.worldChunks(replayId);
+        LinkedHashMap<String, Object> data = new LinkedHashMap<>();
+        data.put("replay_id", replayId);
+        data.putAll(worldManifest(chunks, replay.triggerOffsetMs()));
+        HgApiHttp.writeOk(exchange, 200, data);
+    }
+
+    private void worldChunk(HttpExchange exchange,
+                            HgApiHttp.AuthenticatedRequest request,
+                            long replayId,
+                            int chunkX,
+                            int chunkZ) throws Exception {
+        ReplayApiRepository.ReplayRecord replay = repository.get(replayId);
+        if (replay == null) {
+            HgApiHttp.writeError(exchange, 404, "NOT_FOUND", "Replay not found");
+            return;
+        }
+
+        String world = request.query("world");
+        ReplayApiRepository.WorldChunkData stored = repository.worldChunk(replayId, world, chunkX, chunkZ);
+        if (stored == null) {
+            HgApiHttp.writeError(exchange, 404, "WORLD_CHUNK_NOT_FOUND", "Replay world chunk not found");
+            return;
+        }
+
+        LinkedHashMap<String, Object> data = new LinkedHashMap<>();
+        data.put("replay_id", replayId);
+        data.put("format", "hg-web-world-v1");
+        data.put("world", stored.world());
+        data.put("chunk_x", stored.chunkX());
+        data.put("chunk_z", stored.chunkZ());
+        // Existing snapshot capture begins when the replay session becomes active,
+        // which is around the trigger. Until capture timestamps are persisted per
+        // world chunk, this is explicitly an estimated anchor rather than invented precision.
+        data.put("anchor_ms", replay.triggerOffsetMs());
+        data.putAll(ReplayWorldWebCodec.decode(stored.data()));
+        HgApiHttp.writeOk(exchange, 200, data);
+    }
+
+    private static LinkedHashMap<String, Object> worldManifest(List<ReplayApiRepository.WorldChunkMeta> rows,
+                                                                long anchorMs) {
+        List<Map<String, Object>> chunks = new ArrayList<>();
+        long bytes = 0L;
+        for (ReplayApiRepository.WorldChunkMeta row : rows) {
+            LinkedHashMap<String, Object> chunk = new LinkedHashMap<>();
+            chunk.put("world", row.world());
+            chunk.put("chunk_x", row.chunkX());
+            chunk.put("chunk_z", row.chunkZ());
+            chunk.put("size_bytes", row.sizeBytes());
+            chunks.add(chunk);
+            bytes += Math.max(0, row.sizeBytes());
+        }
+
+        LinkedHashMap<String, Object> out = new LinkedHashMap<>();
+        out.put("available", !rows.isEmpty());
+        out.put("format", "hg-web-world-v1");
+        out.put("anchor_ms", anchorMs);
+        out.put("anchor_precision", "trigger_estimate");
+        out.put("chunk_count", rows.size());
+        out.put("size_bytes", bytes);
+        out.put("chunks", chunks);
+        return out;
     }
 
     private static Map<String, Object> summary(ReplayApiRepository.ReplayRecord replay) {
@@ -211,6 +297,11 @@ public final class ReplayApiHandler {
         } catch (Exception ignored) {
             return -1;
         }
+    }
+
+    private static Integer integer(String value) {
+        try { return Integer.parseInt(value); }
+        catch (Exception ignored) { return null; }
     }
 
     private static int positiveInt(String value, int fallback) {
