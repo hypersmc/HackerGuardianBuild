@@ -1,5 +1,6 @@
 package me.hackerguardian.api.status;
 
+import me.hackerguardian.api.learning.LearningPlayerStatusRepository;
 import me.hackerguardian.compat.ServerCompatibility;
 import me.hackerguardian.main.HackerGuardian;
 import me.hackerguardian.main.detection.DetectionRuntime;
@@ -16,6 +17,7 @@ public final class PaperServerStatusHeartbeat {
 
     private final HackerGuardian plugin;
     private final ServerStatusRepository repository;
+    private final LearningPlayerStatusRepository learningPlayers;
     private final ServerCompatibility compatibility;
     private final String serverName;
     private BukkitTask task;
@@ -24,6 +26,8 @@ public final class PaperServerStatusHeartbeat {
         this.plugin = plugin;
         this.repository = new ServerStatusRepository(plugin.getDatabase().getDataSource());
         this.repository.ensureTable();
+        this.learningPlayers = new LearningPlayerStatusRepository(plugin.getDatabase().getDataSource());
+        this.learningPlayers.ensureTable();
         this.compatibility = ServerCompatibility.detect();
         this.serverName = plugin.getConfig().getString("Settings.server_name", "default");
     }
@@ -75,11 +79,26 @@ public final class PaperServerStatusHeartbeat {
             int trustedPlayers = 0;
             double activeHours = 0.0;
             int activeProbes = 0;
+            List<LearningPlayerStatusRepository.PlayerStatus> playerStatuses = new ArrayList<>();
+            long now = System.currentTimeMillis();
             if (learning != null) {
+                double minimumHours = learning.getMinimumBaselineHours();
                 for (LearningPlayerState state : learning.getStates()) {
                     LearningPlayerState.Snapshot snapshot = state.snapshot();
                     if (snapshot.isTrustedLastSeen()) trustedPlayers++;
                     activeHours += snapshot.getCollectedHours();
+                    playerStatuses.add(new LearningPlayerStatusRepository.PlayerStatus(
+                            serverName,
+                            snapshot.getPlayerId().toString(),
+                            snapshot.getPlayerName(),
+                            snapshot.isTrustedLastSeen(),
+                            snapshot.getCollectedHours(),
+                            snapshot.getFirstTrustedMs(),
+                            snapshot.getLastSeenMs(),
+                            snapshot.getLastProbeMs(),
+                            snapshot.getCollectedHours() >= minimumHours,
+                            now
+                    ));
                 }
                 if (learning.getProbeEngine() != null) {
                     activeProbes = learning.getProbeEngine().getActiveProbeCount();
@@ -103,8 +122,9 @@ public final class PaperServerStatusHeartbeat {
                     activeHours,
                     activeProbes,
                     syntheticProbes,
-                    System.currentTimeMillis()
+                    now
             ));
+            learningPlayers.upsertAll(playerStatuses);
         } catch (Exception e) {
             plugin.getLogger().warning("[HG-API] Backend status heartbeat failed: " + e.getMessage());
         }
