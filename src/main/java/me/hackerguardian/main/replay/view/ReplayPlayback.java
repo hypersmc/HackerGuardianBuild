@@ -188,7 +188,7 @@ public final class ReplayPlayback {
                     int bx = evIn.readInt();
                     int by = evIn.readInt();
                     int bz = evIn.readInt();
-                    String bt = evIn.readString(64);
+                    String blockState = evIn.readString(256);
 
                     World w = staff.getWorld();
                     if (w == null) return;
@@ -204,11 +204,11 @@ public final class ReplayPlayback {
                         ghost.swingMainHand();
                         staff.sendBlockChange(loc, Material.AIR.createBlockData());
                     } else {
-                        Material m = Material.matchMaterial(bt);
-                        if (m != null && m.isBlock()) {
-                            ghost.setMainHand(m);
+                        BlockData data = decodeBlockData(blockState);
+                        if (data != null) {
+                            ghost.setMainHand(data.getMaterial());
                             ghost.swingMainHand();
-                            staff.sendBlockChange(loc, m.createBlockData());
+                            staff.sendBlockChange(loc, data);
                         }
                     }
                 }
@@ -311,6 +311,15 @@ public final class ReplayPlayback {
                         + " bytes=" + evBytes.length + " : " + ex);
                 ex.printStackTrace();
             }
+        }
+    }
+
+    private static BlockData decodeBlockData(String state) {
+        try {
+            return Bukkit.createBlockData(state);
+        } catch (Exception ignored) {
+            Material material = Material.matchMaterial(state);
+            return material != null && material.isBlock() ? material.createBlockData() : null;
         }
     }
 

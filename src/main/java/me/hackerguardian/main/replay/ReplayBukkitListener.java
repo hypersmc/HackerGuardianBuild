@@ -84,7 +84,7 @@ public final class ReplayBukkitListener implements Listener {
 
     @EventHandler
     public void onPlace(BlockPlaceEvent e) {
-        rm.record(e.getPlayer(), System.currentTimeMillis(), BlockPlaceReplayEvent.from(e.getBlockPlaced()));
+        rm.record(e.getPlayer(), System.currentTimeMillis(), BlockPlaceReplayEvent.from(e));
     }
 
     @EventHandler

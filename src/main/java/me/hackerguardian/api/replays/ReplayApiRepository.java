@@ -107,12 +107,8 @@ public final class ReplayApiRepository {
             statement.setLong(1, replayId);
             try (ResultSet result = statement.executeQuery()) {
                 while (result.next()) {
-                    chunks.add(new ChunkMeta(
-                            result.getInt("seq"),
-                            result.getLong("start_ms"),
-                            result.getLong("end_ms"),
-                            result.getInt("size_bytes")
-                    ));
+                    chunks.add(new ChunkMeta(result.getInt("seq"), result.getLong("start_ms"),
+                            result.getLong("end_ms"), result.getInt("size_bytes")));
                 }
             }
         }
@@ -128,12 +124,71 @@ public final class ReplayApiRepository {
             statement.setInt(2, seq);
             try (ResultSet result = statement.executeQuery()) {
                 if (!result.next()) return null;
-                return new ChunkData(
-                        result.getInt("seq"),
-                        result.getLong("start_ms"),
-                        result.getLong("end_ms"),
-                        result.getInt("size_bytes"),
-                        result.getBytes("data")
+                return new ChunkData(result.getInt("seq"), result.getLong("start_ms"), result.getLong("end_ms"),
+                        result.getInt("size_bytes"), result.getBytes("data"));
+            }
+        }
+    }
+
+    /** Metadata for immutable, complete block-state chunk keyframes. */
+    public List<WorldChunkMeta> worldChunks(long replayId) throws SQLException {
+        List<WorldChunkMeta> chunks = new ArrayList<>();
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                     "SELECT world, chunk_x, chunk_z, captured_at, size_bytes FROM hg_replay_world_chunks "
+                             + "WHERE replay_id=? ORDER BY world ASC, chunk_x ASC, chunk_z ASC"
+             )) {
+            statement.setLong(1, replayId);
+            try (ResultSet result = statement.executeQuery()) {
+                while (result.next()) {
+                    chunks.add(new WorldChunkMeta(
+                            result.getString("world"), result.getInt("chunk_x"), result.getInt("chunk_z"),
+                            result.getLong("captured_at"), result.getInt("size_bytes")
+                    ));
+                }
+            }
+        }
+        return chunks;
+    }
+
+    public WorldChunkData worldChunk(long replayId, String world, int chunkX, int chunkZ) throws SQLException {
+        boolean scoped = notBlank(world);
+        String sql = scoped
+                ? "SELECT world, chunk_x, chunk_z, captured_at, size_bytes, data FROM hg_replay_world_chunks "
+                    + "WHERE replay_id=? AND world=? AND chunk_x=? AND chunk_z=?"
+                : "SELECT world, chunk_x, chunk_z, captured_at, size_bytes, data FROM hg_replay_world_chunks "
+                    + "WHERE replay_id=? AND chunk_x=? AND chunk_z=? ORDER BY world ASC";
+
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+            int i = 1;
+            statement.setLong(i++, replayId);
+            if (scoped) statement.setString(i++, world.trim());
+            statement.setInt(i++, chunkX);
+            statement.setInt(i, chunkZ);
+            try (ResultSet result = statement.executeQuery()) {
+                if (!result.next()) return null;
+                return new WorldChunkData(
+                        result.getString("world"), result.getInt("chunk_x"), result.getInt("chunk_z"),
+                        result.getLong("captured_at"), result.getInt("size_bytes"), result.getBytes("data")
+                );
+            }
+        }
+    }
+
+    public WorldContext worldContext(long replayId) throws SQLException {
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                     "SELECT world, minecraft_version, environment, game_time, full_time, storm, thundering, resource_pack_id "
+                             + "FROM hg_replay_world_context WHERE replay_id=?"
+             )) {
+            statement.setLong(1, replayId);
+            try (ResultSet result = statement.executeQuery()) {
+                if (!result.next()) return null;
+                return new WorldContext(
+                        result.getString("world"), result.getString("minecraft_version"), result.getString("environment"),
+                        result.getLong("game_time"), result.getLong("full_time"), result.getInt("storm") != 0,
+                        result.getInt("thundering") != 0, result.getString("resource_pack_id")
                 );
             }
         }
@@ -145,21 +200,11 @@ public final class ReplayApiRepository {
         Long captureEnd = nullableLong(result, "capture_end_ms");
         Double aiScore = result.getObject("ai_score") == null ? null : result.getDouble("ai_score");
         return new ReplayRecord(
-                result.getLong("id"),
-                result.getString("player_uuid"),
-                result.getString("player_name"),
-                result.getString("server_name"),
-                result.getLong("started_at"),
-                endedAt,
-                result.getString("trigger_type"),
-                result.getString("trigger_meta"),
-                aiScore,
-                result.getInt("format_version"),
-                result.getString("codec"),
-                result.getLong("size_bytes"),
-                result.getInt("chunk_count"),
-                captureStart,
-                captureEnd
+                result.getLong("id"), result.getString("player_uuid"), result.getString("player_name"),
+                result.getString("server_name"), result.getLong("started_at"), endedAt,
+                result.getString("trigger_type"), result.getString("trigger_meta"), aiScore,
+                result.getInt("format_version"), result.getString("codec"), result.getLong("size_bytes"),
+                result.getInt("chunk_count"), captureStart, captureEnd
         );
     }
 
@@ -200,21 +245,10 @@ public final class ReplayApiRepository {
     }
 
     public record ReplayRecord(
-            long id,
-            String playerUuid,
-            String playerName,
-            String serverName,
-            long startedAt,
-            Long endedAt,
-            String triggerType,
-            String triggerMeta,
-            Double aiScore,
-            int formatVersion,
-            String codec,
-            long sizeBytes,
-            int chunkCount,
-            Long captureStartMs,
-            Long captureEndMs
+            long id, String playerUuid, String playerName, String serverName,
+            long startedAt, Long endedAt, String triggerType, String triggerMeta,
+            Double aiScore, int formatVersion, String codec, long sizeBytes,
+            int chunkCount, Long captureStartMs, Long captureEndMs
     ) {
         public long durationMs() {
             if (captureStartMs == null || captureEndMs == null) return 0L;
@@ -224,8 +258,17 @@ public final class ReplayApiRepository {
         public long triggerOffsetMs() {
             return captureStartMs == null ? 0L : Math.max(0L, startedAt - captureStartMs);
         }
+
+        public long captureOriginMs() {
+            return captureStartMs == null ? startedAt : captureStartMs;
+        }
     }
 
     public record ChunkMeta(int seq, long startMs, long endMs, int sizeBytes) {}
     public record ChunkData(int seq, long startMs, long endMs, int sizeBytes, byte[] data) {}
+    public record WorldChunkMeta(String world, int chunkX, int chunkZ, long capturedAtMs, int sizeBytes) {}
+    public record WorldChunkData(String world, int chunkX, int chunkZ, long capturedAtMs, int sizeBytes, byte[] data) {}
+    public record WorldContext(String world, String minecraftVersion, String environment,
+                               long gameTime, long fullTime, boolean storm, boolean thundering,
+                               String resourcePackId) {}
 }
