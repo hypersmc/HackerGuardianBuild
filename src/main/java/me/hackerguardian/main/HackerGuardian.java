@@ -242,8 +242,8 @@ public class HackerGuardian extends JavaPlugin {
 
     private void logStartupSummary() {
         String detection = getConfig().getBoolean("DetectionV2.enabled", true)
-                ? ChatColor.GREEN + "Detection v2: enabled\n"
-                : ChatColor.RED + "Detection v2: disabled\n";
+                ? ChatColor.DARK_GRAY + "|      " + ChatColor.GREEN + "Detection v2: enabled\n"
+                : ChatColor.DARK_GRAY + "|      " + ChatColor.RED + "Detection v2: disabled\n";
 
         getServer().getConsoleSender().sendMessage(
                 "\n" + ChatColor.DARK_GRAY + "[]=====[" + ChatColor.GRAY + "Enabling "
