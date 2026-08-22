@@ -5,6 +5,11 @@ This model intentionally learns primarily from trusted-player behavior rather
 than requiring a catalog of every cheat. Candidate rows are accepted only when
 (1) their quarantine timestamp has passed and (2) the current trust manifest
 still marks the player as trusted and baseline-eligible.
+
+Validation holds out whole players rather than adjacent windows/sessions. That
+matters for a population model: the review threshold should work on legitimate
+players the forest never saw during training, not merely new moments from people
+whose individual behavior is already represented in the training set.
 """
 
 from __future__ import annotations
@@ -16,7 +21,6 @@ import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
 import numpy as np
 
@@ -212,24 +216,26 @@ def load_dataset(path: Path,
     )
 
 
-def split_by_session(dataset: Dataset,
-                     validation_fraction: float,
-                     rng: np.random.Generator) -> tuple[np.ndarray, np.ndarray]:
+def split_by_player(dataset: Dataset,
+                    validation_fraction: float,
+                    rng: np.random.Generator) -> tuple[np.ndarray, np.ndarray, set[str]]:
     if not 0.05 <= validation_fraction <= 0.50:
         raise ValueError("validation_fraction must be between 0.05 and 0.50")
-    unique_sessions = np.asarray(sorted(set(str(s) for s in dataset.sessions)), dtype=object)
-    if unique_sessions.size < 2:
-        raise ValueError("Normality training requires at least two independent sessions")
-    rng.shuffle(unique_sessions)
-    validation_count = int(round(unique_sessions.size * validation_fraction))
-    validation_count = max(1, min(validation_count, unique_sessions.size - 1))
-    validation_sessions = set(str(value) for value in unique_sessions[:validation_count])
-    validation_mask = np.asarray([str(s) in validation_sessions for s in dataset.sessions], dtype=bool)
+
+    unique_players = np.asarray(sorted(set(str(p) for p in dataset.players)), dtype=object)
+    if unique_players.size < 3:
+        raise ValueError("Population-normality validation requires at least three independent players")
+
+    rng.shuffle(unique_players)
+    validation_count = int(round(unique_players.size * validation_fraction))
+    validation_count = max(1, min(validation_count, unique_players.size - 2))
+    validation_players = set(str(value) for value in unique_players[:validation_count])
+    validation_mask = np.asarray([str(player) in validation_players for player in dataset.players], dtype=bool)
     training = np.flatnonzero(~validation_mask)
     validation = np.flatnonzero(validation_mask)
     if training.size == 0 or validation.size == 0:
-        raise ValueError("Session split produced an empty training or validation set")
-    return training, validation
+        raise ValueError("Player holdout produced an empty training or validation set")
+    return training, validation, validation_players
 
 
 def average_path_length(size: int) -> float:
@@ -334,6 +340,7 @@ def write_artifact(path: Path,
                    training_samples: int,
                    training_players: int,
                    training_sessions: int,
+                   validation_players: int,
                    validation_scores: np.ndarray) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     lines = [
@@ -347,6 +354,7 @@ def write_artifact(path: Path,
         f"training.samples={training_samples}",
         f"training.players={training_players}",
         f"training.sessions={training_sessions}",
+        f"validation.players={validation_players}",
         f"decision.threshold={threshold:.17g}",
         f"metrics.validation_normal_mean={float(validation_scores.mean()):.17g}",
         f"metrics.validation_normal_p95={percentile(validation_scores, 0.95):.17g}",
@@ -365,14 +373,17 @@ def write_artifact(path: Path,
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def train(dataset: Dataset, args: argparse.Namespace, rng: np.random.Generator) -> tuple[Forest, float, np.ndarray, np.ndarray]:
+def train(dataset: Dataset,
+          args: argparse.Namespace,
+          rng: np.random.Generator) -> tuple[Forest, float, np.ndarray, np.ndarray, set[str]]:
     unique_players = set(str(p) for p in dataset.players)
     if len(unique_players) < args.min_players:
         raise ValueError(f"Need at least {args.min_players} trusted players; found {len(unique_players)}")
     if dataset.features.shape[0] < args.min_rows:
         raise ValueError(f"Need at least {args.min_rows} eligible rows; found {dataset.features.shape[0]}")
 
-    train_indices, validation_indices = split_by_session(dataset, args.validation_fraction, rng)
+    train_indices, validation_indices, validation_players = split_by_player(
+        dataset, args.validation_fraction, rng)
     train_features = dataset.features[train_indices]
     validation_features = dataset.features[validation_indices]
     if validation_features.shape[0] > args.max_validation_rows:
@@ -383,7 +394,7 @@ def train(dataset: Dataset, args: argparse.Namespace, rng: np.random.Generator) 
     validation_scores = score_rows(forest, validation_features)
     threshold = percentile(validation_scores, 1.0 - args.target_normal_fpr)
     threshold = max(0.01, min(0.99, threshold))
-    return forest, threshold, validation_scores, train_indices
+    return forest, threshold, validation_scores, train_indices, validation_players
 
 
 def run_training(args: argparse.Namespace) -> Path:
@@ -396,7 +407,7 @@ def run_training(args: argparse.Namespace) -> Path:
     eligible = load_eligible_players(args.manifest)
     as_of_ms = int(time.time() * 1000) if args.as_of_ms is None else args.as_of_ms
     dataset = load_dataset(args.input, eligible, as_of_ms, args.max_samples_per_player, rng)
-    forest, threshold, validation_scores, train_indices = train(dataset, args, rng)
+    forest, threshold, validation_scores, train_indices, validation_players = train(dataset, args, rng)
 
     training_players = len(set(str(p) for p in dataset.players[train_indices]))
     training_sessions = len(set(str(s) for s in dataset.sessions[train_indices]))
@@ -408,6 +419,7 @@ def run_training(args: argparse.Namespace) -> Path:
         len(train_indices),
         training_players,
         training_sessions,
+        len(validation_players),
         validation_scores,
     )
 
@@ -416,6 +428,7 @@ def run_training(args: argparse.Namespace) -> Path:
     print(f"  eligible rows:         {dataset.features.shape[0]}")
     print(f"  training rows:         {len(train_indices)}")
     print(f"  training players:      {training_players}")
+    print(f"  validation players:    {len(validation_players)}")
     print(f"  training sessions:     {training_sessions}")
     print(f"  trees/sample size:     {len(forest.trees)}/{forest.sample_size}")
     print(f"  review threshold:      {threshold:.4f}")
@@ -488,7 +501,7 @@ def run_self_test() -> None:
             seed=4242,
             trees=64,
             sample_size=128,
-            validation_fraction=0.20,
+            validation_fraction=0.25,
             target_normal_fpr=0.01,
             max_samples_per_player=10_000,
             max_validation_rows=5_000,
@@ -501,18 +514,26 @@ def run_self_test() -> None:
             raise AssertionError("normality trainer did not produce a usable artifact")
 
         eligible = load_eligible_players(manifest)
-        dataset = load_dataset(candidate, eligible, args.as_of_ms, args.max_samples_per_player, np.random.default_rng(args.seed))
-        train_indices, _ = split_by_session(dataset, args.validation_fraction, np.random.default_rng(args.seed))
+        dataset = load_dataset(candidate, eligible, args.as_of_ms, args.max_samples_per_player,
+                               np.random.default_rng(args.seed))
+        train_indices, validation_indices, validation_players = split_by_player(
+            dataset, args.validation_fraction, np.random.default_rng(args.seed))
+        train_players = set(str(p) for p in dataset.players[train_indices])
+        if train_players.intersection(validation_players):
+            raise AssertionError("player holdout leaked a player into both training and validation")
+        if not validation_indices.size:
+            raise AssertionError("player holdout produced no validation rows")
+
         forest = train_forest(dataset.features[train_indices], 64, 128, np.random.default_rng(args.seed))
-        normal_scores = score_rows(forest, dataset.features[:200])
-        outliers = dataset.features[:100].copy()
+        normal_scores = score_rows(forest, dataset.features[validation_indices][:200])
+        outliers = dataset.features[validation_indices][:100].copy()
         outliers[:, 1] = 18.0
         outliers[:, 2] = 45.0
         outliers[:, 4] = 175.0
         outliers[:, 9] = 70.0
         outlier_scores = score_rows(forest, outliers)
         if float(np.median(outlier_scores)) <= float(np.median(normal_scores)):
-            raise AssertionError("synthetic outliers were not more anomalous than the normal population")
+            raise AssertionError("synthetic outliers were not more anomalous than held-out normal players")
         print("Population normality tooling self-test passed.")
 
 
