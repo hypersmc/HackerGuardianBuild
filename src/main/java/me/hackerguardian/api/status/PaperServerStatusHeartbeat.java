@@ -11,6 +11,7 @@ import org.bukkit.scheduler.BukkitTask;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /** Periodically publishes sanitized backend state to the shared SQL database. */
 public final class PaperServerStatusHeartbeat {
@@ -20,7 +21,8 @@ public final class PaperServerStatusHeartbeat {
     private final LearningPlayerStatusRepository learningPlayers;
     private final ServerCompatibility compatibility;
     private final String serverName;
-    private BukkitTask task;
+    private final AtomicBoolean writeInFlight = new AtomicBoolean();
+    private BukkitTask captureTask;
 
     public PaperServerStatusHeartbeat(HackerGuardian plugin) throws Exception {
         this.plugin = plugin;
@@ -33,17 +35,20 @@ public final class PaperServerStatusHeartbeat {
     }
 
     public void start() {
-        if (task != null) return;
+        if (captureTask != null) return;
         long intervalTicks = Math.max(100L,
                 plugin.getConfig().getLong("SettingsWeb.Api.server_status_interval_ticks", 400L));
-        publish();
-        task = Bukkit.getScheduler().runTaskTimerAsynchronously(plugin, this::publish, intervalTicks, intervalTicks);
+        captureAndPublish();
+        // Bukkit/runtime state is captured on the main thread. Only JDBC work is
+        // moved off-thread so the heartbeat does not call Bukkit APIs async or
+        // block the server tick on database latency.
+        captureTask = Bukkit.getScheduler().runTaskTimer(plugin, this::captureAndPublish, intervalTicks, intervalTicks);
     }
 
     public void stop() {
-        if (task != null) {
-            task.cancel();
-            task = null;
+        if (captureTask != null) {
+            captureTask.cancel();
+            captureTask = null;
         }
         try {
             repository.markOffline(serverName);
@@ -52,81 +57,103 @@ public final class PaperServerStatusHeartbeat {
         }
     }
 
-    private void publish() {
+    private void captureAndPublish() {
+        if (!writeInFlight.compareAndSet(false, true)) return;
+        final Snapshot captured;
         try {
-            DetectionRuntime detection = plugin.getDetectionRuntime();
-            boolean detectionEnabled = detection != null && detection.isRunning();
-            int trackedPlayers = detectionEnabled ? detection.getCollector().getTrackedPlayerCount() : 0;
-
-            List<String> detectors = new ArrayList<>();
-            if (detectionEnabled) {
-                for (String id : detection.getEngine().getDetectorIds()) {
-                    String type = "snapshot";
-                    if (detection.getMlDetector() != null && id.equals(detection.getMlDetector().id())) {
-                        type = detection.getMlDetector().isLoaded() ? "ml_loaded" : "ml_unavailable";
-                    } else if (detection.getNormalityDetector() != null && id.equals(detection.getNormalityDetector().id())) {
-                        type = detection.getNormalityDetector().isLoaded() ? "normality_loaded" : "normality_unavailable";
-                    }
-                    detectors.add(type + "|" + id);
-                }
-                for (String id : detection.getDeterministicRuntime().getCheckIds()) {
-                    detectors.add("deterministic|" + id);
-                }
-            }
-
-            LearningRuntime learning = detectionEnabled ? detection.getLearningRuntime() : null;
-            boolean learningEnabled = learning != null && learning.isEnabled();
-            int trustedPlayers = 0;
-            double activeHours = 0.0;
-            int activeProbes = 0;
-            List<LearningPlayerStatusRepository.PlayerStatus> playerStatuses = new ArrayList<>();
-            long now = System.currentTimeMillis();
-            if (learning != null) {
-                double minimumHours = learning.getMinimumBaselineHours();
-                for (LearningPlayerState state : learning.getStates()) {
-                    LearningPlayerState.Snapshot snapshot = state.snapshot();
-                    if (snapshot.isTrustedLastSeen()) trustedPlayers++;
-                    activeHours += snapshot.getCollectedHours();
-                    playerStatuses.add(new LearningPlayerStatusRepository.PlayerStatus(
-                            serverName,
-                            snapshot.getPlayerId().toString(),
-                            snapshot.getPlayerName(),
-                            snapshot.isTrustedLastSeen(),
-                            snapshot.getCollectedHours(),
-                            snapshot.getFirstTrustedMs(),
-                            snapshot.getLastSeenMs(),
-                            snapshot.getLastProbeMs(),
-                            snapshot.getCollectedHours() >= minimumHours,
-                            now
-                    ));
-                }
-                if (learning.getProbeEngine() != null) {
-                    activeProbes = learning.getProbeEngine().getActiveProbeCount();
-                }
-            }
-
-            boolean syntheticProbes = learningEnabled
-                    && learning.getProbeEngine() != null
-                    && compatibility.supportsSyntheticPlayerPackets();
-
-            repository.heartbeat(new ServerStatusRepository.Status(
-                    serverName,
-                    plugin.getDescription().getVersion(),
-                    compatibility.minecraftVersionString(),
-                    Bukkit.getOnlinePlayers().size(),
-                    detectionEnabled,
-                    trackedPlayers,
-                    String.join(",", detectors),
-                    learningEnabled,
-                    trustedPlayers,
-                    activeHours,
-                    activeProbes,
-                    syntheticProbes,
-                    now
-            ));
-            learningPlayers.upsertAll(playerStatuses);
+            captured = capture();
         } catch (Exception e) {
-            plugin.getLogger().warning("[HG-API] Backend status heartbeat failed: " + e.getMessage());
+            writeInFlight.set(false);
+            plugin.getLogger().warning("[HG-API] Backend status capture failed: " + e.getMessage());
+            return;
         }
+
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+            try {
+                repository.heartbeat(captured.server());
+                learningPlayers.upsertAll(captured.players());
+            } catch (Exception e) {
+                plugin.getLogger().warning("[HG-API] Backend status heartbeat failed: " + e.getMessage());
+            } finally {
+                writeInFlight.set(false);
+            }
+        });
     }
+
+    private Snapshot capture() {
+        DetectionRuntime detection = plugin.getDetectionRuntime();
+        boolean detectionEnabled = detection != null && detection.isRunning();
+        int trackedPlayers = detectionEnabled ? detection.getCollector().getTrackedPlayerCount() : 0;
+
+        List<String> detectors = new ArrayList<>();
+        if (detectionEnabled) {
+            for (String id : detection.getEngine().getDetectorIds()) {
+                String type = "snapshot";
+                if (detection.getMlDetector() != null && id.equals(detection.getMlDetector().id())) {
+                    type = detection.getMlDetector().isLoaded() ? "ml_loaded" : "ml_unavailable";
+                } else if (detection.getNormalityDetector() != null && id.equals(detection.getNormalityDetector().id())) {
+                    type = detection.getNormalityDetector().isLoaded() ? "normality_loaded" : "normality_unavailable";
+                }
+                detectors.add(type + "|" + id);
+            }
+            for (String id : detection.getDeterministicRuntime().getCheckIds()) {
+                detectors.add("deterministic|" + id);
+            }
+        }
+
+        LearningRuntime learning = detectionEnabled ? detection.getLearningRuntime() : null;
+        boolean learningEnabled = learning != null && learning.isEnabled();
+        int trustedPlayers = 0;
+        double activeHours = 0.0;
+        int activeProbes = 0;
+        List<LearningPlayerStatusRepository.PlayerStatus> playerStatuses = new ArrayList<>();
+        long now = System.currentTimeMillis();
+        if (learning != null) {
+            double minimumHours = learning.getMinimumBaselineHours();
+            for (LearningPlayerState state : learning.getStates()) {
+                LearningPlayerState.Snapshot snapshot = state.snapshot();
+                if (snapshot.isTrustedLastSeen()) trustedPlayers++;
+                activeHours += snapshot.getCollectedHours();
+                playerStatuses.add(new LearningPlayerStatusRepository.PlayerStatus(
+                        serverName,
+                        snapshot.getPlayerId().toString(),
+                        snapshot.getPlayerName(),
+                        snapshot.isTrustedLastSeen(),
+                        snapshot.getCollectedHours(),
+                        snapshot.getFirstTrustedMs(),
+                        snapshot.getLastSeenMs(),
+                        snapshot.getLastProbeMs(),
+                        snapshot.getCollectedHours() >= minimumHours,
+                        now
+                ));
+            }
+            if (learning.getProbeEngine() != null) {
+                activeProbes = learning.getProbeEngine().getActiveProbeCount();
+            }
+        }
+
+        boolean syntheticProbes = learningEnabled
+                && learning.getProbeEngine() != null
+                && compatibility.supportsSyntheticPlayerPackets();
+
+        ServerStatusRepository.Status serverStatus = new ServerStatusRepository.Status(
+                serverName,
+                plugin.getDescription().getVersion(),
+                compatibility.minecraftVersionString(),
+                Bukkit.getOnlinePlayers().size(),
+                detectionEnabled,
+                trackedPlayers,
+                String.join(",", detectors),
+                learningEnabled,
+                trustedPlayers,
+                activeHours,
+                activeProbes,
+                syntheticProbes,
+                now
+        );
+        return new Snapshot(serverStatus, List.copyOf(playerStatuses));
+    }
+
+    private record Snapshot(ServerStatusRepository.Status server,
+                            List<LearningPlayerStatusRepository.PlayerStatus> players) {}
 }
