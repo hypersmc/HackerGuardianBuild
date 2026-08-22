@@ -141,10 +141,11 @@ public final class ReplayWorldSnapshotter {
     private void captureContextOnce(long replayId, World world) {
         if (!contextCaptured.add(replayId)) return;
 
-        // Copy Bukkit-owned state to plain immutable values before leaving the main thread.
+        // getBukkitVersion exists on the oldest supported API. Strip its API suffix
+        // so the web viewer can select a local asset pack such as "1.20.2".
         ReplayWorldContext context = new ReplayWorldContext(
                 world.getName(),
-                Bukkit.getMinecraftVersion(),
+                minecraftVersion(),
                 world.getEnvironment().name(),
                 world.getTime(),
                 world.getFullTime(),
@@ -163,5 +164,12 @@ public final class ReplayWorldSnapshotter {
                 if (plugin.getConfig().getBoolean("debug")) exception.printStackTrace();
             }
         });
+    }
+
+    private static String minecraftVersion() {
+        String version = Bukkit.getBukkitVersion();
+        if (version == null || version.isBlank()) return "unknown";
+        int suffix = version.indexOf('-');
+        return suffix > 0 ? version.substring(0, suffix) : version;
     }
 }
