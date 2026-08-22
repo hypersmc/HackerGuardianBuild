@@ -78,9 +78,13 @@ DetectionV2:
     # elapsed AND the player is still trusted in the current trust manifest.
     quarantine_days: 14.0
 
-    # Minimum accumulated trusted online time before a player is considered a
-    # mature baseline contributor by the generated trust manifest.
+    # Minimum accumulated trusted active-observation time before a player is
+    # considered a mature baseline contributor by the generated trust manifest.
     minimum_baseline_hours: 10.0
+
+    # Do not count idle/AFK connection time as collected behavioral hours and do
+    # not write candidate rows when there is no tracked activity in the window.
+    minimum_activity_samples: 1
 
     # Record one candidate BehaviorSnapshot per trusted player at this interval.
     # Fifteen seconds still yields thousands of windows per player/day while
@@ -102,7 +106,7 @@ DetectionV2:
       result_file: "ml/normality/probe-results-v1.csv"
       queue_capacity: 1024
 
-      # Automatic probes begin only after this much trusted play time.
+      # Automatic probes begin only after this much trusted active play time.
       minimum_collected_hours: 10.0
 
       # At most roughly one automatic probe per this interval, plus random

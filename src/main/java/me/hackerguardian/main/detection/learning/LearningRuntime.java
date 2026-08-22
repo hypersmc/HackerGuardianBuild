@@ -35,6 +35,7 @@ public final class LearningRuntime {
     private final Set<UUID> trustedAllowlist;
     private final long quarantineMs;
     private final long minimumBaselineMs;
+    private final int minimumActivitySamples;
     private final long sampleIntervalMs;
     private final long maxObservationGapMs;
     private final long stateSaveTicks;
@@ -61,6 +62,7 @@ public final class LearningRuntime {
         this.trustedAllowlist = parseUuidSet(config.getStringList(root + "trusted_uuids"));
         this.quarantineMs = daysToMs(config.getDouble(root + "quarantine_days", 14.0));
         this.minimumBaselineMs = hoursToMs(config.getDouble(root + "minimum_baseline_hours", 10.0));
+        this.minimumActivitySamples = Math.max(1, config.getInt(root + "minimum_activity_samples", 1));
         this.sampleIntervalMs = secondsToMs(config.getDouble(root + "sample_interval_seconds", 15.0));
         this.maxObservationGapMs = Math.max(5_000L, sampleIntervalMs * 3L);
         this.stateSaveTicks = Math.max(20L, config.getLong(root + "state_save_interval_ticks", 1200L));
@@ -156,12 +158,22 @@ public final class LearningRuntime {
         LearningPlayerState state = states.computeIfAbsent(playerId, LearningPlayerState::new);
         state.markSeen(player.getName(), true, now);
         UUID sessionId = sessions.computeIfAbsent(playerId, ignored -> UuidV7.next());
+        maybeNotify(player);
+
+        // Collected hours mean observed gameplay, not merely connection/AFK time.
+        // If the rolling snapshot has no tracked behavior, break the active-time
+        // chain so a later movement cannot retroactively count the idle gap.
+        int activitySamples = activitySamples(snapshot);
+        if (activitySamples < minimumActivitySamples) {
+            lastObservedMs.remove(playerId);
+            return;
+        }
+
         Long previous = lastObservedMs.put(playerId, now);
         if (previous != null && now > previous) {
             state.addCollected(Math.min(now - previous, maxObservationGapMs));
         }
 
-        maybeNotify(player);
         long eligibleAfterMs = safeAdd(now, quarantineMs);
         Long lastSample = lastSampleMs.get(playerId);
         if (datasetRecorder != null && (lastSample == null || now - lastSample >= sampleIntervalMs)) {
@@ -267,6 +279,7 @@ public final class LearningRuntime {
     public String getTrustedPermission() { return trustedPermission; }
     public double getMinimumBaselineHours() { return minimumBaselineMs / 3_600_000.0; }
     public double getQuarantineDays() { return quarantineMs / 86_400_000.0; }
+    public int getMinimumActivitySamples() { return minimumActivitySamples; }
     public NormalityDatasetRecorder getDatasetRecorder() { return datasetRecorder; }
     public LearningStateStore getStateStore() { return stateStore; }
     public BehaviorProbeEngine getProbeEngine() { return probeEngine; }
@@ -313,6 +326,14 @@ public final class LearningRuntime {
             throw new IllegalArgumentException("Learning file path must stay inside the plugin data folder: " + relative);
         }
         return resolved;
+    }
+
+    private static int activitySamples(BehaviorSnapshot snapshot) {
+        return snapshot.getMovementSamples()
+                + snapshot.getSwingCount()
+                + snapshot.getHitCount()
+                + snapshot.getBlocksBroken()
+                + snapshot.getBlocksPlaced();
     }
 
     private static Set<UUID> parseUuidSet(java.util.List<String> values) {
