@@ -8,6 +8,7 @@ on:
       - "stabilize/**"
       - "refactor/**"
       - "ml/**"
+      - "compat/**"
 
 jobs:
   build:
@@ -69,6 +70,43 @@ jobs:
 
       - name: Build and test
         run: mvn -B package
+
+  compatibility-compile:
+    name: compatibility-${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: paper-1.21.11
+            java: "21"
+            api_group: io.papermc.paper
+            api_artifact: paper-api
+            api_version: 1.21.11-R0.1-SNAPSHOT
+          - name: paper-26.2
+            java: "25"
+            api_group: io.papermc.paper
+            api_artifact: paper-api
+            api_version: 26.2.build.112-stable
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java ${{ matrix.java }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+          cache: maven
+
+      - name: Compile against ${{ matrix.name }}
+        run: >-
+          mvn -B -DskipTests package
+          -Dserver.api.groupId=${{ matrix.api_group }}
+          -Dserver.api.artifactId=${{ matrix.api_artifact }}
+          -Dserver.api.version=${{ matrix.api_version }}
 
   ml-tooling:
     runs-on: ubuntu-latest
