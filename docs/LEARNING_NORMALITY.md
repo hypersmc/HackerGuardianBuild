@@ -15,7 +15,7 @@ Learning Mode is disabled by default. When enabled, a player contributes automat
 - they have the configured `hg.learning.trusted` permission; or
 - their UUID is explicitly present in `DetectionV2.learning.trusted_uuids`.
 
-The recommended deployment is a small/high-confidence permission group managed with the server's normal permission system.
+The recommended deployment is a small/high-confidence permission group managed with the server's normal permission system. Be careful with broad wildcard admin grants if those same accounts are used for cheat/adversarial testing; either negate the trusted permission there or use the explicit UUID allowlist.
 
 A trusted player is **not assumed infallible**. Every row is written as candidate data with provenance and a future eligibility timestamp. There is deliberately no code path from a detection finding to a training label.
 
@@ -56,13 +56,15 @@ The trainer requires both conditions:
 
 This means old candidate files do not silently become ground truth just because they were captured once. Revoking trust excludes that player from future training runs without rewriting the large dataset.
 
+Collected hours are **active observed behavior**, not mere connection time. Empty/AFK rolling windows do not advance a player's collected behavioral hours and are not written as candidate rows.
+
 ## Population balance
 
-Collection uses a fixed per-player sampling interval rather than event volume. The offline trainer additionally performs bounded reservoir sampling per player (`--max-samples-per-player`) so a player with thousands of hours cannot become most of the definition of normal simply because they were online longest.
+Collection uses a fixed per-player sampling interval rather than event volume. The default is 15 seconds, which still creates thousands of windows per active player/day but reduces near-duplicate rows and long-term disk growth. The offline trainer additionally performs bounded reservoir sampling per player (`--max-samples-per-player`) so a player with thousands of hours cannot become most of the definition of normal simply because they were online longest.
 
 ## Behavioral probes
 
-After a configurable amount of accumulated trusted play time, Learning Mode may perform a short client-side fake-player probe.
+After a configurable amount of accumulated trusted active play time, Learning Mode may perform a short client-side fake-player probe.
 
 The probe:
 
@@ -114,10 +116,12 @@ The trainer:
 - refuses rows whose quarantine has not expired;
 - refuses players not currently trusted/baseline-eligible in the manifest;
 - caps per-player contribution with reservoir sampling;
-- splits validation by session;
+- holds out **whole players** for validation so threshold calibration is tested against legitimate players the forest never saw during training;
 - trains a dependency-light Isolation Forest with NumPy;
 - calibrates the review threshold from held-out **normal** scores using a configured target normal false-positive rate;
 - exports a strict HGIF v1 artifact.
+
+Holding out players is intentionally stricter than merely holding out adjacent windows or sessions from the same people. A population model that already knows every validation player's individual style can look much better than it actually generalizes to new legitimate players.
 
 The default model threshold is therefore not "60% probability of cheating". It is a calibrated statistical outlier boundary against held-out trusted behavior.
 
