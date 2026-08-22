@@ -24,18 +24,20 @@ public final class HgApiHttp {
     public static AuthenticatedRequest authenticate(HttpExchange exchange, HgApiAuth auth) throws IOException {
         byte[] body = readBody(exchange.getRequestBody(), DEFAULT_MAX_BODY_BYTES);
         String path = normalizePath(exchange.getRequestURI().getPath());
+        String rawQuery = exchange.getRequestURI().getRawQuery();
+        String signedTarget = rawQuery == null || rawQuery.isBlank() ? path : path + "?" + rawQuery;
         String method = exchange.getRequestMethod();
 
         HgApiAuth.AuthResult result = auth.verify(
                 method,
-                path,
+                signedTarget,
                 body,
                 exchange.getRequestHeaders().getFirst(HEADER_KEY),
                 exchange.getRequestHeaders().getFirst(HEADER_TIMESTAMP),
                 exchange.getRequestHeaders().getFirst(HEADER_NONCE),
                 exchange.getRequestHeaders().getFirst(HEADER_SIGNATURE)
         );
-        return new AuthenticatedRequest(method, path, body, query(exchange.getRequestURI().getRawQuery()), result);
+        return new AuthenticatedRequest(method, path, signedTarget, body, query(rawQuery), result);
     }
 
     public static void writeOk(HttpExchange exchange, int status, Object data) {
@@ -115,6 +117,7 @@ public final class HgApiHttp {
     public record AuthenticatedRequest(
             String method,
             String path,
+            String signedTarget,
             byte[] body,
             Map<String, String> query,
             HgApiAuth.AuthResult auth
