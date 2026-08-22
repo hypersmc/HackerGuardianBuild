@@ -2,6 +2,11 @@ package me.hackerguardian.api;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
+import me.hackerguardian.api.detection.DetectionApiHandler;
+import me.hackerguardian.api.learning.LearningApiHandler;
+import me.hackerguardian.api.learning.LearningPlayerStatusRepository;
+import me.hackerguardian.api.moderation.ModerationApiHandler;
+import me.hackerguardian.api.moderation.ModerationApiRepository;
 import me.hackerguardian.api.replays.ReplayApiHandler;
 import me.hackerguardian.api.replays.ReplayApiRepository;
 import me.hackerguardian.api.reports.ReportRepository;
@@ -10,6 +15,7 @@ import me.hackerguardian.api.settings.SafeSettingsApiHandler;
 import me.hackerguardian.api.status.ServerStatusApiHandler;
 import me.hackerguardian.api.status.ServerStatusRepository;
 import me.hackerguardian.bungee.HackerGuardianB;
+import me.hackerguardian.main.detection.journal.DetectionEventRepository;
 import me.hackerguardian.main.replay.ReplayStorage;
 import net.md_5.bungee.config.Configuration;
 
@@ -75,18 +81,35 @@ public final class HgApiServerProxy {
             if (dataSource == null) throw new IllegalStateException("database is unavailable");
 
             // The proxy may start before all Paper backends. Ensure read-side
-            // replay/status tables exist so the API has a stable empty state.
+            // tables exist so every endpoint has a stable empty state.
             new ReplayStorage(dataSource, "proxy").ensureTables();
             statusRepository = new ServerStatusRepository(dataSource);
             statusRepository.ensureTable();
+            DetectionEventRepository detectionEvents = new DetectionEventRepository(dataSource);
+            detectionEvents.ensureTable();
+            LearningPlayerStatusRepository learningPlayers = new LearningPlayerStatusRepository(dataSource);
+            learningPlayers.ensureTable();
 
             ReportRepository reports = new ReportRepository(dataSource);
             ReplayApiRepository replays = new ReplayApiRepository(dataSource);
+            ModerationApiRepository moderation = new ModerationApiRepository(dataSource);
+            long staleAfterMs = plugin.getConfiguration().getLong("SettingsWeb.Api.server_status_stale_ms", 60_000L);
+
             ReportsV1ApiHandler reportHandler = new ReportsV1ApiHandler(auth, reports);
             ReplayApiHandler replayHandler = new ReplayApiHandler(auth, replays);
-            long staleAfterMs = plugin.getConfiguration().getLong("SettingsWeb.Api.server_status_stale_ms", 60_000L);
             ServerStatusApiHandler serversHandler = new ServerStatusApiHandler(
                     auth, statusRepository, staleAfterMs, null
+            );
+            DetectionApiHandler detectionHandler = new DetectionApiHandler(
+                    auth, detectionEvents, replays, statusRepository,
+                    null, null, staleAfterMs
+            );
+            LearningApiHandler learningHandler = new LearningApiHandler(
+                    auth, learningPlayers, statusRepository,
+                    null, null, staleAfterMs
+            );
+            ModerationApiHandler moderationHandler = new ModerationApiHandler(
+                    auth, moderation, null
             );
             SafeSettingsApiHandler settingsHandler = new SafeSettingsApiHandler(auth, this::safeSettings);
 
@@ -104,6 +127,9 @@ public final class HgApiServerProxy {
             server.createContext("/v1/health", this::handleHealth);
             server.createContext("/v1/reports", reportHandler::handle);
             server.createContext("/v1/replays", replayHandler::handle);
+            server.createContext("/v1/detection", detectionHandler::handle);
+            server.createContext("/v1/learning", learningHandler::handle);
+            server.createContext("/v1/moderation", moderationHandler::handle);
             server.createContext("/v1/servers", serversHandler::handle);
             server.createContext("/v1/settings", settingsHandler::handle);
 
@@ -139,6 +165,10 @@ public final class HgApiServerProxy {
             HgApiHttp.AuthenticatedRequest request = HgApiHttp.authenticate(exchange, auth);
             if (!HgApiHttp.requireAuthenticated(exchange, request)) return;
             if (!HgApiHttp.requireGet(exchange, request)) return;
+            if (!"/v1/health".equals(request.path())) {
+                HgApiHttp.writeError(exchange, 404, "NOT_FOUND", "Health route not found");
+                return;
+            }
 
             List<ServerStatusRepository.Status> statuses = statusRepository == null
                     ? List.of() : statusRepository.list();
@@ -204,6 +234,8 @@ public final class HgApiServerProxy {
             item.put("players_online", online ? status.playersOnline() : 0);
             item.put("plugin_version", status.pluginVersion());
             item.put("minecraft_version", status.minecraftVersion());
+            item.put("detection_enabled", status.detectionEnabled());
+            item.put("learning_enabled", status.learningEnabled());
             item.put("last_seen_ms", status.lastSeenMs() > 0L ? status.lastSeenMs() : null);
             out.add(item);
         }
@@ -218,6 +250,8 @@ public final class HgApiServerProxy {
             item.put("players_online", 0);
             item.put("plugin_version", null);
             item.put("minecraft_version", null);
+            item.put("detection_enabled", false);
+            item.put("learning_enabled", false);
             item.put("last_seen_ms", null);
             out.add(item);
         }
