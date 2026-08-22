@@ -55,6 +55,14 @@ public final class DetectionEngine {
     }
 
     public DetectionAssessment assess(BehaviorSnapshot snapshot) {
+        return assess(snapshot, Collections.emptyList());
+    }
+
+    /**
+     * Builds one assessment from periodic snapshot detectors plus event-driven
+     * findings produced inside the same observation window.
+     */
+    public DetectionAssessment assess(BehaviorSnapshot snapshot, List<DetectionFinding> supplementalFindings) {
         if (snapshot == null) return null;
 
         List<DetectionFinding> findings = new ArrayList<>();
@@ -69,6 +77,12 @@ public final class DetectionEngine {
                 if (logger != null) {
                     logger.warning("Detection v2 detector '" + detector.id() + "' failed: " + e.getMessage());
                 }
+            }
+        }
+
+        if (supplementalFindings != null) {
+            for (DetectionFinding finding : supplementalFindings) {
+                if (finding != null) findings.add(finding);
             }
         }
 
