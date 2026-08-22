@@ -3,8 +3,10 @@ package me.hackerguardian.main.detection;
 import me.hackerguardian.main.HackerGuardian;
 import me.hackerguardian.main.detection.detectors.ClickBurstDetector;
 import me.hackerguardian.main.detection.detectors.ReachEnvelopeDetector;
+import me.hackerguardian.main.detection.learning.LearningRuntime;
 import me.hackerguardian.main.detection.ml.MlBehaviorDetector;
 import me.hackerguardian.main.detection.ml.MlDatasetRecorder;
+import me.hackerguardian.main.detection.normality.NormalityDetector;
 import me.hackerguardian.main.detection.telemetry.BehaviorSnapshot;
 import me.hackerguardian.main.detection.telemetry.BehaviorTelemetryCollector;
 import org.bukkit.Bukkit;
@@ -15,14 +17,7 @@ import org.bukkit.scheduler.BukkitTask;
 import java.io.File;
 import java.nio.file.Path;
 
-/**
- * Lifecycle owner for Detection v2.
- *
- * Telemetry is collected on the Bukkit thread, converted into immutable
- * BehaviorSnapshots, optionally recorded as explicitly-labeled training data,
- * and then evaluated by heuristic and ML detectors. The entire runtime remains
- * evidence-only and cannot punish players directly.
- */
+/** Lifecycle owner for Detection v2, supervised ML, and normality learning. */
 public final class DetectionRuntime {
 
     private final HackerGuardian plugin;
@@ -30,8 +25,10 @@ public final class DetectionRuntime {
     private final DetectionEngine engine;
     private final long assessmentIntervalTicks;
     private final int defaultCaptureMinutes;
+    private final LearningRuntime learningRuntime;
 
     private MlBehaviorDetector mlDetector;
+    private NormalityDetector normalityDetector;
     private MlDatasetRecorder datasetRecorder;
     private BukkitTask assessmentTask;
     private boolean running;
@@ -55,6 +52,7 @@ public final class DetectionRuntime {
 
         this.collector = new BehaviorTelemetryCollector(windowMs);
         this.engine = new DetectionEngine(plugin.getLogger(), historySize);
+        this.learningRuntime = new LearningRuntime(plugin, config);
 
         initializeDatasetRecorder(config);
         registerConfiguredDetectors(config);
@@ -62,7 +60,6 @@ public final class DetectionRuntime {
 
     private void initializeDatasetRecorder(FileConfiguration config) {
         if (!config.getBoolean("DetectionV2.ml.dataset.enabled", true)) return;
-
         try {
             File datasetFile = resolveDataFile(
                     config.getString("DetectionV2.ml.dataset.file", "ml/dataset-v1.csv"),
@@ -113,6 +110,25 @@ public final class DetectionRuntime {
             mlDetector.reload();
             engine.registerDetector(mlDetector);
         }
+
+        if (config.getBoolean("DetectionV2.normality.enabled", false)) {
+            File modelFile = resolveDataFile(
+                    config.getString("DetectionV2.normality.model_file", "models/population-normality-v1.hgif"),
+                    "models/population-normality-v1.hgif"
+            );
+            normalityDetector = new NormalityDetector(
+                    plugin.getLogger(),
+                    modelFile,
+                    config.getInt("DetectionV2.normality.minimum_activity_samples", 20),
+                    config.getInt("DetectionV2.normality.max_ping_ms", 500),
+                    config.getDouble("DetectionV2.normality.minimum_tps", 18.0),
+                    config.getDouble("DetectionV2.normality.finding_floor", 0.60),
+                    config.getDouble("DetectionV2.normality.base_reliability", 0.60),
+                    config.getInt("DetectionV2.normality.target_training_players", 25)
+            );
+            normalityDetector.reload();
+            engine.registerDetector(normalityDetector);
+        }
     }
 
     public void start() {
@@ -120,6 +136,7 @@ public final class DetectionRuntime {
         running = true;
 
         Bukkit.getPluginManager().registerEvents(new DetectionTelemetryListener(collector, engine), plugin);
+        learningRuntime.start();
         assessmentTask = Bukkit.getScheduler().runTaskTimer(
                 plugin,
                 this::assessOnlinePlayers,
@@ -127,23 +144,30 @@ public final class DetectionRuntime {
                 assessmentIntervalTicks
         );
 
-        String mlState = mlDetector == null
+        String supervisedState = mlDetector == null
                 ? "disabled"
                 : (mlDetector.isLoaded() ? "loaded" : "enabled/model-unavailable");
+        String normalityState = normalityDetector == null
+                ? "disabled"
+                : (normalityDetector.isLoaded() ? "loaded" : "enabled/model-unavailable");
         plugin.getLogger().info("Detection v2 started in OBSERVE-ONLY mode with "
                 + engine.getDetectorCount() + " detector(s), window=" + collector.getWindowMs()
-                + "ms, ML=" + mlState + ".");
+                + "ms, supervised-ML=" + supervisedState
+                + ", population-normality=" + normalityState
+                + ", learning=" + (learningRuntime.isEnabled() ? "enabled" : "disabled") + ".");
     }
 
     private void assessOnlinePlayers() {
         if (!running) return;
-        for (Player player : Bukkit.getOnlinePlayers()) {
-            assess(player, true);
-        }
+        for (Player player : Bukkit.getOnlinePlayers()) assess(player, true);
     }
 
     public DetectionAssessment assessNow(Player player) {
         return assess(player, false);
+    }
+
+    public BehaviorSnapshot snapshotNow(Player player) {
+        return player == null ? null : collector.snapshot(player);
     }
 
     private DetectionAssessment assess(Player player, boolean recordTrainingSample) {
@@ -151,8 +175,9 @@ public final class DetectionRuntime {
         BehaviorSnapshot snapshot = collector.snapshot(player);
         if (snapshot == null) return null;
 
-        if (recordTrainingSample && datasetRecorder != null) {
-            datasetRecorder.record(snapshot);
+        if (recordTrainingSample) {
+            if (datasetRecorder != null) datasetRecorder.record(snapshot);
+            learningRuntime.observe(player, snapshot);
         }
         return engine.assess(snapshot);
     }
@@ -161,12 +186,17 @@ public final class DetectionRuntime {
         return mlDetector != null && mlDetector.reload();
     }
 
+    public boolean reloadNormalityModel() {
+        return normalityDetector != null && normalityDetector.reload();
+    }
+
     public void stop() {
         running = false;
         if (assessmentTask != null) {
             assessmentTask.cancel();
             assessmentTask = null;
         }
+        learningRuntime.stop();
         if (datasetRecorder != null) {
             datasetRecorder.shutdown();
             datasetRecorder = null;
@@ -175,29 +205,14 @@ public final class DetectionRuntime {
         engine.clear();
     }
 
-    public boolean isRunning() {
-        return running;
-    }
-
-    public BehaviorTelemetryCollector getCollector() {
-        return collector;
-    }
-
-    public DetectionEngine getEngine() {
-        return engine;
-    }
-
-    public MlBehaviorDetector getMlDetector() {
-        return mlDetector;
-    }
-
-    public MlDatasetRecorder getDatasetRecorder() {
-        return datasetRecorder;
-    }
-
-    public int getDefaultCaptureMinutes() {
-        return defaultCaptureMinutes;
-    }
+    public boolean isRunning() { return running; }
+    public BehaviorTelemetryCollector getCollector() { return collector; }
+    public DetectionEngine getEngine() { return engine; }
+    public MlBehaviorDetector getMlDetector() { return mlDetector; }
+    public NormalityDetector getNormalityDetector() { return normalityDetector; }
+    public MlDatasetRecorder getDatasetRecorder() { return datasetRecorder; }
+    public LearningRuntime getLearningRuntime() { return learningRuntime; }
+    public int getDefaultCaptureMinutes() { return defaultCaptureMinutes; }
 
     private File resolveDataFile(String configured, String fallback) {
         String relative = configured == null || configured.isBlank() ? fallback : configured.trim();
