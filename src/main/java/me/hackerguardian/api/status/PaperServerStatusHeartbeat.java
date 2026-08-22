@@ -3,8 +3,13 @@ package me.hackerguardian.api.status;
 import me.hackerguardian.compat.ServerCompatibility;
 import me.hackerguardian.main.HackerGuardian;
 import me.hackerguardian.main.detection.DetectionRuntime;
+import me.hackerguardian.main.detection.learning.LearningPlayerState;
+import me.hackerguardian.main.detection.learning.LearningRuntime;
 import org.bukkit.Bukkit;
 import org.bukkit.scheduler.BukkitTask;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /** Periodically publishes sanitized backend state to the shared SQL database. */
 public final class PaperServerStatusHeartbeat {
@@ -47,9 +52,32 @@ public final class PaperServerStatusHeartbeat {
         try {
             DetectionRuntime detection = plugin.getDetectionRuntime();
             boolean detectionEnabled = detection != null && detection.isRunning();
-            boolean learningEnabled = detectionEnabled && detection.getLearningRuntime().isEnabled();
+            int trackedPlayers = detectionEnabled ? detection.getCollector().getTrackedPlayerCount() : 0;
+
+            List<String> detectorIds = new ArrayList<>();
+            if (detectionEnabled) {
+                detectorIds.addAll(detection.getEngine().getDetectorIds());
+                detectorIds.addAll(detection.getDeterministicRuntime().getCheckIds());
+            }
+
+            LearningRuntime learning = detectionEnabled ? detection.getLearningRuntime() : null;
+            boolean learningEnabled = learning != null && learning.isEnabled();
+            int trustedPlayers = 0;
+            double activeHours = 0.0;
+            int activeProbes = 0;
+            if (learning != null) {
+                for (LearningPlayerState state : learning.getStates()) {
+                    LearningPlayerState.Snapshot snapshot = state.snapshot();
+                    if (snapshot.isTrustedLastSeen()) trustedPlayers++;
+                    activeHours += snapshot.getCollectedHours();
+                }
+                if (learning.getProbeEngine() != null) {
+                    activeProbes = learning.getProbeEngine().getActiveProbeCount();
+                }
+            }
+
             boolean syntheticProbes = learningEnabled
-                    && detection.getLearningRuntime().getProbeEngine() != null
+                    && learning.getProbeEngine() != null
                     && compatibility.supportsSyntheticPlayerPackets();
 
             repository.heartbeat(new ServerStatusRepository.Status(
@@ -58,7 +86,12 @@ public final class PaperServerStatusHeartbeat {
                     compatibility.minecraftVersionString(),
                     Bukkit.getOnlinePlayers().size(),
                     detectionEnabled,
+                    trackedPlayers,
+                    String.join(",", detectorIds),
                     learningEnabled,
+                    trustedPlayers,
+                    activeHours,
+                    activeProbes,
                     syntheticProbes,
                     System.currentTimeMillis()
             ));
