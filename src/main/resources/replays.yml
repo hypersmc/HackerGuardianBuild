@@ -33,14 +33,20 @@ Replays:
     interval_ticks: 2
 
   # World snapshots are shared by the in-game sandbox replay and the browser 3D
-  # viewer. ChunkSnapshot acquisition remains on the server thread, while the
-  # expensive palette encoding/compression/JDBC work runs on replay I/O workers.
+  # viewer. Every stored chunk is a complete immutable block-state keyframe. The
+  # precise capture time is stored per chunk because capture is deliberately spread
+  # over several server ticks.
   world_capture:
     enabled: true
     chunk_radius: 2
     max_chunks: 200
     chunks_per_tick: 2
     max_inflight: 4
+
+    # Optional identifier for the resource-pack stack used by this server. The web
+    # viewer uses it to select a locally imported texture/model pack. Leave empty to
+    # fall back to the recorded Minecraft version (for example "1.21.11").
+    resource_pack_id: ""
 
   sandbox:
     enabled: true

@@ -26,8 +26,19 @@ public final class SqlSchema {
         try (Statement statement = connection.createStatement()) {
             statement.executeUpdate("CREATE INDEX " + index + " ON " + table + " (" + columns + ")");
         } catch (SQLException e) {
-            // Another node may have created it between the metadata check and DDL.
             if (!indexExists(connection, table, index)) throw e;
+        }
+    }
+
+    /** Add a column only when it is genuinely absent. The definition is trusted static schema text. */
+    public static void ensureColumn(Connection connection, String table, String column, String definition) throws SQLException {
+        if (columnExists(connection, table, column)) return;
+
+        try (Statement statement = connection.createStatement()) {
+            statement.executeUpdate("ALTER TABLE " + table + " ADD COLUMN " + column + " " + definition);
+        } catch (SQLException e) {
+            // Multiple proxy/backend nodes can race schema startup against the shared DB.
+            if (!columnExists(connection, table, column)) throw e;
         }
     }
 
@@ -59,6 +70,24 @@ public final class SqlSchema {
         return false;
     }
 
+    public static boolean columnExists(Connection connection, String table, String column) throws SQLException {
+        DatabaseMetaData meta = connection.getMetaData();
+        String catalog = safeCatalog(connection);
+        String schema = safeSchema(connection);
+        String[] tableNames = {table, table.toUpperCase(), table.toLowerCase()};
+        String[] columnNames = {column, column.toUpperCase(), column.toLowerCase()};
+
+        for (String tableName : tableNames) {
+            for (String columnName : columnNames) {
+                if (columnExists(meta, catalog, schema, tableName, columnName)) return true;
+                if (schema != null && columnExists(meta, catalog, null, tableName, columnName)) return true;
+                if (catalog != null && columnExists(meta, null, schema, tableName, columnName)) return true;
+                if (columnExists(meta, null, null, tableName, columnName)) return true;
+            }
+        }
+        return false;
+    }
+
     private static boolean indexExists(DatabaseMetaData meta,
                                        String catalog,
                                        String schema,
@@ -68,6 +97,20 @@ public final class SqlSchema {
             while (rs.next()) {
                 String existing = rs.getString("INDEX_NAME");
                 if (existing != null && existing.equalsIgnoreCase(index)) return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean columnExists(DatabaseMetaData meta,
+                                         String catalog,
+                                         String schema,
+                                         String table,
+                                         String column) throws SQLException {
+        try (ResultSet rs = meta.getColumns(catalog, schema, table, column)) {
+            while (rs.next()) {
+                String existing = rs.getString("COLUMN_NAME");
+                if (existing != null && existing.equalsIgnoreCase(column)) return true;
             }
         }
         return false;

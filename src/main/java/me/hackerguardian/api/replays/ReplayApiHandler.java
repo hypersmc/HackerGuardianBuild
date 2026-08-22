@@ -112,7 +112,7 @@ public final class ReplayApiHandler {
             return;
         }
 
-        long origin = replay.captureStartMs() == null ? replay.startedAt() : replay.captureStartMs();
+        long origin = replay.captureOriginMs();
         List<ReplayApiRepository.ChunkMeta> chunkRows = repository.chunks(replayId);
         List<Map<String, Object>> chunks = new ArrayList<>();
         for (ReplayApiRepository.ChunkMeta chunk : chunkRows) {
@@ -130,13 +130,16 @@ public final class ReplayApiHandler {
             if (first != null) world = ReplayWebDecoder.firstWorld(replay, first);
         }
 
+        List<ReplayApiRepository.WorldChunkMeta> worldChunks = repository.worldChunks(replayId);
+        ReplayApiRepository.WorldContext context = repository.worldContext(replayId);
+
         LinkedHashMap<String, Object> data = new LinkedHashMap<>(summary(replay));
         data.put("capture_start_at", replay.captureStartMs());
         data.put("capture_end_at", replay.captureEndMs());
         data.put("trigger_offset_ms", replay.triggerOffsetMs());
         data.put("world", world == null ? null : Map.of("name", world));
         data.put("chunks", chunks);
-        data.put("world_snapshot", worldManifest(repository.worldChunks(replayId), replay.triggerOffsetMs()));
+        data.put("world_snapshot", worldManifest(replay, worldChunks, context));
 
         LinkedHashMap<String, Object> triggerEvent = new LinkedHashMap<>();
         triggerEvent.put("time_ms", replay.triggerOffsetMs());
@@ -180,9 +183,10 @@ public final class ReplayApiHandler {
         }
 
         List<ReplayApiRepository.WorldChunkMeta> chunks = repository.worldChunks(replayId);
+        ReplayApiRepository.WorldContext context = repository.worldContext(replayId);
         LinkedHashMap<String, Object> data = new LinkedHashMap<>();
         data.put("replay_id", replayId);
-        data.putAll(worldManifest(chunks, replay.triggerOffsetMs()));
+        data.putAll(worldManifest(replay, chunks, context));
         HgApiHttp.writeOk(exchange, 200, data);
     }
 
@@ -204,42 +208,68 @@ public final class ReplayApiHandler {
             return;
         }
 
+        long anchorMs = worldAnchor(replay, stored.capturedAtMs());
         LinkedHashMap<String, Object> data = new LinkedHashMap<>();
         data.put("replay_id", replayId);
         data.put("format", "hg-web-world-v1");
         data.put("world", stored.world());
         data.put("chunk_x", stored.chunkX());
         data.put("chunk_z", stored.chunkZ());
-        // Existing snapshot capture begins when the replay session becomes active,
-        // which is around the trigger. Until capture timestamps are persisted per
-        // world chunk, this is explicitly an estimated anchor rather than invented precision.
-        data.put("anchor_ms", replay.triggerOffsetMs());
+        data.put("anchor_ms", anchorMs);
+        data.put("anchor_precision", stored.capturedAtMs() > 0 ? "exact" : "trigger_estimate");
         data.putAll(ReplayWorldWebCodec.decode(stored.data()));
         HgApiHttp.writeOk(exchange, 200, data);
     }
 
-    private static LinkedHashMap<String, Object> worldManifest(List<ReplayApiRepository.WorldChunkMeta> rows,
-                                                                long anchorMs) {
+    private static LinkedHashMap<String, Object> worldManifest(ReplayApiRepository.ReplayRecord replay,
+                                                                List<ReplayApiRepository.WorldChunkMeta> rows,
+                                                                ReplayApiRepository.WorldContext context) {
         List<Map<String, Object>> chunks = new ArrayList<>();
         long bytes = 0L;
+        boolean anyExact = false;
         for (ReplayApiRepository.WorldChunkMeta row : rows) {
+            long anchor = worldAnchor(replay, row.capturedAtMs());
             LinkedHashMap<String, Object> chunk = new LinkedHashMap<>();
             chunk.put("world", row.world());
             chunk.put("chunk_x", row.chunkX());
             chunk.put("chunk_z", row.chunkZ());
             chunk.put("size_bytes", row.sizeBytes());
+            chunk.put("anchor_ms", anchor);
+            chunk.put("anchor_precision", row.capturedAtMs() > 0 ? "exact" : "trigger_estimate");
             chunks.add(chunk);
             bytes += Math.max(0, row.sizeBytes());
+            anyExact |= row.capturedAtMs() > 0;
         }
 
         LinkedHashMap<String, Object> out = new LinkedHashMap<>();
         out.put("available", !rows.isEmpty());
         out.put("format", "hg-web-world-v1");
-        out.put("anchor_ms", anchorMs);
-        out.put("anchor_precision", "trigger_estimate");
+        // Kept as a compatibility fallback. New clients should use each chunk's anchor_ms.
+        out.put("anchor_ms", replay.triggerOffsetMs());
+        out.put("anchor_precision", anyExact ? "exact_per_chunk" : "trigger_estimate");
         out.put("chunk_count", rows.size());
         out.put("size_bytes", bytes);
         out.put("chunks", chunks);
+        out.put("context", contextMap(context));
+        return out;
+    }
+
+    private static long worldAnchor(ReplayApiRepository.ReplayRecord replay, long capturedAtMs) {
+        if (capturedAtMs <= 0) return replay.triggerOffsetMs();
+        return Math.max(0L, capturedAtMs - replay.captureOriginMs());
+    }
+
+    private static Map<String, Object> contextMap(ReplayApiRepository.WorldContext context) {
+        if (context == null) return Map.of();
+        LinkedHashMap<String, Object> out = new LinkedHashMap<>();
+        out.put("world", context.world());
+        out.put("minecraft_version", context.minecraftVersion());
+        out.put("environment", context.environment());
+        out.put("game_time", context.gameTime());
+        out.put("full_time", context.fullTime());
+        out.put("storm", context.storm());
+        out.put("thundering", context.thundering());
+        out.put("resource_pack_id", context.resourcePackId());
         return out;
     }
 

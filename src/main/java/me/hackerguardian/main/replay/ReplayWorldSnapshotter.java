@@ -1,5 +1,6 @@
 package me.hackerguardian.main.replay;
 
+import org.bukkit.Bukkit;
 import org.bukkit.Chunk;
 import org.bukkit.ChunkSnapshot;
 import org.bukkit.Location;
@@ -12,6 +13,13 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicInteger;
 
+/**
+ * Captures immutable full-chunk world keyframes for replay reconstruction.
+ *
+ * Only ChunkSnapshot acquisition and Bukkit world metadata reads happen on the
+ * server thread. Palette encoding, compression and JDBC writes happen on the
+ * replay I/O workers.
+ */
 public final class ReplayWorldSnapshotter {
 
     private final JavaPlugin plugin;
@@ -23,10 +31,12 @@ public final class ReplayWorldSnapshotter {
     private final int maxChunks;
     private final int chunksPerTick;
     private final int maxInflight;
+    private final String resourcePackId;
 
     // replayId -> set of captured or currently queued chunk keys
     private final ConcurrentHashMap<Long, Set<Long>> captured = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Long, AtomicInteger> inflight = new ConcurrentHashMap<>();
+    private final Set<Long> contextCaptured = ConcurrentHashMap.newKeySet();
 
     public ReplayWorldSnapshotter(JavaPlugin plugin, ReplayStorage storage, Executor ioExecutor) {
         this.plugin = plugin;
@@ -42,6 +52,8 @@ public final class ReplayWorldSnapshotter {
         this.maxChunks = Math.max(1, plugin.getConfig().getInt("Replays.world_capture.max_chunks", legacyMaxChunks));
         this.chunksPerTick = Math.max(1, plugin.getConfig().getInt("Replays.world_capture.chunks_per_tick", 2));
         this.maxInflight = Math.max(1, plugin.getConfig().getInt("Replays.world_capture.max_inflight", 4));
+        String configuredPack = plugin.getConfig().getString("Replays.world_capture.resource_pack_id", "");
+        this.resourcePackId = configuredPack == null || configuredPack.isBlank() ? null : configuredPack.trim();
     }
 
     public boolean isEnabled() { return enabled; }
@@ -54,12 +66,15 @@ public final class ReplayWorldSnapshotter {
     public void onReplayFinished(long replayId) {
         captured.remove(replayId);
         inflight.remove(replayId);
+        contextCaptured.remove(replayId);
     }
 
     /**
-     * Runs on the server thread. Only obtaining the immutable ChunkSnapshot happens
-     * here; palette building, serialization, compression and JDBC work happen on the
-     * replay I/O executor. Work is deliberately spread over multiple ticks.
+     * Runs on the server thread. A stored chunk is a complete block-state image of
+     * that chunk (all Y levels), and captured_at records the exact instant at which
+     * Bukkit produced the immutable snapshot. Different chunks can therefore have
+     * slightly different anchors and the web viewer can reconstruct around each one
+     * without pretending every chunk was captured in the same millisecond.
      */
     public void tickCapture(long replayId, Player target) {
         if (!enabled || target == null || !target.isOnline()) return;
@@ -71,6 +86,8 @@ public final class ReplayWorldSnapshotter {
         int minY = world.getMinHeight();
         int maxY = world.getMaxHeight() - 1;
         String worldName = world.getName();
+
+        captureContextOnce(replayId, world);
 
         Set<Long> set = captured.computeIfAbsent(replayId, key -> ConcurrentHashMap.newKeySet());
         AtomicInteger active = inflight.computeIfAbsent(replayId, key -> new AtomicInteger());
@@ -89,9 +106,11 @@ public final class ReplayWorldSnapshotter {
                     if (!set.add(key)) continue;
 
                     final ChunkSnapshot snapshot;
+                    final long capturedAtMs;
                     try {
                         Chunk chunk = world.getChunkAt(chunkX, chunkZ);
                         snapshot = chunk.getChunkSnapshot(false, false, false);
+                        capturedAtMs = System.currentTimeMillis();
                     } catch (Exception exception) {
                         set.remove(key);
                         plugin.getLogger().warning("[Replay] Failed to snapshot chunk " + chunkX + "," + chunkZ
@@ -104,10 +123,8 @@ public final class ReplayWorldSnapshotter {
                     ioExecutor.execute(() -> {
                         try {
                             byte[] raw = ReplayChunkSnapshotCodec.encodeChunk(snapshot, minY, maxY);
-                            storage.upsertWorldChunk(replayId, worldName, chunkX, chunkZ, raw);
+                            storage.upsertWorldChunk(replayId, worldName, chunkX, chunkZ, capturedAtMs, raw);
                         } catch (Exception exception) {
-                            // A future capture tick may retry a failed encode/write while
-                            // the replay remains active.
                             set.remove(key);
                             plugin.getLogger().warning("[Replay] Failed to store world snapshot for replay "
                                     + replayId + " chunk " + chunkX + "," + chunkZ + ": " + exception.getMessage());
@@ -119,5 +136,32 @@ public final class ReplayWorldSnapshotter {
                 }
             }
         }
+    }
+
+    private void captureContextOnce(long replayId, World world) {
+        if (!contextCaptured.add(replayId)) return;
+
+        // Copy Bukkit-owned state to plain immutable values before leaving the main thread.
+        ReplayWorldContext context = new ReplayWorldContext(
+                world.getName(),
+                Bukkit.getMinecraftVersion(),
+                world.getEnvironment().name(),
+                world.getTime(),
+                world.getFullTime(),
+                world.hasStorm(),
+                world.isThundering(),
+                resourcePackId
+        );
+
+        ioExecutor.execute(() -> {
+            try {
+                storage.upsertWorldContext(replayId, context);
+            } catch (Exception exception) {
+                contextCaptured.remove(replayId);
+                plugin.getLogger().warning("[Replay] Failed to store world context for replay "
+                        + replayId + ": " + exception.getMessage());
+                if (plugin.getConfig().getBoolean("debug")) exception.printStackTrace();
+            }
+        });
     }
 }
