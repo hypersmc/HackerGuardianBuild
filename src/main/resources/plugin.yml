@@ -20,5 +20,8 @@ commands:
   HG:
 permissions:
   hg.admin.detection:
-    description: Inspect HackerGuardian Detection v2 evidence.
+    description: Inspect HackerGuardian Detection v2 evidence and Learning Mode.
     default: op
+  hg.learning.trusted:
+    description: Marks a player as eligible for HackerGuardian trusted-population Learning Mode collection.
+    default: false

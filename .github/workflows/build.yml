@@ -88,5 +88,8 @@ jobs:
       - name: Install ML tooling dependencies
         run: python -m pip install -r tools/ml/requirements.txt
 
-      - name: Run offline trainer self-test
+      - name: Run supervised trainer self-test
         run: python tools/ml/train_behavior_model.py --self-test
+
+      - name: Run population-normality trainer self-test
+        run: python tools/ml/train_normality_model.py --self-test

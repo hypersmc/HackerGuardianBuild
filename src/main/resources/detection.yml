@@ -25,25 +25,96 @@ DetectionV2:
       hard_cps: 35.0
       minimum_swings: 20
 
+  # Supervised LEGIT/CHEAT baseline retained from ML v1. This is one evidence
+  # source, not HackerGuardian's definition of normal behavior.
   ml:
-    # Enable only after a deliberately trained HGML artifact exists.
-    # The model remains observe-only even when enabled.
     enabled: false
     model_file: "models/behavior-v1.hgml"
-
-    # A model score below this value is not emitted as a DetectionFinding.
     finding_floor: 0.55
-
-    # Upper bound before runtime quality reductions for ping/TPS/activity.
     base_reliability: 0.85
     minimum_activity_samples: 20
     max_ping_ms: 500
     minimum_tps: 18.0
 
     dataset:
-      # Allows deliberate LEGIT/CHEAT capture sessions for offline training.
-      # Detections never create labels automatically.
+      # Manual, deliberate LEGIT/CHEAT capture only. Detections never label it.
       enabled: true
       file: "ml/dataset-v1.csv"
       queue_capacity: 2048
       default_capture_minutes: 10
+
+  # Population anomaly model trained primarily from trusted-player Learning
+  # Mode data. Enable only after population-normality-v1.hgif has been trained.
+  normality:
+    enabled: false
+    model_file: "models/population-normality-v1.hgif"
+    finding_floor: 0.60
+    base_reliability: 0.60
+    minimum_activity_samples: 20
+    max_ping_ms: 500
+    minimum_tps: 18.0
+
+    # Reliability is deliberately reduced until the model represents a broad
+    # enough player population.
+    target_training_players: 25
+
+  # Learning Mode v2 automatically observes a deliberately trusted population.
+  # Candidate rows are quarantined; they are not instantly treated as "legit".
+  learning:
+    enabled: false
+
+    # Players whose behavior is collected are told that Learning Mode is active.
+    notify_players: true
+
+    # Recommended: assign this permission only to known/high-confidence players
+    # using LuckPerms or your normal permission system.
+    trusted_permission: "hg.learning.trusted"
+
+    # Optional explicit UUID allowlist in addition to the permission above.
+    trusted_uuids: []
+
+    # A captured row cannot enter a normality training run until this time has
+    # elapsed AND the player is still trusted in the current trust manifest.
+    quarantine_days: 14.0
+
+    # Minimum accumulated trusted online time before a player is considered a
+    # mature baseline contributor by the generated trust manifest.
+    minimum_baseline_hours: 10.0
+
+    # Record one candidate BehaviorSnapshot per trusted player at this interval.
+    # Fixed-rate sampling prevents very active event streams from dominating.
+    sample_interval_seconds: 5.0
+    state_save_interval_ticks: 1200
+
+    state_file: "ml/normality/learning-state.properties"
+    manifest_file: "ml/normality/trust-manifest-v1.csv"
+
+    dataset:
+      file: "ml/normality/candidate-behavior-v1.csv"
+      queue_capacity: 8192
+
+    # Client-side fake-player probes are supplemental reaction measurements.
+    # They never constitute a cheat verdict and never become punishments.
+    probes:
+      enabled: true
+      result_file: "ml/normality/probe-results-v1.csv"
+      queue_capacity: 1024
+
+      # Automatic probes begin only after this much trusted play time.
+      minimum_collected_hours: 10.0
+
+      # At most roughly one automatic probe per this interval, plus random
+      # jitter so probes are not predictable from a fixed schedule.
+      cooldown_hours: 24.0
+      cooldown_jitter_hours: 12.0
+
+      # 40 ticks is roughly two seconds.
+      duration_ticks: 40
+      avoid_combat: true
+
+      min_distance: 3.0
+      max_distance: 5.0
+      min_yaw_offset_degrees: 55.0
+      max_yaw_offset_degrees: 125.0
+      fov_threshold_degrees: 12.0
+      rotation_epsilon_degrees: 1.5
