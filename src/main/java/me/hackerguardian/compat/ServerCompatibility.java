@@ -35,7 +35,11 @@ public final class ServerCompatibility {
     }
 
     public static ServerCompatibility detect() {
-        MinecraftVersion minecraft = MinecraftVersion.parse(Bukkit.getMinecraftVersion());
+        // Bukkit#getMinecraftVersion() is not part of the Spigot API used by
+        // our 1.20.x lower-bound compile. Bukkit#getBukkitVersion() is stable
+        // across the supported range and includes the Minecraft version, e.g.
+        // "1.20.2-R0.1-SNAPSHOT", which MinecraftVersion parses deliberately.
+        MinecraftVersion minecraft = MinecraftVersion.parse(Bukkit.getBukkitVersion());
         Plugin protocolLib = Bukkit.getPluginManager().getPlugin("ProtocolLib");
         boolean enabled = protocolLib != null && protocolLib.isEnabled();
         String version = protocolLib == null ? "" : protocolLib.getDescription().getVersion();
