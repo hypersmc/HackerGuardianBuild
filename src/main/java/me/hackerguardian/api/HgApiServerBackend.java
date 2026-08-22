@@ -2,6 +2,11 @@ package me.hackerguardian.api;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
+import me.hackerguardian.api.detection.DetectionApiHandler;
+import me.hackerguardian.api.learning.LearningApiHandler;
+import me.hackerguardian.api.learning.LearningPlayerStatusRepository;
+import me.hackerguardian.api.moderation.ModerationApiHandler;
+import me.hackerguardian.api.moderation.ModerationApiRepository;
 import me.hackerguardian.api.replays.ReplayApiHandler;
 import me.hackerguardian.api.replays.ReplayApiRepository;
 import me.hackerguardian.api.reports.ReportRepository;
@@ -13,6 +18,7 @@ import me.hackerguardian.api.status.ServerStatusRepository;
 import me.hackerguardian.compat.ServerCompatibility;
 import me.hackerguardian.main.HackerGuardian;
 import me.hackerguardian.main.detection.DetectionRuntime;
+import me.hackerguardian.main.detection.journal.DetectionEventRepository;
 import org.bukkit.Bukkit;
 import org.bukkit.configuration.ConfigurationSection;
 
@@ -107,15 +113,32 @@ public final class HgApiServerBackend {
 
             ReportRepository reports = new ReportRepository(dataSource);
             ReplayApiRepository replays = new ReplayApiRepository(dataSource);
+            DetectionEventRepository detectionEvents = new DetectionEventRepository(dataSource);
+            detectionEvents.ensureTable();
             statusRepository = new ServerStatusRepository(dataSource);
             statusRepository.ensureTable();
+            LearningPlayerStatusRepository learningPlayers = new LearningPlayerStatusRepository(dataSource);
+            learningPlayers.ensureTable();
+            ModerationApiRepository moderation = new ModerationApiRepository(dataSource);
+
+            String serverName = plugin.getConfig().getString("Settings.server_name", "default");
+            long staleAfterMs = plugin.getConfig().getLong("SettingsWeb.Api.server_status_stale_ms", 60_000L);
 
             ReportsV1ApiHandler reportHandler = new ReportsV1ApiHandler(auth, reports);
             ReplayApiHandler replayHandler = new ReplayApiHandler(auth, replays);
-            String serverName = plugin.getConfig().getString("Settings.server_name", "default");
-            long staleAfterMs = plugin.getConfig().getLong("SettingsWeb.Api.server_status_stale_ms", 60_000L);
             ServerStatusApiHandler serversHandler = new ServerStatusApiHandler(
                     auth, statusRepository, staleAfterMs, serverName
+            );
+            DetectionApiHandler detectionHandler = new DetectionApiHandler(
+                    auth, detectionEvents, replays, statusRepository,
+                    plugin.getDetectionRuntime(), serverName, staleAfterMs
+            );
+            LearningApiHandler learningHandler = new LearningApiHandler(
+                    auth, learningPlayers, statusRepository,
+                    plugin.getDetectionRuntime(), serverName, staleAfterMs
+            );
+            ModerationApiHandler moderationHandler = new ModerationApiHandler(
+                    auth, moderation, serverName
             );
             SafeSettingsApiHandler settingsHandler = new SafeSettingsApiHandler(auth, this::safeSettings);
 
@@ -132,6 +155,9 @@ public final class HgApiServerBackend {
             server.createContext("/v1/health", this::handleHealth);
             server.createContext("/v1/reports", reportHandler::handle);
             server.createContext("/v1/replays", replayHandler::handle);
+            server.createContext("/v1/detection", detectionHandler::handle);
+            server.createContext("/v1/learning", learningHandler::handle);
+            server.createContext("/v1/moderation", moderationHandler::handle);
             server.createContext("/v1/servers", serversHandler::handle);
             server.createContext("/v1/settings", settingsHandler::handle);
 
@@ -177,6 +203,10 @@ public final class HgApiServerBackend {
             HgApiHttp.AuthenticatedRequest request = HgApiHttp.authenticate(exchange, auth);
             if (!HgApiHttp.requireAuthenticated(exchange, request)) return;
             if (!HgApiHttp.requireGet(exchange, request)) return;
+            if (!"/v1/health".equals(request.path())) {
+                HgApiHttp.writeError(exchange, 404, "NOT_FOUND", "Health route not found");
+                return;
+            }
 
             DetectionRuntime detection = plugin.getDetectionRuntime();
             boolean detectionEnabled = detection != null && detection.isRunning();
