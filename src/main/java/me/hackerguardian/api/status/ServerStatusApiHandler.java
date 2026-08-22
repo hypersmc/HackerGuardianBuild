@@ -12,6 +12,8 @@ import java.util.Map;
 /** GET /v1/servers backed by secret-free SQL heartbeats from Paper servers. */
 public final class ServerStatusApiHandler {
 
+    private static final String PATH = "/v1/servers";
+
     private final HgApiAuth auth;
     private final ServerStatusRepository repository;
     private final long staleAfterMs;
@@ -32,6 +34,10 @@ public final class ServerStatusApiHandler {
             HgApiHttp.AuthenticatedRequest request = HgApiHttp.authenticate(exchange, auth);
             if (!HgApiHttp.requireAuthenticated(exchange, request)) return;
             if (!HgApiHttp.requireGet(exchange, request)) return;
+            if (!PATH.equals(request.path())) {
+                HgApiHttp.writeError(exchange, 404, "NOT_FOUND", "Server route not found");
+                return;
+            }
 
             long now = System.currentTimeMillis();
             List<Map<String, Object>> servers = new ArrayList<>();
@@ -45,7 +51,11 @@ public final class ServerStatusApiHandler {
                 item.put("minecraft_version", status.minecraftVersion());
                 item.put("plugin_version", status.pluginVersion());
                 item.put("detection_enabled", status.detectionEnabled());
+                item.put("tracked_players", online ? status.trackedPlayers() : 0);
                 item.put("learning_enabled", status.learningEnabled());
+                item.put("trusted_players", status.trustedPlayers());
+                item.put("learning_active_hours", status.learningActiveHours());
+                item.put("active_probes", online ? status.activeProbes() : 0);
                 item.put("synthetic_probes", status.syntheticProbes());
                 item.put("last_seen_ms", status.lastSeenMs() > 0L ? status.lastSeenMs() : null);
                 servers.add(item);
