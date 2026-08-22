@@ -59,9 +59,9 @@ public final class PaperServerStatusHeartbeat {
                 for (String id : detection.getEngine().getDetectorIds()) {
                     String type = "snapshot";
                     if (detection.getMlDetector() != null && id.equals(detection.getMlDetector().id())) {
-                        type = "ml";
+                        type = detection.getMlDetector().isLoaded() ? "ml_loaded" : "ml_unavailable";
                     } else if (detection.getNormalityDetector() != null && id.equals(detection.getNormalityDetector().id())) {
-                        type = "normality";
+                        type = detection.getNormalityDetector().isLoaded() ? "normality_loaded" : "normality_unavailable";
                     }
                     detectors.add(type + "|" + id);
                 }
