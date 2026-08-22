@@ -32,6 +32,16 @@ Replays:
     include_items: true
     interval_ticks: 2
 
+  # World snapshots are shared by the in-game sandbox replay and the browser 3D
+  # viewer. ChunkSnapshot acquisition remains on the server thread, while the
+  # expensive palette encoding/compression/JDBC work runs on replay I/O workers.
+  world_capture:
+    enabled: true
+    chunk_radius: 2
+    max_chunks: 200
+    chunks_per_tick: 2
+    max_inflight: 4
+
   sandbox:
     enabled: true
     mode: CHUNKS

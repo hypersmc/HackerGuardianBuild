@@ -1,6 +1,7 @@
 package me.hackerguardian.main.replay;
 
 import org.bukkit.Chunk;
+import org.bukkit.ChunkSnapshot;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -18,27 +19,35 @@ public final class ReplayChunkSnapshotCodec {
     // palette: list of unique blockdata strings
     // chunk blocks: 16*worldHeight*16 palette indices (VarInt)
     public static byte[] encodeChunk(Chunk chunk, int minY, int maxY) throws IOException {
+        return encode(minY, maxY, (x, y, z) -> chunk.getBlock(x, y, z).getBlockData().getAsString());
+    }
+
+    /**
+     * Encode a Bukkit ChunkSnapshot. ChunkSnapshot is detached from the live chunk,
+     * so the expensive full-height palette walk can run on replay I/O workers after
+     * the snapshot itself has been acquired on the server thread.
+     */
+    public static byte[] encodeChunk(ChunkSnapshot snapshot, int minY, int maxY) throws IOException {
+        return encode(minY, maxY, (x, y, z) -> snapshot.getBlockData(x, y, z).getAsString());
+    }
+
+    private static byte[] encode(int minY, int maxY, BlockStateSource source) throws IOException {
+        if (maxY < minY) throw new IOException("Invalid chunk snapshot height");
+
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         ReplayCodec.Out out = new ReplayCodec.Out(baos);
-
-        int height = (maxY - minY + 1);
         out.writeVarInt(minY);
         out.writeVarInt(maxY);
 
-        // Build palette
         Map<String, Integer> paletteIndex = new HashMap<>();
         List<String> palette = new ArrayList<>();
 
-        int cx = chunk.getX();
-        int cz = chunk.getZ();
-
-        // First pass: palette
         for (int y = minY; y <= maxY; y++) {
             for (int x = 0; x < 16; x++) {
                 for (int z = 0; z < 16; z++) {
-                    String bd = chunk.getBlock(x, y, z).getBlockData().getAsString();
-                    paletteIndex.computeIfAbsent(bd, k -> {
-                        palette.add(k);
+                    String blockData = source.blockData(x, y, z);
+                    paletteIndex.computeIfAbsent(blockData, key -> {
+                        palette.add(key);
                         return palette.size() - 1;
                     });
                 }
@@ -46,14 +55,12 @@ public final class ReplayChunkSnapshotCodec {
         }
 
         out.writeVarInt(palette.size());
-        for (String s : palette) out.writeString(s, 256);
+        for (String state : palette) out.writeString(state, 256);
 
-        // Second pass: write palette indices
         for (int y = minY; y <= maxY; y++) {
             for (int x = 0; x < 16; x++) {
                 for (int z = 0; z < 16; z++) {
-                    String bd = chunk.getBlock(x, y, z).getBlockData().getAsString();
-                    out.writeVarInt(paletteIndex.get(bd));
+                    out.writeVarInt(paletteIndex.get(source.blockData(x, y, z)));
                 }
             }
         }
@@ -66,8 +73,10 @@ public final class ReplayChunkSnapshotCodec {
         int minY = in.readVarInt();
         int maxY = in.readVarInt();
         int height = (maxY - minY + 1);
+        if (height <= 0 || height > 4096) throw new IOException("Invalid chunk height: " + height);
 
         int paletteSize = in.readVarInt();
+        if (paletteSize <= 0 || paletteSize > 65_536) throw new IOException("Invalid chunk palette size: " + paletteSize);
         String[] palette = new String[paletteSize];
         for (int i = 0; i < paletteSize; i++) {
             palette[i] = in.readString(256);
@@ -76,10 +85,17 @@ public final class ReplayChunkSnapshotCodec {
         int total = 16 * height * 16;
         int[] indices = new int[total];
         for (int i = 0; i < total; i++) {
-            indices[i] = in.readVarInt();
+            int index = in.readVarInt();
+            if (index < 0 || index >= paletteSize) throw new IOException("Chunk palette index out of range");
+            indices[i] = index;
         }
 
         return new DecodedChunk(minY, maxY, palette, indices);
+    }
+
+    @FunctionalInterface
+    private interface BlockStateSource {
+        String blockData(int x, int y, int z);
     }
 
     public static final class DecodedChunk {

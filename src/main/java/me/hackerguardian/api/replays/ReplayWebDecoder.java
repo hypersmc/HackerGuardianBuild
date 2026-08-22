@@ -70,8 +70,7 @@ public final class ReplayWebDecoder {
                 if (length < 0 || length > MAX_EVENT_BYTES) return null;
                 byte[] eventBytes = input.readBytes(length);
                 ReplayCodec.In event = new ReplayCodec.In(new ByteArrayInputStream(eventBytes));
-                int ordinal = event.readVarInt();
-                ReplayEventType type = type(ordinal);
+                ReplayEventType type = type(event.readVarInt());
                 if (type == ReplayEventType.PLAYER_SNAPSHOT || type == ReplayEventType.NEARBY_SNAPSHOT) {
                     return event.readString(128);
                 }
@@ -102,9 +101,12 @@ public final class ReplayWebDecoder {
                     float yaw = input.readFloat();
                     float pitch = input.readFloat();
                     boolean onGround = input.readBoolean();
+                    Boolean sneaking = input.hasMore() ? input.readBoolean() : null;
+                    Boolean sprinting = input.hasMore() ? input.readBoolean() : null;
+                    String heldItem = input.hasMore() ? input.readString(64) : null;
                     frame.players.add(playerMap(
                             replay.playerUuid(), replay.playerName(), world,
-                            x, y, z, yaw, pitch, onGround, null, true
+                            x, y, z, yaw, pitch, onGround, heldItem, sneaking, sprinting, true
                     ));
                 }
                 case NEARBY_SNAPSHOT -> {
@@ -121,7 +123,7 @@ public final class ReplayWebDecoder {
                         String heldItem = input.readString(64);
                         frame.players.add(playerMap(
                                 uuid.toString(), name, world,
-                                x, y, z, yaw, pitch, null, heldItem, false
+                                x, y, z, yaw, pitch, null, heldItem, null, null, false
                         ));
                     }
                 }
@@ -130,11 +132,16 @@ public final class ReplayWebDecoder {
                     int x = input.readInt();
                     int y = input.readInt();
                     int z = input.readInt();
-                    String block = input.readString(64);
-                    frame.events.add(event(type,
-                            "world", world,
-                            "position", Map.of("x", x, "y", y, "z", z),
-                            "block", block));
+                    String block = input.readString(256);
+                    LinkedHashMap<String, Object> value = new LinkedHashMap<>();
+                    value.put("type", type.name());
+                    value.put("world", world);
+                    value.put("position", Map.of("x", x, "y", y, "z", z));
+                    value.put("block", block);
+                    if (type == ReplayEventType.BLOCK_PLACE && input.hasMore()) {
+                        value.put("previous_block", input.readString(256));
+                    }
+                    frame.events.add(value);
                 }
                 case ARM_SWING -> frame.events.add(event(type));
                 case SNEAK_TOGGLE, SPRINT_TOGGLE -> frame.events.add(event(type, "enabled", input.readBoolean()));
@@ -148,6 +155,17 @@ public final class ReplayWebDecoder {
                 case ITEM_DROP, ITEM_PICKUP -> frame.events.add(event(type,
                         "item", input.readString(64),
                         "amount", input.readVarInt()));
+                case PROJECTILE_LAUNCH -> frame.events.add(event(type,
+                        "projectile", input.readString(64),
+                        "world", input.readString(128),
+                        "position", Map.of("x", input.readDouble(), "y", input.readDouble(), "z", input.readDouble()),
+                        "velocity", Map.of("x", input.readDouble(), "y", input.readDouble(), "z", input.readDouble())));
+                case PROJECTILE_HIT -> frame.events.add(event(type,
+                        "projectile", input.readString(64),
+                        "hit_type", input.readString(16),
+                        "hit_entity", input.readString(64),
+                        "world", input.readString(128),
+                        "position", Map.of("x", input.readDouble(), "y", input.readDouble(), "z", input.readDouble())));
                 default -> frame.events.add(event(type));
             }
         } catch (Exception ignored) {
@@ -166,6 +184,8 @@ public final class ReplayWebDecoder {
                                                   float pitch,
                                                   Boolean onGround,
                                                   String heldItem,
+                                                  Boolean sneaking,
+                                                  Boolean sprinting,
                                                   boolean subject) {
         LinkedHashMap<String, Object> player = new LinkedHashMap<>();
         player.put("uuid", uuid);
@@ -176,6 +196,8 @@ public final class ReplayWebDecoder {
         player.put("rotation", Map.of("yaw", yaw, "pitch", pitch));
         if (onGround != null) player.put("on_ground", onGround);
         if (heldItem != null) player.put("held_item", heldItem);
+        if (sneaking != null) player.put("sneaking", sneaking);
+        if (sprinting != null) player.put("sprinting", sprinting);
         return player;
     }
 
