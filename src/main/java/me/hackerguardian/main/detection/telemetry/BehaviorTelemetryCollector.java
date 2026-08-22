@@ -252,7 +252,7 @@ public final class BehaviorTelemetryCollector {
                             inWater,
                             onLadder,
                             player.hasPotionEffect(PotionEffectType.SPEED),
-                            player.hasPotionEffect(PotionEffectType.JUMP),
+                            hasPotionEffect(player, "JUMP_BOOST", "JUMP"),
                             player.isFlying(),
                             player.isGliding(),
                             player.isInsideVehicle()
@@ -319,6 +319,21 @@ public final class BehaviorTelemetryCollector {
             this.timestampMs = timestampMs;
             this.distance = distance;
         }
+    }
+
+    private static boolean hasPotionEffect(Player player, String... fieldNames) {
+        for (String fieldName : fieldNames) {
+            try {
+                Object value = PotionEffectType.class.getField(fieldName).get(null);
+                if (value instanceof PotionEffectType
+                        && player.hasPotionEffect((PotionEffectType) value)) {
+                    return true;
+                }
+            } catch (ReflectiveOperationException | SecurityException ignored) {
+                // Field names changed between Bukkit API generations; try the next alias.
+            }
+        }
+        return false;
     }
 
     private static double wrapAngle(double angle) {
