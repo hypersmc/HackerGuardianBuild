@@ -25,6 +25,56 @@ DetectionV2:
       hard_cps: 35.0
       minimum_swings: 20
 
+  # Deterministic checks do not need ML or Learning Mode. They observe Bukkit
+  # events and feed recent physics/geometry evidence into the same assessment.
+  # They are evidence-only for now; a separate policy layer decides actions.
+  deterministic:
+    enabled: true
+
+    # Event findings are retained only long enough to join the rolling
+    # DetectionAssessment and are collapsed by check id before aggregation.
+    evidence_retention_ms: 5000
+    max_events_per_player: 128
+
+    mining:
+      fast_break:
+        enabled: true
+
+        # Ignore blocks whose conservative vanilla minimum is below this. Very
+        # fast blocks are noisy and do not provide useful fast-break evidence.
+        minimum_expected_ms: 150
+
+        # A finding requires the observed duration to be far below Bukkit's
+        # Block#getBreakSpeed envelope. 0.55 is intentionally conservative.
+        minimum_ratio: 0.55
+        tolerance_ms: 75
+
+      multi_break:
+        enabled: true
+
+        # Detect several blocks that each require meaningful mining time but
+        # nevertheless all complete inside the same tiny server-side window.
+        window_ms: 250
+        minimum_blocks: 3
+        minimum_per_block_ms: 150
+
+    block_interaction:
+      reach:
+        enabled: true
+
+        # Distance is eye -> closest point on the target block bounding box,
+        # not center-to-center. This is deliberately above normal vanilla reach
+        # so lag/edge geometry does not become an automatic accusation.
+        max_distance: 5.75
+        hard_excess_distance: 1.50
+
+      line_of_sight:
+        enabled: true
+
+        # Seven rays are sampled across the target bounding box. A through-wall
+        # finding is emitted only when every ray hits another collidable block.
+        minimum_distance: 1.50
+
   # Supervised LEGIT/CHEAT baseline retained from ML v1. This is one evidence
   # source, not HackerGuardian's definition of normal behavior.
   ml:
