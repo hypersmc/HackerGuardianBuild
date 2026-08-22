@@ -53,20 +53,20 @@ heuristic detector       ML detector(s)
    `DetectionAssessment.riskScore` is intentionally not named `cheatProbability` or `confidenceOfCheating`.
 
 5. **No online self-training.**
-   Detection v2 must not train from its own detections. False positives must never become future training labels just because the model produced them.
+   Detection v2 never trains from its own detections. False positives must never become future training labels because the model produced them.
 
 6. **Training labels require provenance.**
-   Model training should use staff-reviewed evidence, controlled test sessions, or other deliberately labeled data where the source and label are known.
+   Model training uses deliberately labeled capture sessions. A `CHEAT` label should mean known/controlled cheat behavior, not "the current model disliked this player".
 
 7. **Model inputs are versioned separately from telemetry.**
-   ML code transforms `BehaviorSnapshot` into a versioned model-specific feature schema. Event collection is not coupled to a positional `double[]` owned by one model.
+   ML code transforms `BehaviorSnapshot` into a versioned model-specific feature schema. Event collection is not coupled to a positional vector owned by one model.
 
 8. **Policy is separate from detection.**
-   A future policy layer may decide that sustained strong evidence should trigger a replay or alert staff. Automatic punishment must never be a direct model callback.
+   A future policy layer may decide that sustained strong evidence should trigger a replay or alert staff. Automatic punishment is never a direct model callback.
 
 ## Current foundation
 
-The foundation is deliberately observe-only. It contains:
+Detection v2 currently contains:
 
 - `BehaviorTelemetryCollector`
 - `BehaviorSnapshot`
@@ -77,54 +77,214 @@ The foundation is deliberately observe-only. It contains:
 - `DetectionRuntime`
 - `ReachEnvelopeDetector`
 - `ClickBurstDetector`
-- `/hg detection [player]` for read-only inspection
+- `FeatureSchemaV1`
+- `MlDatasetRecorder`
+- `LogisticRegressionModel`
+- `MlBehaviorDetector`
+- strict HGML model-artifact loading
+- an offline Python trainer
+- `/hg detection ...` operator tooling
 
-The first two deterministic detectors are not intended to be a complete anti-cheat. They validate the telemetry, evidence, reliability, aggregation, history, configuration, and operator-inspection path before ML inference is introduced.
+The deterministic detectors remain useful as independent evidence. The ML model does not replace them; the engine can compare and aggregate both kinds of findings.
 
-## Current detector philosophy
+## First real ML baseline
 
-### Reach envelope
+The first learned model is deliberately **logistic regression**, trained offline from labeled behavior windows.
 
-The server-observed attacker/victim distance is useful evidence but is not precise enough to be a verdict. Ping and low TPS reduce finding reliability.
+That is a real supervised ML model: the weights and bias are learned from data rather than hand-written thresholds. It is the first model because it provides a strong engineering baseline before adding complexity:
 
-### Click burst
+- extremely cheap inference on the Minecraft server;
+- deterministic and easy to test;
+- interpretable per-feature contributions;
+- straightforward probability-like score for ranking evidence;
+- easy to compare against future MLP/tree/sequence models;
+- no native runtime or heavyweight ML framework inside the plugin.
 
-High CPS alone is weak evidence. The detector intentionally has low reliability even when the observation is extreme.
+A neural network is not automatically a better detector. A future model should replace this baseline only if it demonstrates materially better held-out performance and acceptable false-positive behavior on real HackerGuardian data.
 
-## ML baseline
+## FeatureSchemaV1
 
-The original Neuroph subsystem has been removed completely. There is no legacy model file, online learning mode, legacy feature collector, AI SQL table, or duplicate AI command surface left to maintain.
-
-The first real ML implementation should therefore start from a clean contract:
+ML inputs use schema id `behavior-v1`. The exact feature order is part of the contract:
 
 ```text
-BehaviorSnapshot
-      |
-      v
-FeatureSchemaV1
-      |
-      v
-normalization / validation
-      |
-      v
-versioned model artifact
-      |
-      v
-ML Detector
-      |
-      v
-DetectionFinding
+movement_samples_per_second
+average_horizontal_speed
+max_horizontal_speed
+max_horizontal_delta
+average_yaw_delta
+yaw_delta_std
+average_pitch_delta
+pitch_delta_std
+ground_ratio
+swing_cps
+hit_rate
+hits_per_second
+average_hit_distance
+max_hit_distance
+blocks_broken_per_second
+max_break_distance
+blocks_placed_per_second
+max_place_distance
+ping_ms
+tps
+sprinting
+sneaking
+in_water
+on_ladder
+speed_effect
+jump_boost_effect
+flying
+gliding
+in_vehicle
+game_mode_survival
+game_mode_adventure
+game_mode_creative
+game_mode_spectator
 ```
 
-The model artifact must carry enough metadata to reject incompatible feature schemas rather than silently evaluating a vector with the wrong order or scale.
+Raw telemetry is clamped to documented physical/operational ranges before becoming a feature vector. Training then learns per-feature mean and scale from the training split. Runtime applies those exact artifact normalization values and clips standardized values to `[-8, 8]`.
 
-## Next ML steps
+Changing feature order, meaning, units, or normalization semantics requires a new feature schema version instead of silently changing `behavior-v1`.
 
-1. define `FeatureSchemaV1` and feature normalization rules;
-2. define a versioned model-artifact format and compatibility checks;
-3. persist/export labeled behavior samples with provenance;
-4. build the offline training/evaluation workflow;
-5. choose the first lightweight model family based on measured data rather than model novelty;
-6. implement inference behind the existing `Detector` contract;
-7. compare ML findings against deterministic findings and reviewed replay evidence;
-8. only after validation, introduce the policy layer that can trigger evidence capture or staff review.
+## HGML v1 model artifact
+
+The server loads a dependency-free text artifact such as:
+
+```text
+plugins/HackerGuardian/models/behavior-v1.hgml
+```
+
+The HGML v1 artifact contains:
+
+- artifact format version;
+- model type and model id;
+- required feature schema id;
+- exact ordered feature-name list;
+- training-set normalization mean and scale;
+- learned weights and bias;
+- selected review threshold;
+- training sample metadata;
+- validation accuracy, precision, recall, F1, and ROC-AUC.
+
+The Java loader rejects unknown artifact versions, model types, incompatible schema ids, reordered features, wrong vector lengths, invalid numbers, or invalid normalization scales. A mismatched model therefore fails closed as an unavailable ML detector instead of evaluating the wrong vector.
+
+No pre-trained production model is shipped with HackerGuardian yet. Shipping weights trained on synthetic/random data and calling them a cheat detector would provide false confidence. Real model artifacts should come from deliberately collected data.
+
+## Collecting labeled behavior
+
+Dataset collection is available independently of ML inference. By default it writes:
+
+```text
+plugins/HackerGuardian/ml/dataset-v1.csv
+```
+
+Start a deliberate capture:
+
+```text
+/hg detection capture <player> LEGIT [minutes]
+/hg detection capture <player> CHEAT [minutes]
+```
+
+Inspect or stop captures:
+
+```text
+/hg detection capture list
+/hg detection capture stop <player>
+```
+
+Each row includes schema id, timestamp, capture-session id, player UUID/name, label, operator, world, window size, and all `FeatureSchemaV1` values. The writer is bounded and asynchronous so dataset disk I/O does not occur on the main Bukkit thread.
+
+A capture label remains fixed for its session. Model output, heuristic findings, reports, punishments, and staff alerts never create training labels automatically.
+
+### Data collection guidance
+
+Useful training data should contain both controlled normal play and known cheat/test behavior across different people and conditions. In particular, collect variation in:
+
+- player skill and input style;
+- ping and network quality;
+- TPS/server load;
+- combat and non-combat activity;
+- movement states and potion effects;
+- different legitimate high-CPS / high-skill edge cases;
+- multiple cheat clients/settings where testing is authorized.
+
+Do not assume that a punishment means `CHEAT`, and do not assume that an unpunished player means `LEGIT`. Those are policy outcomes, not ground-truth labels.
+
+## Offline training
+
+Install the tiny trainer dependency set:
+
+```bash
+python -m pip install -r tools/ml/requirements.txt
+```
+
+Train a model from a copied/exported dataset:
+
+```bash
+python tools/ml/train_behavior_model.py \
+  --input /path/to/dataset-v1.csv \
+  --output /path/to/behavior-v1.hgml
+```
+
+Important properties of the trainer:
+
+- `LEGIT=0`, `CHEAT=1` supervised labels;
+- validation is split by **capture session**, not individual adjacent rows, reducing temporal leakage;
+- both classes must have at least two independent sessions;
+- normalization is learned from the training split only;
+- class-balanced logistic-regression training uses Adam plus L2 regularization;
+- the review threshold prioritizes validation precision because false positives are expensive;
+- evaluation reports accuracy, precision, recall, F1, and ROC-AUC;
+- output is a strict HGML v1 artifact consumed by the Java runtime.
+
+CI also runs:
+
+```bash
+python tools/ml/train_behavior_model.py --self-test
+```
+
+The self-test uses synthetic data only to verify the training/artifact pipeline. Its generated weights are never committed or treated as a real anti-cheat model.
+
+## Enabling inference
+
+Copy a real trained artifact to the path configured in `detection.yml`, then enable:
+
+```yaml
+DetectionV2:
+  ml:
+    enabled: true
+    model_file: "models/behavior-v1.hgml"
+```
+
+Restart the server, or if ML was already enabled, replace the artifact and run:
+
+```text
+/hg detection ml reload
+```
+
+Model status and validation metadata can be inspected with:
+
+```text
+/hg detection ml
+```
+
+Runtime inference also reduces/omits ML evidence for insufficient activity, excessive ping, low TPS, Creative mode, or Spectator mode. A model score becomes a `DetectionFinding` only; it still cannot warn, replay-trigger, kick, ban, or punish by itself.
+
+## Explainability
+
+For a logistic-regression prediction the runtime can calculate each standardized feature's signed contribution to the model logit. The strongest contributions are included in the finding evidence alongside:
+
+- model score;
+- artifact review threshold;
+- activity sample count;
+- ping;
+- TPS;
+- validation ROC-AUC when present.
+
+This does not make every prediction automatically correct, but it makes the first ML baseline inspectable rather than opaque.
+
+## What comes after the baseline
+
+Once enough reviewed data exists, candidates such as category-specific models, gradient-boosted trees, small MLPs, or temporal/sequence models can be evaluated. They should be tested against the exact same held-out sessions/players and compared to logistic regression on false-positive rate, precision, recall, ROC/PR behavior, inference cost, robustness to ping/TPS, and calibration.
+
+The next architecture milestone after model quality is proven is the policy/evidence layer: sustained strong findings may trigger replay capture or staff review. Automatic punishment should remain a separate, deliberately conservative decision even then.

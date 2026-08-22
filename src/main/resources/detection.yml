@@ -1,7 +1,6 @@
 # HackerGuardian Detection v2
 #
-# This is the new evidence pipeline that future ML/AI models plug into.
-# Detection output is evidence; enforcement remains a separate policy concern.
+# Detection produces evidence only. It never punishes a player directly.
 DetectionV2:
   enabled: true
 
@@ -25,3 +24,26 @@ DetectionV2:
       soft_cps: 22.0
       hard_cps: 35.0
       minimum_swings: 20
+
+  ml:
+    # Enable only after a deliberately trained HGML artifact exists.
+    # The model remains observe-only even when enabled.
+    enabled: false
+    model_file: "models/behavior-v1.hgml"
+
+    # A model score below this value is not emitted as a DetectionFinding.
+    finding_floor: 0.55
+
+    # Upper bound before runtime quality reductions for ping/TPS/activity.
+    base_reliability: 0.85
+    minimum_activity_samples: 20
+    max_ping_ms: 500
+    minimum_tps: 18.0
+
+    dataset:
+      # Allows deliberate LEGIT/CHEAT capture sessions for offline training.
+      # Detections never create labels automatically.
+      enabled: true
+      file: "ml/dataset-v1.csv"
+      queue_capacity: 2048
+      default_capture_minutes: 10
