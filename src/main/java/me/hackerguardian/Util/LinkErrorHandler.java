@@ -7,7 +7,6 @@ import net.md_5.bungee.api.plugin.Plugin;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 
-import javax.annotation.Nullable;
 import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -52,7 +51,7 @@ public final class LinkErrorHandler {
     }
 
     /** Log a detailed line for admins/devs. */
-    public void log(LinkErrorCode code, String playerName, String playerUuid, Map<String, Object> ctx, @Nullable Throwable t) {
+    public void log(LinkErrorCode code, String playerName, String playerUuid, Map<String, Object> ctx, Throwable t) {
         StringBuilder sb = new StringBuilder();
         sb.append(code.code()).append(" ");
         sb.append(code.publicReason());
@@ -101,7 +100,7 @@ public final class LinkErrorHandler {
     }
 
     /** Just log (for proxy side where we disconnect differently). */
-    public void logOnly(LinkErrorCode code, String playerName, String playerUuid, Map<String, Object> ctx, @Nullable Throwable t) {
+    public void logOnly(LinkErrorCode code, String playerName, String playerUuid, Map<String, Object> ctx, Throwable t) {
         log(code, playerName, playerUuid, ctx, t);
     }
 }
