@@ -2,6 +2,7 @@ package me.hackerguardian.main.detection;
 
 import me.hackerguardian.compat.ServerCompatibility;
 import me.hackerguardian.main.HackerGuardian;
+import me.hackerguardian.main.detection.deterministic.DeterministicCheckRuntime;
 import me.hackerguardian.main.detection.detectors.ClickBurstDetector;
 import me.hackerguardian.main.detection.detectors.ReachEnvelopeDetector;
 import me.hackerguardian.main.detection.learning.LearningRuntime;
@@ -17,8 +18,9 @@ import org.bukkit.scheduler.BukkitTask;
 
 import java.io.File;
 import java.nio.file.Path;
+import java.util.List;
 
-/** Lifecycle owner for Detection v2, supervised ML, and normality learning. */
+/** Lifecycle owner for Detection v2, deterministic checks, ML, and normality learning. */
 public final class DetectionRuntime {
 
     private final HackerGuardian plugin;
@@ -28,6 +30,7 @@ public final class DetectionRuntime {
     private final long assessmentIntervalTicks;
     private final int defaultCaptureMinutes;
     private final LearningRuntime learningRuntime;
+    private final DeterministicCheckRuntime deterministicRuntime;
 
     private MlBehaviorDetector mlDetector;
     private NormalityDetector normalityDetector;
@@ -56,6 +59,7 @@ public final class DetectionRuntime {
         this.compatibility.log(plugin.getLogger());
         this.collector = new BehaviorTelemetryCollector(windowMs);
         this.engine = new DetectionEngine(plugin.getLogger(), historySize);
+        this.deterministicRuntime = new DeterministicCheckRuntime(plugin, config, windowMs);
         this.learningRuntime = new LearningRuntime(plugin, config);
 
         initializeDatasetRecorder(config);
@@ -140,6 +144,7 @@ public final class DetectionRuntime {
         running = true;
 
         Bukkit.getPluginManager().registerEvents(new DetectionTelemetryListener(collector, engine), plugin);
+        deterministicRuntime.start();
         learningRuntime.start();
         assessmentTask = Bukkit.getScheduler().runTaskTimer(
                 plugin,
@@ -155,7 +160,8 @@ public final class DetectionRuntime {
                 ? "disabled"
                 : (normalityDetector.isLoaded() ? "loaded" : "enabled/model-unavailable");
         plugin.getLogger().info("Detection v2 started in OBSERVE-ONLY mode with "
-                + engine.getDetectorCount() + " detector(s), window=" + collector.getWindowMs()
+                + engine.getDetectorCount() + " snapshot detector(s), "
+                + deterministicRuntime.getCheckIds().size() + " deterministic check(s), window=" + collector.getWindowMs()
                 + "ms, supervised-ML=" + supervisedState
                 + ", population-normality=" + normalityState
                 + ", learning=" + (learningRuntime.isEnabled() ? "enabled" : "disabled")
@@ -184,7 +190,9 @@ public final class DetectionRuntime {
             if (datasetRecorder != null) datasetRecorder.record(snapshot);
             learningRuntime.observe(player, snapshot);
         }
-        return engine.assess(snapshot);
+        List<DetectionFinding> deterministic = deterministicRuntime.recentFindings(
+                player.getUniqueId(), snapshot.getWindowMs());
+        return engine.assess(snapshot, deterministic);
     }
 
     public boolean reloadMlModel() {
@@ -201,6 +209,7 @@ public final class DetectionRuntime {
             assessmentTask.cancel();
             assessmentTask = null;
         }
+        deterministicRuntime.stop();
         learningRuntime.stop();
         if (datasetRecorder != null) {
             datasetRecorder.shutdown();
@@ -213,6 +222,7 @@ public final class DetectionRuntime {
     public boolean isRunning() { return running; }
     public BehaviorTelemetryCollector getCollector() { return collector; }
     public DetectionEngine getEngine() { return engine; }
+    public DeterministicCheckRuntime getDeterministicRuntime() { return deterministicRuntime; }
     public MlBehaviorDetector getMlDetector() { return mlDetector; }
     public NormalityDetector getNormalityDetector() { return normalityDetector; }
     public MlDatasetRecorder getDatasetRecorder() { return datasetRecorder; }
