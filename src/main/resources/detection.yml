@@ -67,7 +67,8 @@ DetectionV2:
     notify_players: true
 
     # Recommended: assign this permission only to known/high-confidence players
-    # using LuckPerms or your normal permission system.
+    # using LuckPerms or your normal permission system. Be careful with broad '*'
+    # admin grants if those accounts are also used for cheat/adversarial testing.
     trusted_permission: "hg.learning.trusted"
 
     # Optional explicit UUID allowlist in addition to the permission above.
@@ -82,8 +83,9 @@ DetectionV2:
     minimum_baseline_hours: 10.0
 
     # Record one candidate BehaviorSnapshot per trusted player at this interval.
-    # Fixed-rate sampling prevents very active event streams from dominating.
-    sample_interval_seconds: 5.0
+    # Fifteen seconds still yields thousands of windows per player/day while
+    # avoiding unnecessary near-duplicate rows and runaway long-term disk use.
+    sample_interval_seconds: 15.0
     state_save_interval_ticks: 1200
 
     state_file: "ml/normality/learning-state.properties"
