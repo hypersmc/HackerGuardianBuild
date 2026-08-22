@@ -19,13 +19,27 @@ public final class DetectionFinding {
     private final DetectionCategory category;
     private final double score;
     private final double reliability;
+    private final EvidenceStrength strength;
     private final String summary;
     private final Map<String, Double> evidence;
+
+    /**
+     * Backward-compatible constructor for existing heuristic/model detectors.
+     */
+    public DetectionFinding(String detectorId,
+                            DetectionCategory category,
+                            double score,
+                            double reliability,
+                            String summary,
+                            Map<String, Double> evidence) {
+        this(detectorId, category, score, reliability, EvidenceStrength.HEURISTIC, summary, evidence);
+    }
 
     public DetectionFinding(String detectorId,
                             DetectionCategory category,
                             double score,
                             double reliability,
+                            EvidenceStrength strength,
                             String summary,
                             Map<String, Double> evidence) {
         if (detectorId == null || detectorId.isBlank()) {
@@ -35,6 +49,7 @@ public final class DetectionFinding {
         this.category = category == null ? DetectionCategory.OTHER : category;
         this.score = clamp(score);
         this.reliability = clamp(reliability);
+        this.strength = strength == null ? EvidenceStrength.HEURISTIC : strength;
         this.summary = summary == null ? "" : summary;
 
         Map<String, Double> copy = new LinkedHashMap<>();
@@ -67,6 +82,10 @@ public final class DetectionFinding {
 
     public double getWeightedScore() {
         return score * reliability;
+    }
+
+    public EvidenceStrength getStrength() {
+        return strength;
     }
 
     public String getSummary() {
