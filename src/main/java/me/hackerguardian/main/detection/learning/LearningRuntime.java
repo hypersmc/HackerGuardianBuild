@@ -61,7 +61,7 @@ public final class LearningRuntime {
         this.trustedAllowlist = parseUuidSet(config.getStringList(root + "trusted_uuids"));
         this.quarantineMs = daysToMs(config.getDouble(root + "quarantine_days", 14.0));
         this.minimumBaselineMs = hoursToMs(config.getDouble(root + "minimum_baseline_hours", 10.0));
-        this.sampleIntervalMs = secondsToMs(config.getDouble(root + "sample_interval_seconds", 5.0));
+        this.sampleIntervalMs = secondsToMs(config.getDouble(root + "sample_interval_seconds", 15.0));
         this.maxObservationGapMs = Math.max(5_000L, sampleIntervalMs * 3L);
         this.stateSaveTicks = Math.max(20L, config.getLong(root + "state_save_interval_ticks", 1200L));
 
@@ -131,33 +131,41 @@ public final class LearningRuntime {
 
         for (Player player : Bukkit.getOnlinePlayers()) onJoin(player);
         plugin.getLogger().info("Learning Mode v2 enabled: trusted population telemetry is being collected as quarantined candidate-normal data.");
+        if (trustedAllowlist.isEmpty() && (trustedPermission == null || trustedPermission.isBlank())) {
+            plugin.getLogger().warning("Learning Mode has no trust selectors configured; no players will be collected until trusted_uuids or trusted_permission is configured.");
+        }
     }
 
     public void observe(Player player, BehaviorSnapshot snapshot) {
         if (!running || player == null || snapshot == null) return;
         long now = snapshot.getCapturedAtMs();
         TrustDecision trust = trustDecision(player);
-        LearningPlayerState state = states.computeIfAbsent(player.getUniqueId(), LearningPlayerState::new);
-        state.markSeen(player.getName(), trust != null, now);
+        UUID playerId = player.getUniqueId();
 
         if (trust == null) {
-            sessions.remove(player.getUniqueId());
-            lastObservedMs.remove(player.getUniqueId());
-            lastSampleMs.remove(player.getUniqueId());
+            LearningPlayerState existing = states.get(playerId);
+            if (existing != null) existing.markSeen(player.getName(), false, now);
+            sessions.remove(playerId);
+            lastObservedMs.remove(playerId);
+            lastSampleMs.remove(playerId);
+            notifiedThisSession.remove(playerId);
+            if (probeEngine != null) probeEngine.cancelPlayer(playerId, "TRUST_REVOKED");
             return;
         }
 
-        UUID sessionId = sessions.computeIfAbsent(player.getUniqueId(), ignored -> UuidV7.next());
-        Long previous = lastObservedMs.put(player.getUniqueId(), now);
+        LearningPlayerState state = states.computeIfAbsent(playerId, LearningPlayerState::new);
+        state.markSeen(player.getName(), true, now);
+        UUID sessionId = sessions.computeIfAbsent(playerId, ignored -> UuidV7.next());
+        Long previous = lastObservedMs.put(playerId, now);
         if (previous != null && now > previous) {
             state.addCollected(Math.min(now - previous, maxObservationGapMs));
         }
 
         maybeNotify(player);
         long eligibleAfterMs = safeAdd(now, quarantineMs);
-        Long lastSample = lastSampleMs.get(player.getUniqueId());
+        Long lastSample = lastSampleMs.get(playerId);
         if (datasetRecorder != null && (lastSample == null || now - lastSample >= sampleIntervalMs)) {
-            lastSampleMs.put(player.getUniqueId(), now);
+            lastSampleMs.put(playerId, now);
             datasetRecorder.record(snapshot, sessionId, trust.source, eligibleAfterMs);
         }
 
@@ -180,12 +188,21 @@ public final class LearningRuntime {
         if (!running || player == null) return;
         long now = System.currentTimeMillis();
         TrustDecision trust = trustDecision(player);
-        LearningPlayerState state = states.computeIfAbsent(player.getUniqueId(), LearningPlayerState::new);
-        state.markSeen(player.getName(), trust != null, now);
-        sessions.put(player.getUniqueId(), UuidV7.next());
-        lastObservedMs.remove(player.getUniqueId());
-        lastSampleMs.remove(player.getUniqueId());
-        if (trust != null) maybeNotify(player);
+        UUID playerId = player.getUniqueId();
+
+        if (trust == null) {
+            LearningPlayerState existing = states.get(playerId);
+            if (existing != null) existing.markSeen(player.getName(), false, now);
+            sessions.remove(playerId);
+            return;
+        }
+
+        LearningPlayerState state = states.computeIfAbsent(playerId, LearningPlayerState::new);
+        state.markSeen(player.getName(), true, now);
+        sessions.put(playerId, UuidV7.next());
+        lastObservedMs.remove(playerId);
+        lastSampleMs.remove(playerId);
+        maybeNotify(player);
     }
 
     public void onQuit(Player player) {
@@ -230,8 +247,13 @@ public final class LearningRuntime {
             stateSaveTask = null;
         }
         if (probeEngine != null) probeEngine.shutdown();
-        stateStore.saveNow(states.values());
+
+        // Drain any older queued state snapshots before writing the newest one.
+        // Otherwise an older async save could race shutdown and overwrite newer
+        // collected-hour/probe state after saveNow().
         stateStore.shutdown();
+        stateStore.saveNow(states.values());
+
         if (datasetRecorder != null) datasetRecorder.shutdown();
         if (probeResultRecorder != null) probeResultRecorder.shutdown();
         sessions.clear();
