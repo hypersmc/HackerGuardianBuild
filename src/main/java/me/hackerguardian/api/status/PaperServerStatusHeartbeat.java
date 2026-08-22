@@ -54,10 +54,20 @@ public final class PaperServerStatusHeartbeat {
             boolean detectionEnabled = detection != null && detection.isRunning();
             int trackedPlayers = detectionEnabled ? detection.getCollector().getTrackedPlayerCount() : 0;
 
-            List<String> detectorIds = new ArrayList<>();
+            List<String> detectors = new ArrayList<>();
             if (detectionEnabled) {
-                detectorIds.addAll(detection.getEngine().getDetectorIds());
-                detectorIds.addAll(detection.getDeterministicRuntime().getCheckIds());
+                for (String id : detection.getEngine().getDetectorIds()) {
+                    String type = "snapshot";
+                    if (detection.getMlDetector() != null && id.equals(detection.getMlDetector().id())) {
+                        type = "ml";
+                    } else if (detection.getNormalityDetector() != null && id.equals(detection.getNormalityDetector().id())) {
+                        type = "normality";
+                    }
+                    detectors.add(type + "|" + id);
+                }
+                for (String id : detection.getDeterministicRuntime().getCheckIds()) {
+                    detectors.add("deterministic|" + id);
+                }
             }
 
             LearningRuntime learning = detectionEnabled ? detection.getLearningRuntime() : null;
@@ -87,7 +97,7 @@ public final class PaperServerStatusHeartbeat {
                     Bukkit.getOnlinePlayers().size(),
                     detectionEnabled,
                     trackedPlayers,
-                    String.join(",", detectorIds),
+                    String.join(",", detectors),
                     learningEnabled,
                     trustedPlayers,
                     activeHours,
