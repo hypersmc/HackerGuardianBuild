@@ -31,7 +31,7 @@ public final class ReplayManager {
     private final long prebufferMs;
     private final long postbufferMs;
     private final long chunkMs;
-    private final int snapshotIntervalTicks;
+    private final int subjectSnapshotIntervalTicks;
     private final int maxTriggersPerHour;
     private final int formatVersion;
     private final String codec;
@@ -41,7 +41,7 @@ public final class ReplayManager {
     private final int contextRadius;
     private final int contextMaxPlayers;
     private final boolean contextIncludeItems;
-    private final int contextEverySnapshots;
+    private final int contextIntervalTicks;
 
     private final ConcurrentHashMap<UUID, ReplayBuffer> buffers = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, ReplaySession> activeSessions = new ConcurrentHashMap<>();
@@ -70,7 +70,13 @@ public final class ReplayManager {
         this.prebufferMs = plugin.getConfig().getLong("Replays.prebuffer_seconds", 30) * 1000L;
         this.postbufferMs = plugin.getConfig().getLong("Replays.postbuffer_seconds", 20) * 1000L;
         this.chunkMs = plugin.getConfig().getLong("Replays.chunk_ms", 2000L);
-        this.snapshotIntervalTicks = Math.max(1, plugin.getConfig().getInt("Replays.snapshot_interval_ticks", 2));
+
+        // Subject movement is evidence that directly drives FOLLOW/POV replay. Record
+        // it every server tick by default (20 Hz). Older pre-release installations
+        // may still contain Replays.snapshot_interval_ticks; the actor-specific key
+        // intentionally supersedes that coarse shared interval.
+        this.subjectSnapshotIntervalTicks = Math.max(1,
+                plugin.getConfig().getInt("Replays.subject_snapshot_interval_ticks", 1));
         this.maxTriggersPerHour = plugin.getConfig().getInt("Replays.max_triggers_per_player_per_hour", 6);
         this.codec = plugin.getConfig().getString("Replays.codec", "gzip");
         this.formatVersion = plugin.getConfig().getInt("Replays.format_version", 1);
@@ -80,10 +86,8 @@ public final class ReplayManager {
         this.contextRadius = plugin.getConfig().getInt("Replays.context.radius", 32);
         this.contextMaxPlayers = plugin.getConfig().getInt("Replays.context.max_players", 6);
         this.contextIncludeItems = plugin.getConfig().getBoolean("Replays.context.include_items", true);
-        int contextIntervalTicks = Math.max(1,
-                plugin.getConfig().getInt("Replays.context.interval_ticks", this.snapshotIntervalTicks));
-        this.contextEverySnapshots = Math.max(1,
-                (int) Math.ceil(contextIntervalTicks / (double) this.snapshotIntervalTicks));
+        this.contextIntervalTicks = Math.max(1,
+                plugin.getConfig().getInt("Replays.context.interval_ticks", 2));
 
         this.snapshotter = new ReplayWorldSnapshotter(plugin, storage, ioExecutor);
 
@@ -94,26 +98,34 @@ public final class ReplayManager {
             throw new IllegalStateException("Failed to initialize replay database tables", e);
         }
 
+        // Run the coordinator every real server tick. Subject snapshots, nearby
+        // context and world-keyframe capture each keep their own cadence instead of
+        // being accidentally coupled to one shared scheduler period.
         this.snapshotTask = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
             if (!enabled) return;
 
             tickCounter++;
             long now = System.currentTimeMillis();
-            boolean doContextThisTick = contextEnabled && (tickCounter % contextEverySnapshots == 0);
+            boolean recordSubjectThisTick = tickCounter % subjectSnapshotIntervalTicks == 0;
+            boolean recordContextThisTick = contextEnabled && tickCounter % contextIntervalTicks == 0;
 
             for (Player p : Bukkit.getOnlinePlayers()) {
-                record(p, now, PlayerSnapshotEvent.from(p));
+                if (recordSubjectThisTick) {
+                    record(p, now, PlayerSnapshotEvent.from(p));
+                }
 
                 ReplaySession session = activeSessions.get(p.getUniqueId());
                 if (session != null && snapshotter.isEnabled()) {
+                    // ReplayWorldSnapshotter's chunks_per_tick now means exactly
+                    // that: this coordinator itself is called once per server tick.
                     snapshotter.tickCapture(session.getReplayId(), p);
                 }
 
-                if (doContextThisTick && shouldRecordContextFor(p)) {
+                if (recordContextThisTick && shouldRecordContextFor(p)) {
                     record(p, now, buildNearbySnapshot(p));
                 }
             }
-        }, snapshotIntervalTicks, snapshotIntervalTicks);
+        }, 1L, 1L);
     }
 
     private boolean shouldRecordContextFor(Player p) {
