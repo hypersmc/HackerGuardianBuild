@@ -25,8 +25,11 @@ DetectionV2:
       hard_cps: 35.0
       minimum_swings: 20
 
-  # Sanitized finding history for the server-side Laravel API. This is not a
-  # training label source and contains no API/database/config secrets.
+  # Persistent, sanitized evidence history for staff/API investigation, whether
+  # or not the optional website is enabled. This uses the legacy web_journal
+  # key to preserve compatibility with existing detection.yml installations.
+  # Disable explicitly if you do not want DB-backed detection-event retention.
+  # Evidence is not a training label source; no secrets are stored here.
   web_journal:
     enabled: true
     retention_days: 30
