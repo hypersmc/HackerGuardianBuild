@@ -48,6 +48,17 @@ public final class ReportService {
         return supplyAsync(() -> repo.listReportsForPlayer(reportedUuid, pageSize, offset));
     }
 
+    public CompletableFuture<Integer> countReportsByStatus(String status) {
+        return supplyAsync(() -> repo.countReportsByStatus(status));
+    }
+
+    public CompletableFuture<List<ReportRow>> listReportsByStatus(String status, int page, int pageSize) {
+        int safePage = Math.max(1, page);
+        int safeSize = Math.max(1, Math.min(50, pageSize));
+        int offset = (int) Math.min(Integer.MAX_VALUE, ((long) safePage - 1L) * safeSize);
+        return supplyAsync(() -> repo.listReportsByStatus(status, safeSize, offset));
+    }
+
     public CompletableFuture<List<CommentRow>> listComments(long reportId) {
         return supplyAsync(() -> repo.listComments(reportId));
     }
