@@ -131,6 +131,49 @@ public final class ReportRepository {
         }
     }
 
+    /**
+     * Global staff inbox. Status is whitelisted before being placed in SQL.
+     * The ID tie-breaker prevents unstable pagination for same-millisecond reports.
+     */
+    public int countReportsByStatus(String status) throws SQLException {
+        boolean all = "ALL".equals(normalizeStatus(status));
+        String sql = "SELECT COUNT(*) FROM hg_reports" + (all ? "" : " WHERE status = ?");
+        try (Connection c = ds.getConnection();
+             PreparedStatement ps = c.prepareStatement(sql)) {
+            if (!all) ps.setString(1, normalizeStatus(status));
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getInt(1) : 0;
+            }
+        }
+    }
+
+    public List<ReportRow> listReportsByStatus(String status, int limit, int offset) throws SQLException {
+        boolean all = "ALL".equals(normalizeStatus(status));
+        String sql = "SELECT * FROM hg_reports"
+                + (all ? "" : " WHERE status = ?")
+                + " ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?";
+        try (Connection c = ds.getConnection();
+             PreparedStatement ps = c.prepareStatement(sql)) {
+            int index = 1;
+            if (!all) ps.setString(index++, normalizeStatus(status));
+            ps.setInt(index++, Math.max(1, Math.min(limit, 50)));
+            ps.setInt(index, Math.max(0, offset));
+            List<ReportRow> out = new ArrayList<>();
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) out.add(ReportRow.from(rs));
+            }
+            return out;
+        }
+    }
+
+    private static String normalizeStatus(String status) {
+        if (status == null) throw new IllegalArgumentException("Report status is required");
+        return switch (status.toUpperCase(java.util.Locale.ROOT)) {
+            case "ALL", "OPEN", "CLOSED", "DISMISSED" -> status.toUpperCase(java.util.Locale.ROOT);
+            default -> throw new IllegalArgumentException("Invalid report status: " + status);
+        };
+    }
+
     public int countReportsForPlayer(String reportedUuid) throws SQLException {
         String sql = "SELECT COUNT(*) FROM hg_reports WHERE reported_uuid = ?";
         try (Connection c = ds.getConnection();

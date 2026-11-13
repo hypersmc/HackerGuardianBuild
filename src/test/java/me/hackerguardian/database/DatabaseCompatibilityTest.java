@@ -177,6 +177,28 @@ public class DatabaseCompatibilityTest {
         assertEquals(1, repo.listComments(reportId).size());
         assertTrue(repo.setStatus(reportId, "CLOSED", UUID.randomUUID().toString(), now + 2));
         assertEquals("CLOSED", repo.getReport(reportId).orElseThrow().status());
+
+        // Global inbox filters must work on both MySQL and PostgreSQL, including
+        // stable ordering, pagination, and status changes.
+        long secondId = repo.createReport(
+                UUID.randomUUID().toString(),
+                "OpenTarget",
+                UUID.randomUUID().toString(),
+                "Reporter",
+                "open-inbox-integration-test",
+                now + 20
+        );
+        assertTrue(repo.countReportsByStatus("ALL") >= 2);
+        assertTrue(repo.countReportsByStatus("OPEN") >= 1);
+        assertTrue(repo.listReportsByStatus("OPEN", 10, 0).stream()
+                .anyMatch(row -> row.id() == secondId));
+        assertFalse(repo.listReportsByStatus("CLOSED", 10, 0).stream()
+                .anyMatch(row -> row.id() == secondId));
+        assertTrue(repo.listReportsByStatus("ALL", 1, 0).size() == 1);
+        assertTrue(repo.listReportsByStatus("ALL", 1, 1).size() == 1);
+        org.junit.jupiter.api.Assertions.assertThrows(
+                IllegalArgumentException.class, () -> repo.countReportsByStatus("OPEN' OR 1=1")
+        );
         return reportId;
     }
 

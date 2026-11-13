@@ -89,9 +89,10 @@ public final class DetectionRuntime {
     }
 
     private void initializeEventJournal(FileConfiguration config) {
-        boolean website = config.getBoolean("Settings.UseWebsiteFunction", false);
+        // Evidence storage must not depend on the optional website/API lifecycle.
+        // Keep the existing web_journal configuration key for upgraded servers.
         boolean enabled = config.getBoolean("DetectionV2.web_journal.enabled", true);
-        if (!website || !enabled || plugin.getDatabase() == null || plugin.getDatabase().getDataSource() == null) return;
+        if (!enabled || plugin.getDatabase() == null || plugin.getDatabase().getDataSource() == null) return;
         try {
             eventJournal = new DetectionEventJournal(
                     plugin.getDatabase().getDataSource(),
@@ -102,7 +103,7 @@ public final class DetectionRuntime {
                     config.getInt("DetectionV2.web_journal.queue_capacity", 4096),
                     config.getInt("DetectionV2.web_journal.retention_days", 30)
             );
-            plugin.getLogger().info("Detection web evidence journal enabled.");
+            plugin.getLogger().info("Persistent detection evidence journal enabled (independent of website/API).");
         } catch (Exception e) {
             eventJournal = null;
             plugin.getLogger().warning("Detection web evidence journal is unavailable: " + e.getMessage());
