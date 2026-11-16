@@ -553,6 +553,55 @@ class MovementPacketDiagnosticsTest {
     }
 
     @Test
+    void timingViewDistinguishesRawHintGapsFromModelRejections() {
+        var model = new PacketGroundReachability(
+                PacketGroundReachability.Profile.forMinecraft(
+                        me.hackerguardian.compat.MinecraftVersion.parse("1.20.2")));
+        var input = new MovementTickTimeline.TickInput("world",
+                new MovementPacketBuffer.Position(0, 64, 0),
+                new MovementPacketBuffer.Velocity(0, 0, 0),
+                new MovementTickTimeline.PlayerFlags(true, false, false, false, false, false),
+                new MovementTickTimeline.Environment(true, false, true, false, false),
+                new MovementTickTimeline.ProbeContext(true, true, true, true, "", false, "STONE"));
+        for (int tick : new int[]{1, 2, 4, 5, 6}) {
+            model.observe(new MovementPacketBuffer.PacketState(
+                            new MovementPacketBuffer.Position(.2 * tick, 64, 0),
+                            null, true, false, true),
+                    new PacketGroundReachability.Context(tick, 0, true, false, input));
+        }
+        var packets = new MovementPacketBuffer(8);
+        var lines = MovementPacketDiagnostics.render("HypersMC",
+                packets.snapshot(UUID.randomUUID()), null, null, null, model.snapshot(),
+                MovementPacketDiagnostics.View.TIMING, System.nanoTime());
+        assertEquals(6, lines.size());
+        assertTrue(lines.stream().anyMatch(line -> line.contains("NOT client simulation ticks")));
+        assertTrue(lines.stream().anyMatch(line -> line.contains("Hint pairs +1 3")
+                && line.contains("gaps 1")));
+        assertTrue(lines.stream().anyMatch(line -> line.contains("Gap +2 1")
+                && line.contains("model gaps 1")));
+        assertTrue(lines.stream().anyMatch(line -> line.contains("stale 0")
+                && line.contains("unstable 0")));
+        assertTrue(lines.stream().anyMatch(line -> line.contains("Warmup init 2")
+                && line.contains("timing 1")));
+        assertEquals(MovementPacketDiagnostics.View.TIMING,
+                MovementPacketDiagnostics.View.parse("sync"));
+        assertEquals(MovementPacketDiagnostics.View.TIMING,
+                MovementPacketDiagnostics.View.parse("tickhints"));
+
+        var off = MovementPacketDiagnostics.render("HypersMC",
+                packets.snapshot(UUID.randomUUID()), null, null, null, null,
+                MovementPacketDiagnostics.View.TIMING, System.nanoTime());
+        assertEquals(2, off.size());
+        assertTrue(off.get(1).contains("OFF"));
+        var unsupported = MovementPacketDiagnostics.render("HypersMC",
+                packets.snapshot(UUID.randomUUID()), null, null, null,
+                new PacketGroundReachability(null).snapshot(),
+                MovementPacketDiagnostics.View.TIMING, System.nanoTime());
+        assertEquals(2, unsupported.size());
+        assertTrue(unsupported.get(1).contains("unavailable"));
+    }
+
+    @Test
     void missingTransportIsReportedWithoutInventingNetworkSuccess() {
         UUID id = UUID.randomUUID();
         var buffer = new MovementPacketBuffer(2);
