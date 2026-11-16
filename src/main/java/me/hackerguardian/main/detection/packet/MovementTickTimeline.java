@@ -194,7 +194,12 @@ public final class MovementTickTimeline {
     }
 
     private long monotonicTime() {
-        lastNanos = Math.max(lastNanos, clock.getAsLong());
+        long value = clock.getAsLong();
+        // Distinct callbacks can share one nanoTime value. Preserve their
+        // serialized observation order so a following server tick is never
+        // confused with an earlier one at the exact same timestamp.
+        long next = lastNanos == Long.MAX_VALUE ? Long.MAX_VALUE : lastNanos + 1;
+        lastNanos = Math.max(next, value);
         return lastNanos;
     }
 }
