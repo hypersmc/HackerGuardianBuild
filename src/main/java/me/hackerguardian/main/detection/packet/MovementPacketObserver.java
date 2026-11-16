@@ -14,6 +14,7 @@ import org.bukkit.event.HandlerList;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.event.player.PlayerVelocityEvent;
 import org.bukkit.Location;
@@ -36,7 +37,8 @@ public final class MovementPacketObserver implements Listener {
     private final HackerGuardian plugin;
     private final MovementPacketBuffer buffer;
     private final Map<Player, Session> sessions = new ConcurrentHashMap<>();
-    private PacketAdapter adapter;
+    private PacketAdapter inboundAdapter;
+    private PacketAdapter outboundAdapter;
     private boolean running;
 
     public MovementPacketObserver(HackerGuardian plugin, int maxPerPlayer) {
@@ -48,17 +50,18 @@ public final class MovementPacketObserver implements Listener {
         if (running) return;
         Bukkit.getPluginManager().registerEvents(this, plugin);
         for (Player player : Bukkit.getOnlinePlayers()) {
-            sessions.put(player, new Session(player.getUniqueId()));
+            sessions.put(player, new Session(player.getUniqueId(), player.getEntityId()));
         }
 
         try {
-            PacketAdapter newAdapter = new PacketAdapter(
+            PacketAdapter incoming = new PacketAdapter(
                     plugin,
                     ListenerPriority.MONITOR,
                     PacketType.Play.Client.GROUND,
                     PacketType.Play.Client.POSITION,
                     PacketType.Play.Client.LOOK,
-                    PacketType.Play.Client.POSITION_LOOK
+                    PacketType.Play.Client.POSITION_LOOK,
+                    PacketType.Play.Client.TELEPORT_ACCEPT
             ) {
                 @Override
                 public void onPacketReceiving(PacketEvent event) {
@@ -66,12 +69,34 @@ public final class MovementPacketObserver implements Listener {
                     Session session = sessions.get(event.getPlayer());
                     if (session == null) return;
                     MovementPacketBuffer.Kind kind = classify(event.getPacketType());
-                    if (kind != null) session.record(kind,
-                            MovementPacketDecoder.decode(event.getPacket(), kind));
+                    if (kind != null) {
+                        session.record(kind, MovementPacketDecoder.decode(event.getPacket(), kind));
+                    } else if (PacketType.Play.Client.TELEPORT_ACCEPT.equals(event.getPacketType())) {
+                        session.confirmTeleport(MovementWireDecoder.teleportId(event.getPacket()));
+                    }
                 }
             };
-            ProtocolLibrary.getProtocolManager().addPacketListener(newAdapter);
-            adapter = newAdapter;
+            ProtocolLibrary.getProtocolManager().addPacketListener(incoming);
+            inboundAdapter = incoming;
+
+            PacketAdapter outgoing = new PacketAdapter(
+                    plugin, ListenerPriority.MONITOR,
+                    PacketType.Play.Server.POSITION,
+                    PacketType.Play.Server.ENTITY_VELOCITY) {
+                @Override
+                public void onPacketSending(PacketEvent event) {
+                    if (event.isCancelled()) return;
+                    Session session = sessions.get(event.getPlayer());
+                    if (session == null) return;
+                    if (PacketType.Play.Server.POSITION.equals(event.getPacketType())) {
+                        session.outboundTeleport(MovementWireDecoder.teleportId(event.getPacket()));
+                    } else if (PacketType.Play.Server.ENTITY_VELOCITY.equals(event.getPacketType())) {
+                        session.outboundSelfVelocity(event.getPacket());
+                    }
+                }
+            };
+            ProtocolLibrary.getProtocolManager().addPacketListener(outgoing);
+            outboundAdapter = outgoing;
             running = true;
         } catch (RuntimeException e) {
             stop();
@@ -80,9 +105,13 @@ public final class MovementPacketObserver implements Listener {
     }
 
     public void stop() {
-        if (adapter != null) {
-            ProtocolLibrary.getProtocolManager().removePacketListener(adapter);
-            adapter = null;
+        if (inboundAdapter != null) {
+            ProtocolLibrary.getProtocolManager().removePacketListener(inboundAdapter);
+            inboundAdapter = null;
+        }
+        if (outboundAdapter != null) {
+            ProtocolLibrary.getProtocolManager().removePacketListener(outboundAdapter);
+            outboundAdapter = null;
         }
         HandlerList.unregisterAll(this);
         for (Session session : sessions.values()) session.close();
@@ -99,9 +128,26 @@ public final class MovementPacketObserver implements Listener {
         return buffer.snapshot(playerId);
     }
 
+    /** Returns an immutable snapshot, or null when the player's session is unavailable. */
+    public MovementPacketTransport.Snapshot transportSnapshot(Player player) {
+        Session session = player == null ? null : sessions.get(player);
+        return session == null ? null : session.transportSnapshot();
+    }
+
     @EventHandler
     public void onJoin(PlayerJoinEvent event) {
-        sessions.put(event.getPlayer(), new Session(event.getPlayer().getUniqueId()));
+        sessions.put(event.getPlayer(),
+                new Session(event.getPlayer().getUniqueId(), event.getPlayer().getEntityId()));
+    }
+
+    /** The runtime entity ID can change at respawn; refresh it on the next Bukkit tick. */
+    @EventHandler
+    public void onRespawn(PlayerRespawnEvent event) {
+        Player player = event.getPlayer();
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            Session session = sessions.get(player);
+            if (session != null && player.isOnline()) session.updateEntityId(player.getEntityId());
+        });
     }
 
     @EventHandler
@@ -155,24 +201,59 @@ public final class MovementPacketObserver implements Listener {
 
     private final class Session {
         private final UUID playerId;
+        private final MovementPacketTransport transport = new MovementPacketTransport();
+        private int selfEntityId;
         private boolean active = true;
 
-        private Session(UUID playerId) {
+        private Session(UUID playerId, int selfEntityId) {
             this.playerId = playerId;
+            this.selfEntityId = selfEntityId;
+        }
+
+        private synchronized void updateEntityId(int entityId) {
+            if (active) selfEntityId = entityId;
+        }
+
+        private synchronized MovementPacketTransport.Snapshot transportSnapshot() {
+            return active ? transport.snapshot() : null;
         }
 
         private synchronized void record(MovementPacketBuffer.Kind kind,
                                          MovementPacketBuffer.PacketState state) {
-            if (active) buffer.record(playerId, kind, state);
+            if (active) {
+                buffer.record(playerId, kind, state);
+                transport.movement();
+            }
         }
 
         private synchronized void teleport(String worldKey, MovementPacketBuffer.Position position,
                                            MovementPacketBuffer.Rotation rotation, String cause) {
-            if (active) buffer.recordServerTeleport(playerId, worldKey, position, rotation, cause);
+            if (active) {
+                buffer.recordServerTeleport(playerId, worldKey, position, rotation, cause);
+                transport.serverTeleportIntent();
+            }
         }
 
         private synchronized void velocity(String worldKey, MovementPacketBuffer.Velocity velocity) {
-            if (active) buffer.recordServerVelocity(playerId, worldKey, velocity);
+            if (active) {
+                buffer.recordServerVelocity(playerId, worldKey, velocity);
+                transport.serverVelocityIntent(velocity);
+            }
+        }
+
+        private synchronized void outboundTeleport(Integer id) {
+            if (active) transport.outboundTeleport(id);
+        }
+
+        private synchronized void confirmTeleport(Integer id) {
+            if (active) transport.inboundConfirm(id);
+        }
+
+        private synchronized void outboundSelfVelocity(com.comphenix.protocol.events.PacketContainer packet) {
+            if (!active) return;
+            MovementWireDecoder.SelfVelocity value =
+                    MovementWireDecoder.selfVelocity(packet, selfEntityId);
+            if (value.forSelf()) transport.outboundSelfVelocity(value.velocity());
         }
 
         private synchronized void close() {
