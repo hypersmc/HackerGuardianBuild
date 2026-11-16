@@ -45,12 +45,31 @@ public final class MovementTickTimeline {
                               boolean gliding, boolean swimming,
                               boolean inVehicle, boolean creativeOrSpectator) {}
 
+    /**
+     * Explicitly unknown by default. Ground-envelope research must never
+     * assume a Bukkit snapshot implies ordinary, unmodified vanilla physics.
+     */
+    public record ProbeContext(boolean verified, boolean ordinaryFlatSurface,
+                               boolean noActiveEffects, boolean defaultWalkSpeed) {
+        public static ProbeContext unknown() {
+            return new ProbeContext(false, false, false, false);
+        }
+    }
+
     public record TickInput(String worldKey, MovementPacketBuffer.Position position,
                             MovementPacketBuffer.Velocity velocity,
-                            PlayerFlags flags, Environment environment) {
+                            PlayerFlags flags, Environment environment,
+                            ProbeContext probeContext) {
+        public TickInput(String worldKey, MovementPacketBuffer.Position position,
+                         MovementPacketBuffer.Velocity velocity,
+                         PlayerFlags flags, Environment environment) {
+            this(worldKey, position, velocity, flags, environment, ProbeContext.unknown());
+        }
+
         public TickInput {
             if (worldKey == null || worldKey.isBlank() || position == null
-                    || velocity == null || flags == null || environment == null) {
+                    || velocity == null || flags == null || environment == null
+                    || probeContext == null) {
                 throw new IllegalArgumentException("Incomplete server tick input");
             }
         }
@@ -224,6 +243,30 @@ public final class MovementTickTimeline {
                 recoverySuppressions, pendingTeleportSuppressions,
                 contextSuppressions, completedPairs, lastSuppression,
                 lastSuppressionTick);
+    }
+
+    /** A recent, current-epoch inbound client position is needed for the
+     *  research probe, though the measured displacement is server-side.
+     *  Does not mutate timeline state.
+     */
+    public synchronized boolean hasRecentClientPosition() {
+        long now = Math.max(lastNanos, clock.getAsLong());
+        return lastClient != null && lastClient.correctionEpoch() == correctionEpoch
+                && now >= lastClient.observedNanos()
+                && now - lastClient.observedNanos() <= MAX_SAMPLE_LAG_NANOS;
+    }
+
+    /** Last recorded epoch, not a clock or physics value. */
+    public synchronized long currentCorrectionEpoch() {
+        return correctionEpoch;
+    }
+
+    /** Require three actual sampled states after a correction, not three
+     *  scheduler tick numbers that could include missing samples.
+     */
+    public synchronized boolean settledForResearch(boolean pendingTeleport) {
+        return !pendingTeleport && (correctionSampleCount == Long.MIN_VALUE
+                || sampledCount - correctionSampleCount > MIN_STABLE_SAMPLES_AFTER_CORRECTION);
     }
 
     public synchronized Snapshot snapshot() {
