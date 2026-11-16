@@ -51,12 +51,20 @@ public final class MovementTickTimeline {
      */
     public record ProbeContext(boolean verified, boolean ordinaryFlatSurface,
                                boolean noActiveEffects, boolean defaultWalkSpeed,
-                               String surfaceReason) {
-        // Keep four-argument fixtures compatible: unknown reasons are never
-        // promoted to proof of an ordinary collision surface.
+                               String surfaceReason, boolean sprinting) {
+        // Preserve existing test fixtures and callers. Legacy contexts have
+        // no sprint reading, so they default to the walking group in tests;
+        // the actual Bukkit sampler always passes Player.isSprinting().
         public ProbeContext(boolean verified, boolean ordinaryFlatSurface,
                             boolean noActiveEffects, boolean defaultWalkSpeed) {
-            this(verified, ordinaryFlatSurface, noActiveEffects, defaultWalkSpeed, "");
+            this(verified, ordinaryFlatSurface, noActiveEffects, defaultWalkSpeed, "", false);
+        }
+
+        public ProbeContext(boolean verified, boolean ordinaryFlatSurface,
+                            boolean noActiveEffects, boolean defaultWalkSpeed,
+                            String surfaceReason) {
+            this(verified, ordinaryFlatSurface, noActiveEffects, defaultWalkSpeed,
+                    surfaceReason, false);
         }
 
         public ProbeContext {
@@ -64,7 +72,7 @@ public final class MovementTickTimeline {
         }
 
         public static ProbeContext unknown() {
-            return new ProbeContext(false, false, false, false, "unverified");
+            return new ProbeContext(false, false, false, false, "unverified", false);
         }
     }
 
