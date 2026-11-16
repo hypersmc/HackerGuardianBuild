@@ -26,7 +26,7 @@ public final class MovementTickTimeline {
 
     public enum Correction {
         BUKKIT_TELEPORT, BUKKIT_VELOCITY, OUTBOUND_TELEPORT,
-        TELEPORT_CONFIRM, OUTBOUND_SELF_VELOCITY
+        TELEPORT_CONFIRM, OUTBOUND_SELF_VELOCITY, RESPAWN, WORLD_CHANGE
     }
 
     /**
@@ -96,6 +96,14 @@ public final class MovementTickTimeline {
             throw new IllegalArgumentException("Tick numbers must increase and input must be valid");
         }
         long at = monotonicTime();
+        ServerTick previous = ticks.peekLast();
+        if (previous != null && !previous.state().worldKey().equals(input.worldKey())) {
+            // Even if a plugin changes a world without a Bukkit teleport
+            // callback, never compare positions across world boundaries.
+            correctionEpoch++;
+            correctionTick = sampledTicks;
+            lastCorrection = Correction.WORLD_CHANGE;
+        }
         sampledTicks = serverTick;
         if (ticks.size() == MAX_TICKS) {
             ticks.removeFirst();
