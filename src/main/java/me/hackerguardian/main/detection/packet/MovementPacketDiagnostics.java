@@ -14,7 +14,7 @@ import java.util.concurrent.TimeUnit;
 public final class MovementPacketDiagnostics {
 
     public enum View {
-        SUMMARY, MOVEMENT, NETWORK, TICK;
+        SUMMARY, MOVEMENT, NETWORK, TICK, GUARDS;
 
         public static View parse(String name) {
             if (name == null || name.isBlank()) return SUMMARY;
@@ -23,6 +23,7 @@ public final class MovementPacketDiagnostics {
                 case "movement", "move" -> MOVEMENT;
                 case "network", "net" -> NETWORK;
                 case "tick", "state" -> TICK;
+                case "guards", "guard", "safety" -> GUARDS;
                 default -> null;
             };
         }
@@ -62,7 +63,7 @@ public final class MovementPacketDiagnostics {
                             + transport.matchedConfirms() + " | pending " + transport.pendingTeleports()
                             + " | unmatched " + transport.unmatchedConfirms());
                 }
-                lines.add("Details: /hg detection packets " + player + " move|net|tick");
+                lines.add("Details: /hg detection packets " + player + " move|net|tick|guards");
             }
             case MOVEMENT -> {
                 lines.add("Received " + packet.totalReceived() + " | Retained " + packet.retained()
@@ -128,6 +129,26 @@ public final class MovementPacketDiagnostics {
                         lines.add("Comparison " + comparison.status()
                                 + " | no completed recent pair");
                     }
+                }
+            }
+            case GUARDS -> {
+                if (ticks == null) {
+                    lines.add("Correction diagnostics unavailable");
+                } else {
+                    var g = ticks.guards();
+                    lines.add("Boundaries TP " + g.teleportBoundaries()
+                            + " | Velocity " + g.velocityBoundaries()
+                            + " | Other " + g.otherBoundaries());
+                    lines.add("Invalidated pending " + g.pendingClaimsInvalidated()
+                            + " | completed " + g.completedPairsInvalidated());
+                    lines.add("Suppressed recovery " + g.recoverySuppressions()
+                            + " | pending TP " + g.pendingTeleportSuppressions());
+                    lines.add("Suppressed context " + g.contextSuppressions()
+                            + " | paired " + g.completedPairs());
+                    lines.add("Last guard " + (g.lastSuppression() == null
+                            ? "none" : g.lastSuppression())
+                            + " @tick " + (g.lastSuppressionTick() < 0
+                            ? "n/a" : g.lastSuppressionTick()));
                 }
             }
             case NETWORK -> {
