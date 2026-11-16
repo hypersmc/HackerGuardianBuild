@@ -258,7 +258,7 @@ public final class MovementPacketObserver implements Listener {
         }
 
         private synchronized MovementTickTimeline.Snapshot tickSnapshot() {
-            return active ? timeline.snapshot() : null;
+            return active ? timeline.snapshot(transport.snapshot().hasUnverifiedTeleport()) : null;
         }
 
         private synchronized void sampleServerTick(long tick, MovementTickTimeline.TickInput input) {
