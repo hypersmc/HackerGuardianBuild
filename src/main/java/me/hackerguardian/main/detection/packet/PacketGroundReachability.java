@@ -70,13 +70,24 @@ public final class PacketGroundReachability {
         }
     }
 
+    /**
+     * Mutually exclusive no-decision categories. Every incoming position
+     * packet not modeled contributes to exactly one of these counters.
+     * Correction events with no incoming position packet are separately
+     * represented by the existing corrections total.
+     */
+    public record HeadingSkipReasons(long warmup, long timing, long context,
+                                     long invalidPacket, long correction,
+                                     long unavailable) {}
+
     public record Snapshot(String model, boolean enabled, long positionPackets,
                            long modeledTriples, long noDecision, long researchedOutside,
                            long ambiguousTicks, long corrections,
                            Status lastStatus, Long lastTick, Double lastActual,
                            Double lastReachable, Double lastExcess,
                            PacketReachabilityResiduals.Snapshot residuals,
-                           PacketMotionTransitions.Snapshot transitions) {}
+                           PacketMotionTransitions.Snapshot transitions,
+                           HeadingSkipReasons headingSkips) {}
 
     private record Claim(long tick, long epoch, String world,
                          MovementPacketBuffer.Position position, String material,
@@ -88,6 +99,8 @@ public final class PacketGroundReachability {
     private final PacketMotionTransitions transitions = new PacketMotionTransitions();
     private Claim older, newest;
     private long positionPackets, modeled, noDecision, outside, ambiguous, corrections;
+    private long headingWarmupSkips, headingTimingSkips, headingContextSkips;
+    private long headingInvalidPacketSkips, headingCorrectionSkips, headingUnavailableSkips;
     private Status lastStatus = Status.WARMUP;
     private Long lastTick;
     private Double lastActual, lastReachable, lastExcess;
@@ -227,6 +240,17 @@ public final class PacketGroundReachability {
         if (status != Status.CONSERVATIVE_REACHABLE
                 && status != Status.OUTSIDE_RESEARCH_ENVELOPE) {
             noDecision++;
+            // Breakdown describes upstream packet reachability gates; it does
+            // not imply there was enough motion to define a heading angle.
+            switch (status) {
+                case WARMUP -> headingWarmupSkips++;
+                case TICK_GAP, AMBIGUOUS_TICK, STALE_SERVER_SAMPLE -> headingTimingSkips++;
+                case CONTEXT_CHANGED, UNSUPPORTED_CONTEXT -> headingContextSkips++;
+                case INVALID_GROUND_CLAIM -> headingInvalidPacketSkips++;
+                case RECENT_CORRECTION -> headingCorrectionSkips++;
+                case DISABLED_VERSION, NO_SERVER_SAMPLE -> headingUnavailableSkips++;
+                default -> throw new IllegalStateException("Unexpected no-decision status: " + status);
+            }
             if (status != Status.WARMUP && status != Status.TICK_GAP
                     && status != Status.CONTEXT_CHANGED
                     && status != Status.AMBIGUOUS_TICK) {
@@ -279,6 +303,9 @@ public final class PacketGroundReachability {
                 profile != null, positionPackets, modeled, noDecision, outside,
                 ambiguous, corrections, lastStatus, lastTick,
                 lastActual, lastReachable, lastExcess,
-                residuals.snapshot(), transitions.snapshot());
+                residuals.snapshot(), transitions.snapshot(),
+                new HeadingSkipReasons(headingWarmupSkips, headingTimingSkips,
+                        headingContextSkips, headingInvalidPacketSkips,
+                        headingCorrectionSkips, headingUnavailableSkips));
     }
 }
