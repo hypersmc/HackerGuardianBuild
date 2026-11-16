@@ -229,6 +229,87 @@ breakdowns. Maintain all correction boundaries and keep outliers
 non-actionable until tick synchronization and physics accuracy are
 independently validated.
 
+## Packet residual distributions by ground movement mode (2026-11-16)
+
+The packet-driven research model now keeps **separate rolling
+distributions of the required unknown-input residual** for server-observed
+walking and sprinting, without using the older Bukkit displacement
+`profile`. The new optional view is:
+
+```text
+/hg detection packets HypersMC res
+```
+
+Equivalent suffixes: `residuals`, `predstats`, `predictstats`.
+
+Each accepted client packet triple contributes once to exactly one mode.
+Sprint state must be unchanged across the triple by the existing
+`sameContext` checks; mixed-state, correction-crossing, airborne,
+invalid-claim, unknown-terrain, stale server tick or ambiguous packet
+timing cases are **not sampled into either distribution**.
+
+The observed motion is calculated from decoded **incoming client position
+packets**, not the Bukkit server-position snapshots. For each accepted
+triple, using horizontal packet-to-packet displacement vectors:
+
+```text
+center = ground_drag * previous_packet_displacement
+residual = magnitude(current_packet_displacement - center)
+radius = max_unknown_input_acceleration + uncertainty
+outside_excess = max(0, residual - radius)
+```
+
+`residual` is the magnitude of the **player-input contribution that the
+provisional zero-input drag model needs to explain**. Calling it
+"prediction error" or treating it as cheating is misleading: authentic
+movement input is deliberately **unknown**. The `outside_excess`
+measurement represents only how far a sample falls outside the chosen
+research envelope (if any), not an authoritative Minecraft violation.
+
+- **Walk/Sprint `n=retained/session_total`:** number of eligible
+  client-packet triples in that mode, limited to the most recent **128**
+  per group. Each group is a constant-memory ring of primitive values.
+- **`r50`, `r95`, `max`:** nearest-rank median, 95th percentile,
+  and maximum residual in the *retained* window, measured in blocks per
+  accepted packet interval. Neither percentile nor maximum is a threshold.
+- **`Outside W/S`:** cumulative session counts of modeled triples
+  beyond the deliberately loose envelope for each observed mode.
+- **`peak excess`:** maximum excess **among retained values** in each
+  mode, not the lifetime maximum; a previous outlier can age out.
+- **`no-decision`:** cumulative packets whose context/timing was
+  unsuitable or which were needed only to warm up a triple. These are
+  not absent or discarded from transport diagnostics.
+
+No per-packet sorting, persistent storage, full coordinates in the
+distribution history, event journal writes, ML training or punishment
+paths are added. The statistics are generated on demand when staff request
+the view. A player disconnect clears the session profile.
+
+### Single-player runtime protocol
+
+1. Enable the existing opt-in `packet_reachability` research switch.
+   On a large, uniform **STONE** platform in Survival, walk steadily
+   without jumping for 10–15 seconds.
+2. Run `... predict` and `... res`. Walk `n` should increase,
+   while Sprint `n` stays zero unless earlier sprint data exists.
+3. Sprint steadily, no jumping; compare both views. Sprint `n` should
+   now increase separately while the walking retained profile remains
+   stable, apart from any intervening walking observations.
+4. Switch walk/sprint repeatedly, then jump, teleport, take knockback,
+   enter Creative and move onto slabs/other unsupported ground. The
+   underlying `predict` no-decision/guard checks must still apply, and
+   unsupported intervals must never add residual measurements.
+5. Reconnect to reset the session counters. Check that the retained
+   window stays at 128 while lifetime counts continue to grow.
+6. Later collect multiple legitimate gameplay sessions, jitter/TPS
+   conditions and Minecraft versions. The observed p95 may describe
+   selection bias from the strict eligibility filter rather than
+   general Minecraft movement physics.
+
+**Status:** code and unit tests committed; CI and live testing required.
+This is distribution instrumentation, **not** verification of the
+research model's acceleration constants or a detection accuracy claim.
+
 ## Next actual physics work
 
 Capture trustworthy per-player packet order and *validated tick equivalence*,
