@@ -29,7 +29,7 @@ public final class PacketResearchRuns {
                            Distribution timingClusters,
                            long activeAcceptedRun, long activeTimingCluster,
                            long totalModeled, long totalTimingRejects,
-                           long warmupsBetweenTimingRejects,
+                           long warmupsInsideTimingClusters,
                            long singleRuns, long runs2to4, long runs5to19,
                            long runs20Plus,
                            long isolatedTimingClusters, long multiTimingClusters) {}
