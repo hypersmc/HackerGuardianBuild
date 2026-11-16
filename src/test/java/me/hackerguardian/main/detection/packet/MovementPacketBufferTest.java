@@ -118,6 +118,87 @@ class MovementPacketBufferTest {
     }
 
     @Test
+    void lastKnownRawFieldsPreservePacketProvenanceAndDecodeFailures() {
+        AtomicLong now = new AtomicLong(1);
+        MovementPacketBuffer buffer = new MovementPacketBuffer(8, now::incrementAndGet);
+        UUID id = UUID.randomUUID();
+        buffer.record(id, MovementPacketBuffer.Kind.POSITION,
+                new MovementPacketBuffer.PacketState(
+                        new MovementPacketBuffer.Position(1, 70, -3),
+                        null, false, null, true));
+        buffer.record(id, MovementPacketBuffer.Kind.LOOK,
+                new MovementPacketBuffer.PacketState(null,
+                        new MovementPacketBuffer.Rotation(190, 45),
+                        true, false, true));
+        buffer.record(id, MovementPacketBuffer.Kind.POSITION_LOOK,
+                MovementPacketBuffer.PacketState.missing());
+
+        var snapshot = buffer.snapshot(id);
+        assertEquals(3, snapshot.totalReceived());
+        assertEquals(1, snapshot.decodeFailures());
+        var known = snapshot.lastKnownClientFields();
+        assertEquals(new MovementPacketBuffer.Position(1, 70, -3), known.position());
+        assertEquals(1L, known.positionSequence());
+        assertEquals(new MovementPacketBuffer.Rotation(190, 45), known.rotation());
+        assertEquals(2L, known.rotationSequence());
+        assertEquals(true, known.onGround());
+        assertEquals(false, known.horizontalCollision());
+        assertEquals(2L, known.groundSequence());
+    }
+
+    @Test
+    void teleportAndVelocityContextAreSeparateFromInboundPacketCount() {
+        AtomicLong now = new AtomicLong(10);
+        MovementPacketBuffer buffer = new MovementPacketBuffer(8, now::incrementAndGet);
+        UUID id = UUID.randomUUID();
+        buffer.record(id, MovementPacketBuffer.Kind.GROUND);
+        buffer.recordServerTeleport(id, "world-uuid",
+                new MovementPacketBuffer.Position(4, 80, 5),
+                new MovementPacketBuffer.Rotation(0, 0), "PLUGIN");
+        buffer.recordServerVelocity(id, "world-uuid",
+                new MovementPacketBuffer.Velocity(0.5, 0.25, -0.5));
+
+        var snap = buffer.snapshot(id);
+        assertEquals(1L, snap.totalReceived());
+        assertEquals(2L, snap.totalContexts());
+        assertEquals(0L, snap.droppedContexts());
+        assertEquals(2, snap.contexts().size());
+        assertEquals(MovementPacketBuffer.ContextKind.SERVER_TELEPORT, snap.contexts().get(0).kind());
+        assertEquals("PLUGIN", snap.contexts().get(0).cause());
+        assertEquals(new MovementPacketBuffer.Velocity(0.5, 0.25, -0.5),
+                snap.contexts().get(1).velocity());
+        assertTrue(snap.contexts().get(0).arrivalNanos() < snap.contexts().get(1).arrivalNanos());
+    }
+
+    @Test
+    void serverContextIsBoundedAndClearedWithPlayer() {
+        MovementPacketBuffer buffer = new MovementPacketBuffer(1);
+        UUID id = UUID.randomUUID();
+        for (int i = 0; i < 20; i++) {
+            buffer.recordServerVelocity(id, "world",
+                    new MovementPacketBuffer.Velocity(i, 0, 0));
+        }
+        var snapshot = buffer.snapshot(id);
+        assertEquals(20, snapshot.totalContexts());
+        assertEquals(8, snapshot.contexts().size());
+        assertEquals(12, snapshot.droppedContexts());
+        org.junit.jupiter.api.Assertions.assertThrows(UnsupportedOperationException.class,
+                () -> snapshot.contexts().clear());
+        buffer.clearPlayer(id);
+        assertEquals(0, buffer.snapshot(id).totalContexts());
+    }
+
+    @Test
+    void rejectsNonFiniteContextDataAndDoesNotConflateTypes() {
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                () -> new MovementPacketBuffer.Position(Double.NaN, 0, 0));
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                () -> new MovementPacketBuffer.Rotation(0, Float.NEGATIVE_INFINITY));
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                () -> new MovementPacketBuffer.Velocity(0, 0, Double.POSITIVE_INFINITY));
+    }
+
+    @Test
     void concurrentProducersPreserveStrictSequence() throws Exception {
         MovementPacketBuffer buffer = new MovementPacketBuffer(32);
         UUID player = UUID.randomUUID();
