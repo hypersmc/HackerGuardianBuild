@@ -342,6 +342,46 @@ class MovementPacketDiagnosticsTest {
     }
 
     @Test
+    void rawPacketPredictionViewNamesActualSourceAndAvoidsVerdicts() {
+        var model = new PacketGroundReachability(
+                PacketGroundReachability.Profile.forMinecraft(
+                        me.hackerguardian.compat.MinecraftVersion.parse("1.20.2")));
+        var input = new MovementTickTimeline.TickInput("world",
+                new MovementPacketBuffer.Position(0, 64, 0),
+                new MovementPacketBuffer.Velocity(0, 0, 0),
+                new MovementTickTimeline.PlayerFlags(true, false, false, false, false, false),
+                new MovementTickTimeline.Environment(true, false, true, false, false),
+                new MovementTickTimeline.ProbeContext(true, true, true, true, "", false, "STONE"));
+        for (int tick = 1; tick <= 3; tick++) {
+            model.observe(new MovementPacketBuffer.PacketState(
+                    new MovementPacketBuffer.Position(.2 * (tick - 1), 64, 0),
+                    null, true, false, true),
+                    new PacketGroundReachability.Context(tick, 0, true, false, input));
+        }
+
+        var buffer = new MovementPacketBuffer(8);
+        var output = MovementPacketDiagnostics.render("HypersMC",
+                buffer.snapshot(UUID.randomUUID()), null, null, null,
+                model.snapshot(), MovementPacketDiagnostics.View.PREDICT, System.nanoTime());
+        assertEquals(6, output.size());
+        assertTrue(output.stream().anyMatch(line -> line.contains("Real client POSITION packets")
+                && line.contains("research ONLY")));
+        assertTrue(output.stream().anyMatch(line -> line.contains("Profile 1.20.x")
+                && line.contains("modeled 1")));
+        assertTrue(output.stream().anyMatch(line -> line.contains("CONSERVATIVE_REACHABLE")
+                && line.contains("outside research 0")));
+        assertTrue(output.stream().anyMatch(line -> line.contains("excess")));
+        assertEquals(MovementPacketDiagnostics.View.PREDICT,
+                MovementPacketDiagnostics.View.parse("pktphysics"));
+
+        var off = MovementPacketDiagnostics.render("HypersMC",
+                buffer.snapshot(UUID.randomUUID()), null, null, null,
+                null, MovementPacketDiagnostics.View.PREDICT, System.nanoTime());
+        assertEquals(2, off.size());
+        assertTrue(off.get(1).contains("OFF"));
+    }
+
+    @Test
     void missingTransportIsReportedWithoutInventingNetworkSuccess() {
         UUID id = UUID.randomUUID();
         var buffer = new MovementPacketBuffer(2);
