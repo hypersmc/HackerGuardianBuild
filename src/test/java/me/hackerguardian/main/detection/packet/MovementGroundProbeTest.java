@@ -234,6 +234,44 @@ class MovementGroundProbeTest {
     }
 
     @Test
+    void realProbePassesOnlyContiguousSameSurfaceMotionToDynamics() {
+        var probe = new MovementGroundProbe();
+        probe.sample(1, STEP, 0, materialFrame(0, "STONE"), true, true);
+        probe.sample(2, 2 * STEP, 0, materialFrame(.2, "STONE"), true, true);
+        probe.sample(3, 3 * STEP, 0, materialFrame(.4, "STONE"), true, true);
+        probe.sample(4, 4 * STEP, 0, materialFrame(.8, "STONE"), true, true);
+        var first = probe.snapshot().dynamics();
+        assertEquals(3, first.eligibleVectors());
+        assertEquals(2, first.comparedTransitions());
+        assertEquals(1, first.accelerations());
+        assertEquals(1, first.steady());
+
+        probe.sample(5, 5 * STEP, 0, materialFrame(1, "STONE"), true, false);
+        assertEquals(1, probe.snapshot().dynamics().discontinuities());
+
+        probe.sample(6, 6 * STEP, 0, materialFrame(1.2, "STONE"), true, true);
+        assertEquals(2, probe.snapshot().dynamics().comparedTransitions(),
+                "Missing client must sever the previous-vector chain");
+
+        // Two individually safe ordinary blocks, but not a uniform surface.
+        probe.sample(7, 7 * STEP, 0, materialFrame(1.4, "GRASS_BLOCK"), true, true);
+        assertEquals(2, probe.snapshot().dynamics().comparedTransitions());
+        probe.sample(8, 8 * STEP, 0, materialFrame(1.6, "GRASS_BLOCK"), true, true);
+        probe.sample(9, 9 * STEP, 0, materialFrame(1.8, "GRASS_BLOCK"), true, true);
+        assertEquals(3, probe.snapshot().dynamics().comparedTransitions());
+        assertEquals(0, probe.snapshot().researchOutliers());
+    }
+
+    private static MovementTickTimeline.TickInput materialFrame(double x, String material) {
+        var frame = frame(x);
+        return new MovementTickTimeline.TickInput(
+                frame.worldKey(), frame.position(), frame.velocity(), frame.flags(),
+                frame.environment(),
+                new MovementTickTimeline.ProbeContext(true, true, true, true,
+                        "", false, material));
+    }
+
+    @Test
     void staleSnapshotNeverChangesCounters() {
         var probe = new MovementGroundProbe();
         probe.sample(1, STEP, 0, frame(0), true, true);
