@@ -88,7 +88,8 @@ public final class PacketGroundReachability {
                            PacketReachabilityResiduals.Snapshot residuals,
                            PacketMotionTransitions.Snapshot transitions,
                            HeadingSkipReasons headingSkips,
-                           PacketTickHintDiagnostics.Snapshot tickHints) {}
+                           PacketTickHintDiagnostics.Snapshot tickHints,
+                           PacketResearchRuns.Snapshot runs) {}
 
     private record Claim(long tick, long epoch, String world,
                          MovementPacketBuffer.Position position, String material,
@@ -100,6 +101,8 @@ public final class PacketGroundReachability {
     private final PacketMotionTransitions transitions = new PacketMotionTransitions();
     // Pure diagnostic observer: it never controls or changes eligibility.
     private final PacketTickHintDiagnostics tickHints = new PacketTickHintDiagnostics();
+    // Model-outcome-only study, never part of deciding whether a triple is valid.
+    private final PacketResearchRuns runs = new PacketResearchRuns();
     private Claim older, newest;
     private long positionPackets, modeled, noDecision, outside, ambiguous, corrections;
     private long headingWarmupSkips, headingTimingSkips, headingContextSkips;
@@ -270,6 +273,7 @@ public final class PacketGroundReachability {
             }
         }
         tickHints.observeOutcome(status);
+        runs.observe(status);
         lastStatus = status;
     }
 
@@ -282,6 +286,7 @@ public final class PacketGroundReachability {
         lastStatus = Status.RECENT_CORRECTION;
         transitions.interruption();
         tickHints.correction();
+        runs.correction();
     }
 
     private static boolean sameContext(Claim a, Claim b) {
@@ -313,6 +318,6 @@ public final class PacketGroundReachability {
                 new HeadingSkipReasons(headingWarmupSkips, headingTimingSkips,
                         headingContextSkips, headingInvalidPacketSkips,
                         headingCorrectionSkips, headingUnavailableSkips),
-                tickHints.snapshot());
+                tickHints.snapshot(), runs.snapshot());
     }
 }
