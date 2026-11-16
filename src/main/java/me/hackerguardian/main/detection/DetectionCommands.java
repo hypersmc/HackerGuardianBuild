@@ -97,7 +97,41 @@ public final class DetectionCommands {
         if (recent.truncated()) {
             sender.sendMessage(tx.playerText(" §eRecent window truncated by buffer capacity; rate is a lower bound."));
         }
-        sender.sendMessage(tx.playerText(" §8Receive timing only; not a movement/Timer cheat verdict."));
+        MovementPacketBuffer.LastKnown fields = snapshot.lastKnownClientFields();
+        sender.sendMessage(tx.playerText(" §7Decoder failures: §f" + snapshot.decodeFailures()));
+        if (fields.position() != null) {
+            var pos = fields.position();
+            sender.sendMessage(tx.playerText(String.format(java.util.Locale.ROOT,
+                    " §7Last client position (#%d): §f%.2f, %.2f, %.2f",
+                    fields.positionSequence(), pos.x(), pos.y(), pos.z())));
+        }
+        if (fields.rotation() != null) {
+            var rot = fields.rotation();
+            sender.sendMessage(tx.playerText(String.format(java.util.Locale.ROOT,
+                    " §7Last client look (#%d): §f%.1f yaw / %.1f pitch",
+                    fields.rotationSequence(), rot.yaw(), rot.pitch())));
+        }
+        sender.sendMessage(tx.playerText(" §7Client on-ground: §f"
+                + (fields.onGround() == null ? "UNKNOWN" : fields.onGround())
+                + " §8| §7Horizontal collision: §f"
+                + (fields.horizontalCollision() == null ? "UNKNOWN" : fields.horizontalCollision())));
+        sender.sendMessage(tx.playerText(" §7Server intent events: §f" + snapshot.totalContexts()
+                + " §8| §7Overwritten: §f" + snapshot.droppedContexts()));
+        if (!snapshot.contexts().isEmpty()) {
+            MovementPacketBuffer.ServerContext context =
+                    snapshot.contexts().get(snapshot.contexts().size() - 1);
+            if (context.kind() == MovementPacketBuffer.ContextKind.SERVER_TELEPORT) {
+                sender.sendMessage(tx.playerText(" §7Last server intent: §fTELEPORT (" + context.cause() + ")"));
+            } else {
+                var v = context.velocity();
+                if (v != null) {
+                    sender.sendMessage(tx.playerText(String.format(java.util.Locale.ROOT,
+                            " §7Last server velocity: §f%.2f, %.2f, %.2f",
+                            v.x(), v.y(), v.z())));
+                }
+            }
+        }
+        sender.sendMessage(tx.playerText(" §8Raw client claims + Bukkit server intent only; no cheat verdict."));
     }
 
     private void showAssessment(CommandSender sender, Player target) {
