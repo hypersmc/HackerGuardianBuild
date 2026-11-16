@@ -52,7 +52,7 @@ class PacketReachabilityResidualsTest {
         assertEquals(201, snapshot.total());
         assertEquals(128, snapshot.retained());
         assertEquals(1, snapshot.outside());
-        assertEquals(.136, snapshot.p50(), 1e-12);  // last 128: .072 ... .199
+        assertEquals(.135, snapshot.p50(), 1e-12);  // last 128: .072 ... .199
         assertEquals(.193, snapshot.p95(), 1e-12);
         assertEquals(.199, snapshot.max(), 1e-12);
         assertEquals(0.0, snapshot.maxExcess(), 1e-12,
