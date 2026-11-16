@@ -576,6 +576,64 @@ despite nearly identical residuals. A new live Paper test is still
 required to establish how often either occurs in real gameplay.
 All observations remain opt-in, in-memory and non-enforcing.
 
+## Live displacement-versus-residual retest (2026-11-17)
+
+The tester supplied two consecutive in-game `/hg detection packets
+HypersMC trans` screenshots after the packet displacement
+instrumentation was added. The screenshots do not label the individual
+keyboard-release sequence or precisely separate all the actions, so the
+observations below are **session-level** research results only.
+
+| Measurement | Earlier screenshot | Later screenshot |
+|---|---:|---:|
+| Walk→sprint / sprint→walk observed switches | 1 / 1 | 4 / 4 |
+| Tagged post-switch modeled triples | 4 | 26 |
+| Accelerating / slowing / turning / steady | 2 / 2 / 0 / 26 | 2 / 5 / 0 / 128 |
+| After sprint→walk (`S>W`) tagged triples | 4 | 16 |
+| `S>W` residual r95 | 0.000 | 0.000 |
+| `S>W` actual packet displacement d95 | **0.025** | **0.025** |
+| `S>W` near-zero displacement (< =0.002 blocks) | 0 | 0 |
+| `S>W` drag-like positive-displacement samples | 4 | 16 |
+| After walk→sprint (`W>S`) tagged triples | 0 | 10 |
+| `W>S` residual r95 / actual displacement d95 | n/a / n/a | 0.127 / 0.278 |
+| `W>S` near-zero / drag-like | 0 / 0 | 0 / 0 |
+
+**Result: passed for live packet displacement/residual instrumentation.**
+The second screenshot shows 16 out of 16 sprint→walk transition
+observations with **non-near-zero actual client packet displacement**
+while their residuals match the provisional zero-input drag model
+closely (r95 rounded to 0.000; `drag~`=16). This directly resolves the
+previous ambiguity: the low residual in these *recorded* switch windows
+is **not merely an artifact of fully stationary decoded packet
+intervals**. It is consistent with drag-like coasting.
+
+**Do not over-interpret:** a measured displacement of 0.025 blocks per
+accepted packet interval is not proof that the user released forward,
+proof that sprint was released before forward, a fitted friction
+coefficient, or authenticated client simulation timing. A single
+p95 also does not reveal the full distribution of displacements, and a
+client may stop sending position packets when actually motionless.
+
+The other direction (`W>S`) recorded 10 accepted post-switch
+triples at r95=0.127 and d95=0.278, consistent with active sprint-like
+movement and clearly distinct from the `S>W` observations. The number
+of sprint switches and transition samples increased as the user
+repeated movement sequences; the existing source and no-decision
+guards were not loosened.
+
+**Turning remains unvalidated in live tests:** the counter was 0 in
+both screenshots. This may reflect smooth angle changes, missing
+eligible consecutive packet triples during a sharp turn, or the
+provisional 35-degree per-comparison threshold. Do **not** lower that
+research threshold just to increase the count. Next prioritize a
+bounded distribution of **observed client packet heading-change
+angles**, alongside eligibility/no-decision context, before
+investigating version-aware directional acceleration.
+
+This is an observe-only, single-server research smoke test. No
+false-positive assessment, production physics validation or
+enforcement-ready cheat check is implied.
+
 ## Next actual physics work
 
 Capture trustworthy per-player packet order and *validated tick equivalence*,
