@@ -284,6 +284,77 @@ steady-state motion from acceleration transients. Keep all observations
 read-only until protocol/version-aware physics prediction has independent
 false-positive validation.
 
+## Start/stop/turn and apparent slowdown dynamics (2026-11-16)
+
+A new, separately requested **research-only** staff view is available under
+the existing opt-in ground probe:
+
+```text
+/hg detection packets HypersMC dyn
+```
+
+It reports counts of **start, stop, turning, acceleration, deceleration and
+steady** transitions observed in consecutive pairs of eligible server-side
+horizontal displacement vectors (three server position samples). It also
+shows the median/p95 *absolute change in displacement speed* (blocks/50ms)
+and a **slowdown retention ratio**. Statistics are bounded to the most
+recent 128 values per metric and computed when staff request a snapshot.
+
+The classification uses intentionally provisional descriptive thresholds:
+0.025 blocks/50ms to consider a player nearly still; 0.075 blocks/50ms as
+moving; 0.025 blocks/50ms speed change for acceleration/deceleration; and
+35 degrees or more as a turn. **These are research categories, not
+authoritative Minecraft physics constants or anti-cheat thresholds.**
+
+The slowdown retention ratio is defined as the newer horizontal speed
+divided by the older speed during an observed slowdown or stop. It is
+*not a friction coefficient*. The system has **no authenticated information
+about which keys the player is pressing or releasing**, and a slowdown
+could be braking, changing direction, hitting an obstruction, or simply
+settling after acceleration. A future friction estimator must account for
+player inputs, block-specific friction, server/client simulation timing,
+collision geometry and external momentum first.
+
+### Continuity safeguards
+
+- No dynamics transition is recorded unless **two successive eligible
+  ground-displacement pairs** have been measured. Any `NO_CLIENT_DATA`,
+  teleport, knockback, respawn, fluid, airborne movement, unsupported
+  collision context or lag gap breaks the chain.
+- The same world, correction epoch, sprint state and supported full-block
+  **material** must be consistent. If a pair spans two unlike or unknown
+  materials, the movement distribution can still count it if otherwise
+  eligible, but the directional/retention study skips it.
+- Sprint toggles are excluded rather than misclassified as acceleration.
+  A stationary or nearly stopped player might not send client position
+  packets: missing stop samples are expected, not suspicious.
+- All samples are per player, memory-only, independent of detection
+  scores, ML labels, reports, replay triggers or punishment actions.
+
+### Recommended single-account test
+
+1. In Survival on an extended uniform `STONE` platform, start walking from
+   a stop, move steadily for several seconds, then release movement keys.
+   Inspect `/hg detection packets HypersMC dyn`. Start, steady or slowing
+   counts may increase depending on what client packets were observed.
+2. Repeat with sprinting (without jumping), make several sharp 90-degree
+   turns, and inspect the same view. The turn count should increase when
+   adjacent eligible ground vectors form large heading changes.
+3. Run `... profile` alongside `... dyn` to compare the settled walk/sprint
+   speed populations to changes during acceleration.
+4. Switch to Creative flight, move across dirt paths/slabs, teleport, then
+   take zombie knockback. These must never bridge the dynamics timeline.
+   Stats from *before* each event remain in the rolling session history.
+5. Try an ordinary mixed-material path and observe that the dynamics
+   continuity guard stops mixing different ground blocks.
+6. Quit and rejoin; in-memory counters should restart. Test more versions
+   and realistic server lag before treating any categorization as reliable.
+
+**Validation status:** code and pure Java regression tests added; this
+dynamic classification still needs a live Paper/ProtocolLib retest and
+independent evaluation of input timing. The default chat view remains
+five lines. No automatic detection or enforcement is connected.
+
 ## Future real detection work
 
 Before a meaningful ground-speed check, build version-specific motion
