@@ -14,7 +14,7 @@ import java.util.concurrent.TimeUnit;
 public final class MovementPacketDiagnostics {
 
     public enum View {
-        SUMMARY, MOVEMENT, NETWORK, TICK, GUARDS, PROBE;
+        SUMMARY, MOVEMENT, NETWORK, TICK, GUARDS, PROBE, PROFILE;
 
         public static View parse(String name) {
             if (name == null || name.isBlank()) return SUMMARY;
@@ -25,6 +25,7 @@ public final class MovementPacketDiagnostics {
                 case "tick", "state" -> TICK;
                 case "guards", "guard", "safety" -> GUARDS;
                 case "probe", "plausibility" -> PROBE;
+                case "profile", "dist", "distribution" -> PROFILE;
                 default -> null;
             };
         }
@@ -72,7 +73,7 @@ public final class MovementPacketDiagnostics {
                             + transport.matchedConfirms() + " | pending " + transport.pendingTeleports()
                             + " | unmatched " + transport.unmatchedConfirms());
                 }
-                lines.add("Details: /hg detection packets " + player + " move|net|tick|guards|probe");
+                lines.add("Details: /hg detection packets " + player + " move|net|tick|guards|probe|profile");
             }
             case MOVEMENT -> {
                 lines.add("Received " + packet.totalReceived() + " | Retained " + packet.retained()
@@ -180,6 +181,19 @@ public final class MovementPacketDiagnostics {
                             + " | research outliers " + probe.researchOutliers());
                 }
             }
+            case PROFILE -> {
+                if (probe == null) {
+                    lines.add("Ground-motion profile OFF (opt-in in detection.yml)");
+                } else {
+                    lines.add("Observed server displacement, NOT a cheat check");
+                    var dist = probe.distributions();
+                    lines.add(profileLine("Walk", dist.walking()));
+                    lines.add(profileLine("Sprint", dist.sprinting()));
+                    lines.add("Units: blocks / 50ms | rolling last 128 per mode");
+                    lines.add("Eligible " + probe.evaluated() + " | transition skips "
+                            + probe.sprintTransitions() + " | no-decision " + probe.noDecision());
+                }
+            }
             case NETWORK -> {
                 if (transport == null) {
                     lines.add("Transport tracking unavailable");
@@ -209,6 +223,14 @@ public final class MovementPacketDiagnostics {
             }
         }
         return List.copyOf(lines);
+    }
+
+    private static String profileLine(String mode, GroundMotionDistributions.Stats stats) {
+        if (!stats.available()) return mode + " n=0 | insufficient data";
+        return String.format(Locale.ROOT,
+                "%s n=%d/%d | p50 %.3f p95 %.3f max %.3f",
+                mode, stats.retained(), stats.totalSamples(),
+                stats.p50(), stats.p95(), stats.max());
     }
 
     private static String flag(Boolean value) {
