@@ -496,6 +496,37 @@ version-specific acceleration/friction/attribute handling, packet ordering,
 server permission context and uncertainty about client inputs. No confirmed
 key-state input can be inferred from Minecraft's ordinary movement packets.
 
+## First live idle/resume observation: passed (2026-11-16)
+
+The tester supplied a Survival-mode screenshot with repeated
+`/hg detection packets HypersMC idle` readings on `STONE`:
+
+| Bukkit sampled ticks | Eligible intervals | Observed starts | Observed stops | Breaks | Last server-observed state |
+|---:|---:|---:|---:|---:|---|
+| 1716 | 309 | 2 | 1 | 0 | MOVING, TRANSITION_PENDING |
+| 1779 | 372 | 3 | 3 | 0 | IDLE, VALID; 0.000 blocks/50ms |
+| 1821 | 414 | 4 | 3 | 0 | MOVING, TRANSITION_PENDING |
+
+Across the last two readings, `starts w/recent packet` advanced from
+3 to 4, while `stops w/o recent packet` remained **0**. The latter is
+**not** a failed stop test: all three stops were observed from Bukkit
+server positions, but each happened while a recent incoming client
+position packet was still available according to the observer's
+freshness definition. The special no-recent-packet stop scenario remains
+untested in vivo.
+
+The last `TRANSITION_PENDING` values (motion 0.010 and 0.019
+blocks/50ms) can coexist with `MOVING`: `state` is the last
+confirmed state while a different phase is awaiting sufficient
+consecutive observations. A pending phase is **not** a movement verdict.
+
+**Result:** pass for the single-server, Survival, server-observed
+**start/stop recording** smoke test. The previously missing starts/stops
+now accumulate as the player alternates between walking and standing
+still. This is not a client-input/keyboard-release detector, a
+packet-driven movement predictor, or a validation of anti-cheat
+false-positive rates. Continue to keep all data research-only.
+
 ## Future real detection work
 
 Before a meaningful ground-speed check, build version-specific motion
