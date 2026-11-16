@@ -32,6 +32,21 @@ public final class MovementWireDecoder {
         }
     }
 
+    /**
+     * Inspect the target entity ID independently of the self-player filter.
+     * A null result is evidence of an unsupported/unreadable layout, not a
+     * missing velocity event and not a player violation.
+     */
+    public static Integer velocityTargetId(PacketContainer packet) {
+        if (packet == null) return null;
+        try {
+            var ints = packet.getIntegers();
+            return ints.size() >= 1 ? ints.read(0) : null;
+        } catch (RuntimeException | LinkageError ignored) {
+            return null;
+        }
+    }
+
     public static SelfVelocity selfVelocity(PacketContainer packet, int selfEntityId) {
         if (packet == null || selfEntityId < 0) return SelfVelocity.notForSelf();
         try {
