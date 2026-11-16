@@ -731,6 +731,92 @@ were separate received packets.
 regression tests committed; CI and live validation pending. No
 violation/report/ML/punishment paths are added.
 
+## Packet-to-server-tick-hint timing diagnostics (2026-11-17)
+
+After real heading tests, the observer recorded **24 measured heading angles**
+but **509 no-decision packet observations**, including **258 timing**
+exclusions and **247 warmup** exclusions. Those counts do not
+necessarily represent 258 network packet losses or 247 bad decoder
+events. The existing model relies on a Bukkit **server scheduler tick
+hint**, not an authenticated client simulation tick; a `TICK_GAP`
+resets the three-position chain, and another accepted packet is then
+needed to rebuild its displacement history.
+
+A new, read-only, six-line diagnostic exposes the distinction:
+
+```text
+/hg detection packets HypersMC timing
+```
+
+Aliases: `sync`, `tickhints`. This is still controlled by the existing
+opt-in `packet_reachability.enabled` setting.
+
+- **Raw hint pairs +1 / same / gaps / reverse:** differences in the most
+  recent Bukkit scheduler tick index seen by *consecutive incoming client
+  position-packet observations*. These are observations of **server
+  hint assignment**, NOT validated client simulation tick gaps.
+- **Gaps +2 / >=3:** which sizes of positive server hint jump were
+  observed. `+2` means the newer packet was observed two *server
+  tick indices* after the earlier one; it does **not** prove a client
+  tick or packet was dropped. Cross-correction-epoch comparisons are
+  explicitly reset and not included.
+- **Model gaps / model same-tick:** the predictor's actual `TICK_GAP`
+  and `AMBIGUOUS_TICK` no-decision outcomes. Raw repeated hints and
+  raw gaps can occur even when other eligibility rules already rejected
+  a packet, so raw counts and model rejection counts are not expected
+  to match exactly.
+- **Stale / unstable:** number of incoming position observations with
+  server context older than 125 ms (or invalid sample age), and with
+  previous server tick spacing outside 25–125 ms (or no complete
+  consecutive sample). These diagnostic categories may overlap.
+- **Warmup init / timing / context / correction / other:** the existing
+  `WARMUP` no-decision packets attributed to the most recent chain
+  interruption type. A timing gap can induce a *subsequent warmup*;
+  counting the former without the latter understates its impact.
+  Summed warmup attribution equals the original `heading warmup`
+  counter. This is descriptive provenance; it does not mean the input
+  packets actually arrived in client-tick order.
+
+### Example (illustrative, not captured server values)
+
+```text
+Packets: HypersMC [timing]
+SERVER tick hints | NOT client simulation ticks
+Hint pairs +1 260 same 0 gaps 258 reverse 0
+Gap +2 240 >=3 18 | model gaps 258
+Model same-tick 0 | stale 0 | unstable 0
+Warmup init 2 timing 247 context 0 correction 0 other 0
+```
+
+### Controlled next test
+
+1. With the research predictor enabled, walk or sprint steadily on the
+   same large STONE surface without jumping for 10 seconds. Check both
+   `heading` and `timing` before and after the movement.
+2. Compare the **increase** (not the cumulative total) in raw +1 hints,
+   raw gaps, model gaps, and warmups after timing. If timing-origin
+   warmups increase roughly with gaps, interrupted packet sequences
+   explain much of the low heading coverage.
+3. Repeat with several sharp **movement-direction** changes, then
+   separately while standing still and only rotating the camera.
+   Packet headings come from position claims, not LOOK/yaw alone.
+4. Check after teleport, Creative flight, and a laggy server interval.
+   The model should keep declining comparisons when timing or movement
+   context is not trustworthy.
+5. Never change eligibility to allow duplicate or skipped tick hints
+   solely to increase modeled angles. The next possible engineering
+   step is independently calibrated **packet arrival cadence telemetry**
+   and client/server simulation equivalence research, not assigning
+   confidence to server tick hints.
+
+**Safety:** this increment adds constant-memory counters and a staff
+view only. It does not alter the packet model's eligibility, friction
+assumptions, heading cutoff, violation rules, ML labels, reports or
+enforcement. Pure Java regressions check hint classification, context
+metadata, correction-epoch boundaries, warmup attribution and the
+six-line diagnostics output. GitHub CI and live Paper verification
+must be evaluated separately.
+
 ## Next actual physics work
 
 Capture trustworthy per-player packet order and *validated tick equivalence*,
