@@ -17,7 +17,7 @@ import java.util.function.LongSupplier;
 public final class MovementTickTimeline {
     private static final long MAX_SAMPLE_LAG_NANOS = 250_000_000L;
     private static final int MAX_TICKS = 64;
-    private static final long MIN_STABLE_TICKS_AFTER_CORRECTION = 2L;
+    private static final long MIN_STABLE_SAMPLES_AFTER_CORRECTION = 2L;
 
     public enum Status {
         NO_CLIENT_POSITION, NO_SERVER_TICK, AWAITING_NEXT_TICK,
@@ -53,8 +53,8 @@ public final class MovementTickTimeline {
         }
     }
 
-    public record ServerTick(long tick, long sampledNanos, long correctionEpoch,
-                             TickInput state) {}
+    public record ServerTick(long tick, long sampleOrder, long sampledNanos,
+                             long correctionEpoch, TickInput state) {}
 
     public record ClientPosition(long packetOrder, long observedNanos,
                                  long serverTickHint, long correctionEpoch,
@@ -76,9 +76,10 @@ public final class MovementTickTimeline {
 
     private final LongSupplier clock;
     private final Deque<ServerTick> ticks = new ArrayDeque<>();
-    private long sampledTicks, droppedTicks, clientPacketsObserved;
+    private long sampledTicks, sampledCount, droppedTicks, clientPacketsObserved;
     private long lastNanos = Long.MIN_VALUE;
     private long correctionEpoch, correctionTick = Long.MIN_VALUE;
+    private long correctionSampleCount = Long.MIN_VALUE;
     private Correction lastCorrection;
     private ClientPosition lastClient;
 
@@ -103,6 +104,7 @@ public final class MovementTickTimeline {
             // callback, never compare positions across world boundaries.
             correctionEpoch++;
             correctionTick = sampledTicks;
+            correctionSampleCount = sampledCount;
             lastCorrection = Correction.WORLD_CHANGE;
         }
         sampledTicks = serverTick;
@@ -110,7 +112,7 @@ public final class MovementTickTimeline {
             ticks.removeFirst();
             droppedTicks++;
         }
-        ticks.addLast(new ServerTick(serverTick, at, correctionEpoch, input));
+        ticks.addLast(new ServerTick(serverTick, ++sampledCount, at, correctionEpoch, input));
     }
 
     /**
@@ -134,6 +136,7 @@ public final class MovementTickTimeline {
         monotonicTime();
         correctionEpoch++;
         correctionTick = sampledTicks;
+        correctionSampleCount = sampledCount;
         lastCorrection = reason;
     }
 
@@ -155,20 +158,20 @@ public final class MovementTickTimeline {
                 lastCorrection, correctionTick, hasPendingTeleport && lastClient != null
                         ? result(Status.PENDING_TELEPORT, lastClient, null, null)
                         : compare(history, lastClient,
-                                correctionEpoch, correctionTick, sampledTicks, now));
+                                correctionEpoch, correctionSampleCount, sampledCount, now));
     }
 
     private static Diagnostic compare(List<ServerTick> history, ClientPosition client,
-                                      long currentEpoch, long correctionAtTick,
-                                      long latestTick, long now) {
+                                      long currentEpoch, long correctionAtSample,
+                                      long latestSample, long now) {
         if (client == null) return new Diagnostic(Status.NO_CLIENT_POSITION,
                 null, null, null, null, currentEpoch);
         if (history.isEmpty()) return result(Status.NO_SERVER_TICK, client, null, null);
         if (client.correctionEpoch() != currentEpoch) {
             return result(Status.DIFFERENT_CONTEXT, client, null, null);
         }
-        if (latestTick - correctionAtTick < MIN_STABLE_TICKS_AFTER_CORRECTION
-                && correctionAtTick != Long.MIN_VALUE) {
+        if (correctionAtSample != Long.MIN_VALUE
+                && latestSample - correctionAtSample < MIN_STABLE_SAMPLES_AFTER_CORRECTION) {
             return result(Status.CORRECTION_WINDOW, client, null, null);
         }
         ServerTick firstFollowing = null;
@@ -188,8 +191,9 @@ public final class MovementTickTimeline {
             return result(Status.TOO_OLD, client, firstFollowing, lag);
         }
         if (firstFollowing.correctionEpoch() != client.correctionEpoch()
-                || firstFollowing.tick() <= correctionAtTick + MIN_STABLE_TICKS_AFTER_CORRECTION
-                && correctionAtTick != Long.MIN_VALUE) {
+                || (correctionAtSample != Long.MIN_VALUE
+                    && firstFollowing.sampleOrder()
+                        <= correctionAtSample + MIN_STABLE_SAMPLES_AFTER_CORRECTION)) {
             return result(Status.CORRECTION_WINDOW, client, firstFollowing, lag);
         }
 
