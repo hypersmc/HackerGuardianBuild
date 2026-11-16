@@ -1,6 +1,7 @@
 package me.hackerguardian.main.detection.packet;
 
 import org.bukkit.GameMode;
+import org.bukkit.Material;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.block.Block;
@@ -48,8 +49,24 @@ public final class MovementTickSampler {
                     player.isOnGround(), player.isFlying(), player.isGliding(),
                     player.isSwimming(), player.isInsideVehicle(),
                     mode == GameMode.CREATIVE || mode == GameMode.SPECTATOR);
+
+            // Ground research uses a tiny allowlist of ordinary full blocks.
+            // Slabs, stairs, ice, slime, honey, soul sand, fluids, ladders,
+            // plugin flight, unusual speed settings and status effects are
+            // explicitly NOT within this research envelope.
+            Material belowType = below.getType();
+            boolean ordinary = (belowType == Material.STONE
+                    || belowType == Material.DIRT
+                    || belowType == Material.GRASS_BLOCK
+                    || belowType == Material.COBBLESTONE
+                    || belowType == Material.DEEPSLATE)
+                    && Math.abs(loc.getY() - Math.rint(loc.getY())) < 0.02
+                    && !player.getAllowFlight() && !player.isRiptiding();
+            var probeContext = new MovementTickTimeline.ProbeContext(
+                    true, ordinary, player.getActivePotionEffects().isEmpty(),
+                    Math.abs(player.getWalkSpeed() - 0.2F) < 0.0001F);
             return new MovementTickTimeline.TickInput(
-                    world.getUID().toString(), position, velocity, flags, env);
+                    world.getUID().toString(), position, velocity, flags, env, probeContext);
         } catch (IllegalArgumentException ex) {
             // Skip any malformed coordinate or velocity. Never feed a guessed
             // value to later movement validators.
