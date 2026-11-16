@@ -288,8 +288,8 @@ class MovementGroundProbeTest {
         assertEquals("UNKNOWN_MATERIAL", snapshot.dynamicsGate().lastReason());
 
         probe.sample(3, 3 * STEP, 0, materialFrame(.4, "STONE"), true, true);
-        assertEquals(1, probe.snapshot().dynamicsGate().unknownMaterialPairs() + 
-                probe.snapshot().dynamicsGate().changedMaterialPairs() - 1);
+        assertEquals(2, probe.snapshot().dynamicsGate().unknownMaterialPairs());
+        assertEquals(0, probe.snapshot().dynamicsGate().changedMaterialPairs());
         assertEquals(2, probe.snapshot().evaluated());
         assertEquals(0, probe.snapshot().dynamics().eligibleVectors());
         probe.sample(4, 4 * STEP, 0, materialFrame(.6, "STONE"), true, true);
