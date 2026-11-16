@@ -13,10 +13,12 @@ DetectionV2:
   # Recent assessments retained in RAM per online player.
   history_size: 20
 
-  # Optional foundation for future packet-aware movement checks. Stores only
-  # inbound packet kinds, receive order and monotonic arrival times in memory.
-  # OFF by default until verified on a real Paper server. It has no verdict,
-  # replay, persistence or punishment side effects. ProtocolLib is required.
+  # Optional read-only packet observation. In addition to packet kind/order
+  # and receive time, keeps raw client-reported coordinates, yaw/pitch, ground
+  # flags where decoded, plus Bukkit teleport/velocity intent in a separate
+  # bounded in-memory context ring. No packets or positions are sent to the DB.
+  # OFF by default until verified across actual Minecraft/ProtocolLib versions.
+  # No verdict, setback, replay or punishment side effects.
   packet_observation:
     enabled: false
     max_packets_per_player: 256
