@@ -288,6 +288,32 @@ class MovementTickTimelineTest {
     }
 
     @Test
+    void packetResearchContextUsesSampledServerTicksAndRejectsDelayedContext() {
+        AtomicLong time = new AtomicLong(1_000_000_000L);
+        var timeline = new MovementTickTimeline(time::get);
+        assertNull(timeline.packetResearchContext(false));
+
+        timeline.sampleServerTick(1, tick("world", 0));
+        assertFalse(timeline.packetResearchContext(false).serverTickStable());
+        time.addAndGet(50_000_000L);
+        timeline.sampleServerTick(2, tick("world", 0));
+        var recent = timeline.packetResearchContext(false);
+        assertTrue(recent.serverTickStable());
+        assertEquals(2, recent.serverTick());
+        assertEquals("world", recent.serverState().worldKey());
+        assertTrue(recent.settled());
+        assertFalse(recent.pendingTeleport());
+
+        time.addAndGet(200_000_000L);
+        assertTrue(timeline.packetResearchContext(false).serverSampleAgeNanos()
+                >= 200_000_000L);
+        assertFalse(timeline.packetResearchContext(true).settled());
+
+        timeline.markCorrection(MovementTickTimeline.Correction.OUTBOUND_TELEPORT);
+        assertFalse(timeline.packetResearchContext(false).settled());
+    }
+
+    @Test
     void worldSwitchCannotBeComparedEvenWithoutTeleportCallback() {
         AtomicLong time = new AtomicLong(1);
         var timeline = new MovementTickTimeline(time::incrementAndGet);
