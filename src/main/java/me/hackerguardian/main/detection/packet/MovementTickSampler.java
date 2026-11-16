@@ -16,6 +16,10 @@ public final class MovementTickSampler {
     private MovementTickSampler() {}
 
     public static MovementTickTimeline.TickInput sample(Player player) {
+        return sample(player, false);
+    }
+
+    public static MovementTickTimeline.TickInput sample(Player player, boolean collectProbeContext) {
         if (player == null || !player.isOnline()) return null;
         Location loc = player.getLocation();
         World world = loc.getWorld();
@@ -49,6 +53,13 @@ public final class MovementTickSampler {
                     player.isOnGround(), player.isFlying(), player.isGliding(),
                     player.isSwimming(), player.isInsideVehicle(),
                     mode == GameMode.CREATIVE || mode == GameMode.SPECTATOR);
+
+            if (!collectProbeContext) {
+                // No extra potion/inventory/ground-profile work at all when
+                // the research probe is disabled.
+                return new MovementTickTimeline.TickInput(
+                        world.getUID().toString(), position, velocity, flags, env);
+            }
 
             // Ground research uses a tiny allowlist of ordinary full blocks.
             // Slabs, stairs, ice, slime, honey, soul sand, fluids, ladders,
