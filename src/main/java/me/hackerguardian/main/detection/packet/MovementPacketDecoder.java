@@ -22,6 +22,7 @@ public final class MovementPacketDecoder {
         Double doubleAt(int index);
         Float floatAt(int index);
         Boolean booleanAt(int index);
+        int booleanCount();
     }
 
     private record Fields(StructureModifier<Double> doubles,
@@ -65,6 +66,11 @@ public final class MovementPacketDecoder {
                 public Boolean booleanAt(int index) {
                     return read(fields.booleans().withTarget(handle), index);
                 }
+
+                @Override
+                public int booleanCount() {
+                    return fields.booleans().size();
+                }
             };
             return normalize(kind, reader);
         } catch (RuntimeException | LinkageError exception) {
@@ -93,10 +99,30 @@ public final class MovementPacketDecoder {
                 rotation = new MovementPacketBuffer.Rotation(yaw, pitch);
             }
 
-            // Optional fields: known layouts normally provide on-ground at index 0
-            // and horizontal collision at index 1. Keep absent flags unknown.
-            Boolean ground = fields.booleanAt(0);
-            Boolean horizontal = ground == null ? null : fields.booleanAt(1);
+            // The serverbound movement base class has TWO distinct protocol families:
+            // legacy: [onGround, hasPosition, hasRotation] (1.20.x, early 1.21)
+            // modern: [onGround, horizontalCollision, hasPosition, hasRotation]
+            // Never interpret legacy index 1 (hasPosition) as collision!
+            // Verify the trailing hasPosition/hasRotation sentinels against the
+            // known packet kind before trusting any boolean slot. Unknown or
+            // rearranged layouts retain coordinates but expose flags as UNKNOWN.
+            int count = fields.booleanCount();
+            int posFlagIndex = count == 3 ? 1 : count == 4 ? 2 : -1;
+            int rotFlagIndex = count == 3 ? 2 : count == 4 ? 3 : -1;
+            Boolean ground = null;
+            Boolean horizontal = null;
+            if (posFlagIndex >= 0
+                    && Boolean.valueOf(kind == MovementPacketBuffer.Kind.POSITION
+                            || kind == MovementPacketBuffer.Kind.POSITION_LOOK)
+                            .equals(fields.booleanAt(posFlagIndex))
+                    && Boolean.valueOf(kind == MovementPacketBuffer.Kind.LOOK
+                            || kind == MovementPacketBuffer.Kind.POSITION_LOOK)
+                            .equals(fields.booleanAt(rotFlagIndex))) {
+                ground = fields.booleanAt(0);
+                if (count == 4 && ground != null) {
+                    horizontal = fields.booleanAt(1);
+                }
+            }
             return new MovementPacketBuffer.PacketState(position, rotation, ground, horizontal, true);
         } catch (IllegalArgumentException | IllegalStateException exception) {
             return MovementPacketBuffer.PacketState.missing();
