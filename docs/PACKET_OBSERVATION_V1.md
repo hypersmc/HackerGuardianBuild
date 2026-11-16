@@ -54,7 +54,14 @@ Operators with `hg.admin.detection` can run:
 
 The command shows the accumulated received count for the current session,
 retained history length, overwritten count, latest movement packet kind, and
-sequence. A high packet count **is not** a Timer finding and triggers no action.
+sequence. It also displays a **recent five-second breakdown** of POSITION,
+POSITION_LOOK, LOOK and GROUND packets, plus their receive rate.
+
+The recent breakdown is calculated from the **bounded retained observations**,
+not from an independent unbounded event log. If old observations were overwritten
+inside that five-second interval, the command flags the window as truncated;
+the displayed rate and per-kind counts are then lower bounds. A high packet rate
+**is not** a Timer finding and triggers no action.
 
 Disable the switch and restart to turn off the observer.
 
@@ -68,6 +75,18 @@ Disable the switch and restart to turn off the observer.
 - Verify behavior under proxy latency, induced lag, packet batching and reconnects.
 - Profile allocations/CPU at 20, 50 and 100+ players; increase/decrease ring capacity with measured data.
 - Ensure gameplay, punishment, replay, ML and reports remain unchanged.
+
+## First single-account runtime smoke test (2026-11-16)
+
+The project tester reported successfully completing these checks in Minecraft:
+idle observation, looking around, walking/sprinting/sneaking/jumping, teleporting,
+and disconnecting/reconnecting. The screenshot showed increasing packet counts
+and correct bounded-buffer accounting (289 total, 256 retained, 33 overwritten).
+
+**Scope of this result:** initial self-reported single-client manual testing only.
+It is not evidence of cheat-detection accuracy, all-client compatibility, proxy
+behavior, or scalability. The 5-second per-kind diagnostics were added *after*
+this initial test and still require an in-game check.
 
 ## Next increment
 
