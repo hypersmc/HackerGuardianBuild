@@ -309,6 +309,69 @@ observed. These are cumulative per-session counters: 414 is *not* the number
 of knockback incidents. The test does not prove client receipt, correct
 knockback physics, version-wide decoding compatibility, or anti-cheat efficacy.
 
+## Server-tick-aware movement foundation (2026-11-16)
+
+This increment adds a **read-only, 64-tick bounded server-state history**
+to each active packet-observation session. One Bukkit scheduler callback per
+server tick records immutable snapshots **on the main thread only**:
+
+- Scheduled server tick index and a monotonic observation timestamp
+- Server-side X/Y/Z position, velocity, world UUID
+- Bukkit on-ground, flying, gliding, swimming, vehicle, and creative/spectator flags
+- Lightweight block hints from feet, head and the block directly below
+  (passability and liquids), without generating/loading new chunks
+
+These are environment **hints**, not collision boxes or a predictive physics
+model. The sampler skips invalid coordinates, outside-height locations and
+unloaded chunks instead of guessing collision results.
+
+Decoded inbound client positions are timestamped separately from server ticks.
+The correlator attempts to find the **first server sample observed after**
+the most recent client position. It only reports a raw coordinate difference
+when the elapsed observation gap is at most 250 milliseconds and the sample
+does not cross an invalidating context boundary. A position gap is an
+**observed diagnostic difference**, *not* Speed/Fly evidence.
+
+Teleport intent, outbound teleport packet observation, teleport confirmation,
+Bukkit velocity intent, outbound self-velocity, respawn, and world change
+each invalidate comparisons across their boundary. The first two following
+server samples are treated as a correction window; missing/late samples,
+uncertain ordering, and world changes show a reason instead of an invented
+position comparison. A scheduled tick is a local sampling index and is **not**
+the client's simulation tick; actual tick duration can vary with server load.
+
+A new short operator view is available (still under `hg.admin.detection`):
+
+```text
+/hg detection packets <player> tick
+```
+
+It shows at most six chat lines: server tick/history counters, server
+coordinates and velocity, movement/ground and block hints, and either the
+raw client/server coordinate delta with sample gap or a comparison status.
+The default five-line summary, `move`, and `net` views stay unchanged
+apart from mentioning the new `tick` option.
+
+### First solo runtime checklist
+
+1. Stand still, run `... tick`, and verify server XYZ and on-ground state.
+2. Walk/sprint/jump, run `... tick` repeatedly; values should update. Raw
+   delta is informational and may differ from zero, especially with lag.
+3. Fly in Creative mode and check `flying=true`. Game mode itself is
+   retained in the underlying snapshot but is not a cheat finding.
+4. Run `/tp ~ ~10 ~`; expect a `CORRECTION_WINDOW` or
+   `DIFFERENT_CONTEXT` transiently rather than a movement violation.
+5. Take legitimate zombie knockback; its velocity intent and outbound
+   self-velocity should fence overlapping comparisons.
+6. Quit/rejoin. Tick history starts fresh; check no console exceptions.
+7. Benchmark with multiple players and slow TPS before increasing sampling
+   or using the data in a predictor. The current code is opt-in and
+   memory-only: no packet or world data is persisted.
+
+**Status:** unit tests and CI required. Real Paper runtime validation,
+correctness of approximate synchronization, and performance under load
+remain to be verified before building actual Speed/Fly checks.
+
 ## Next increment
 
 Capture a server-tick-aware movement timeline and a conservative server
