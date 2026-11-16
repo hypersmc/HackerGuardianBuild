@@ -87,7 +87,8 @@ public final class PacketGroundReachability {
                            Double lastReachable, Double lastExcess,
                            PacketReachabilityResiduals.Snapshot residuals,
                            PacketMotionTransitions.Snapshot transitions,
-                           HeadingSkipReasons headingSkips) {}
+                           HeadingSkipReasons headingSkips,
+                           PacketTickHintDiagnostics.Snapshot tickHints) {}
 
     private record Claim(long tick, long epoch, String world,
                          MovementPacketBuffer.Position position, String material,
@@ -97,6 +98,8 @@ public final class PacketGroundReachability {
     // Steady-only residuals; sprint-change tails go to separate bounded rings.
     private final PacketReachabilityResiduals residuals = new PacketReachabilityResiduals();
     private final PacketMotionTransitions transitions = new PacketMotionTransitions();
+    // Pure diagnostic observer: it never controls or changes eligibility.
+    private final PacketTickHintDiagnostics tickHints = new PacketTickHintDiagnostics();
     private Claim older, newest;
     private long positionPackets, modeled, noDecision, outside, ambiguous, corrections;
     private long headingWarmupSkips, headingTimingSkips, headingContextSkips;
@@ -112,6 +115,7 @@ public final class PacketGroundReachability {
     /** Call exclusively from the already-serialized player packet callback. */
     public synchronized void observe(MovementPacketBuffer.PacketState packet, Context context) {
         positionPackets++;
+        tickHints.observeContext(context);
         lastActual = lastReachable = lastExcess = null;
         Status status;
         boolean sprintSwitchObserved = false;
@@ -265,6 +269,7 @@ public final class PacketGroundReachability {
                 transitions.interruption();
             }
         }
+        tickHints.observeOutcome(status);
         lastStatus = status;
     }
 
@@ -276,6 +281,7 @@ public final class PacketGroundReachability {
         lastActual = lastReachable = lastExcess = null;
         lastStatus = Status.RECENT_CORRECTION;
         transitions.interruption();
+        tickHints.correction();
     }
 
     private static boolean sameContext(Claim a, Claim b) {
@@ -306,6 +312,7 @@ public final class PacketGroundReachability {
                 residuals.snapshot(), transitions.snapshot(),
                 new HeadingSkipReasons(headingWarmupSkips, headingTimingSkips,
                         headingContextSkips, headingInvalidPacketSkips,
-                        headingCorrectionSkips, headingUnavailableSkips));
+                        headingCorrectionSkips, headingUnavailableSkips),
+                tickHints.snapshot());
     }
 }
