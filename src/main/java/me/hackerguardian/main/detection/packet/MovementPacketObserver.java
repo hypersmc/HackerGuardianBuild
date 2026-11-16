@@ -38,6 +38,7 @@ public final class MovementPacketObserver implements Listener {
 
     private final HackerGuardian plugin;
     private final MovementPacketBuffer buffer;
+    private final boolean groundProbeEnabled;
     private final Map<Player, Session> sessions = new ConcurrentHashMap<>();
     private BukkitTask tickTask;
     private long schedulerTickIndex;
@@ -46,8 +47,14 @@ public final class MovementPacketObserver implements Listener {
     private boolean running;
 
     public MovementPacketObserver(HackerGuardian plugin, int maxPerPlayer) {
+        this(plugin, maxPerPlayer, false);
+    }
+
+    public MovementPacketObserver(HackerGuardian plugin, int maxPerPlayer,
+                                  boolean groundProbeEnabled) {
         this.plugin = plugin;
         this.buffer = new MovementPacketBuffer(maxPerPlayer);
+        this.groundProbeEnabled = groundProbeEnabled;
     }
 
     public void start() {
@@ -131,6 +138,12 @@ public final class MovementPacketObserver implements Listener {
 
     public boolean isRunning() {
         return running;
+    }
+
+    /** Pure research statistics, intentionally disconnected from detection and enforcement. */
+    public MovementGroundProbe.Snapshot groundProbeSnapshot(Player player) {
+        Session session = player == null ? null : sessions.get(player);
+        return session == null ? null : session.groundProbeSnapshot();
     }
 
     /** Server-sampled state and conservative client/server position comparison. */
@@ -234,6 +247,8 @@ public final class MovementPacketObserver implements Listener {
         private final UUID playerId;
         private final MovementPacketTransport transport = new MovementPacketTransport();
         private final MovementTickTimeline timeline = new MovementTickTimeline();
+        private final MovementGroundProbe groundProbe = groundProbeEnabled
+                ? new MovementGroundProbe() : null;
         private int selfEntityId;
         private boolean active = true;
 
@@ -261,8 +276,20 @@ public final class MovementPacketObserver implements Listener {
             return active ? timeline.snapshot(transport.hasPendingTeleport()) : null;
         }
 
+        private synchronized MovementGroundProbe.Snapshot groundProbeSnapshot() {
+            return active && groundProbe != null ? groundProbe.snapshot() : null;
+        }
+
         private synchronized void sampleServerTick(long tick, MovementTickTimeline.TickInput input) {
-            if (active) timeline.sampleServerTick(tick, input, transport.hasPendingTeleport());
+            if (!active) return;
+            boolean pendingTeleport = transport.hasPendingTeleport();
+            timeline.sampleServerTick(tick, input, pendingTeleport);
+            if (groundProbe != null) {
+                groundProbe.sample(tick, System.nanoTime(),
+                        timeline.currentCorrectionEpoch(), input,
+                        timeline.settledForResearch(pendingTeleport),
+                        timeline.hasRecentClientPosition());
+            }
         }
 
         private synchronized void record(MovementPacketBuffer.Kind kind,
