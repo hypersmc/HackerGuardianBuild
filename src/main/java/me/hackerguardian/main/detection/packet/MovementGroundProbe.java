@@ -34,7 +34,8 @@ public final class MovementGroundProbe {
                            GroundMotionDistributions.Snapshot distributions,
                            long sprintTransitions,
                            GroundMotionDynamics.Snapshot dynamics,
-                           DynamicsGate dynamicsGate) {}
+                           DynamicsGate dynamicsGate,
+                           GroundIdleTransitions.Snapshot idleTransitions) {}
 
     /**
      * Diagnostic reasons for eligible profile pairs not reaching the more
@@ -57,6 +58,9 @@ public final class MovementGroundProbe {
     private String lastSurfaceReason = "not observed";
     private final GroundMotionDistributions distributions = new GroundMotionDistributions();
     private final GroundMotionDynamics dynamics = new GroundMotionDynamics();
+    // Independent server-only start/stop observation: does NOT relax the
+    // client-packet freshness requirement for the main dynamics probe.
+    private final GroundIdleTransitions idleTransitions = new GroundIdleTransitions();
     private long unknownMaterialPairs, changedMaterialPairs;
     private String lastObservedMaterial = "UNKNOWN";
     private String lastDynamicsGate = "waiting for eligible position pairs";
@@ -69,6 +73,7 @@ public final class MovementGroundProbe {
                                     MovementTickTimeline.TickInput input,
                                     boolean settled, boolean hasRecentClient) {
         if (input == null) throw new IllegalArgumentException("input required");
+        idleTransitions.sample(tick, nanos, epoch, input, settled, hasRecentClient);
         samples++;
         lastTick = tick;
         lastObservedMaterial = input.probeContext().groundMaterial();
@@ -227,6 +232,7 @@ public final class MovementGroundProbe {
                 lastSurfaceReason, distributions.snapshot(), sprintTransitions,
                 dynamics.snapshot(),
                 new DynamicsGate(unknownMaterialPairs, changedMaterialPairs,
-                        lastObservedMaterial, lastDynamicsGate));
+                        lastObservedMaterial, lastDynamicsGate),
+                idleTransitions.snapshot());
     }
 }
