@@ -817,6 +817,70 @@ metadata, correction-epoch boundaries, warmup attribution and the
 six-line diagnostics output. GitHub CI and live Paper verification
 must be evaluated separately.
 
+## First in-game tick-hint timing diagnostics (2026-11-17)
+
+The tester supplied a screenshot containing both
+`/hg detection packets HypersMC heading` and
+`/hg detection packets HypersMC timing` from the same live session.
+The `heading` display reported:
+
+- Modeled packet triples **164**, no-decision **23** (187 position
+  observations in the predictor); valid heading angles **128/158**
+  retained/total, with six modeled triples too slow to measure.
+- Angle p50/p95/max all printed **0.000 degrees** at three-decimal
+  precision; no angle reached the >=5/15/35-degree research labels.
+  This is compatible with near-straight movement and does **not**
+  establish that the player performed a sharp turn in this sample.
+- No-decision reasons: timing **19**, context **0**, invalid **0**,
+  warmup **2**, correction **2**, unavailable **0**. The categories
+  correctly sum to **23**.
+
+The new `timing` view reported:
+
+| Research counter | In-game value |
+|---|---:|
+| Consecutive +1 server-tick-hint pairs | 165 |
+| Repeated server-tick hints | 1 |
+| Raw positive hint gaps | 20 |
+| Reverse hints | 0 |
+| Gaps of exactly +2 | 0 |
+| Gaps of +3 or more | 20 |
+| Actual predictor TICK_GAP decisions | 18 |
+| Actual predictor AMBIGUOUS_TICK decisions | 0 |
+| Stale server samples | 0 |
+| Unstable tick-spacing samples | 1 |
+| Warmup after initial / timing / context / correction / other | 0 / 2 / 0 / 0 / 0 |
+
+**Validation:** pass for *live observation and reconciliation* of the
+new tick-hint provenance counters. The **186 raw hint pairs** sum
+to **165+1+20**, which is one fewer than **187** received position
+observations. Raw gaps can differ from model gap rejections because
+other model gates take precedence; similarly the single repeated hint
+did not result in an `AMBIGUOUS_TICK` classification.
+
+Model coverage was **164/187 = 87.7%** in this screenshot, considerably
+better than the earlier heading test. This establishes that the
+packet-observer research pipeline can model most packets under *some*
+normal gameplay conditions; it does not establish accurate client tick
+equivalence, packet loss, or enforcement-grade physics.
+
+**Interpretation limit:** 18 actual model gap rejections but only two
+warmups attributed to timing may arise when several gaps are clustered
+rather than regularly interrupting continuous runs. The cumulative
+snapshot does **not** reveal temporal ordering, so this explanation is
+a hypothesis, not a confirmed root cause. A future fixed-size histogram
+of *consecutive accepted model run lengths* and of successive gap
+clusters would help evaluate it without retaining raw positions or
+weakening safeguards.
+
+**Next controlled comparison:** capture `heading` and `timing`
+before and after continuous straight walking, then before and after
+deliberate directional changes on the same STONE ground. Compare
+counter *deltas* across each interval; do not infer missing client
+packets from a server tick-hint difference. No model thresholds,
+guard rails, alerts or punishments changed in this documentation
+update.
+
 ## Next actual physics work
 
 Capture trustworthy per-player packet order and *validated tick equivalence*,
