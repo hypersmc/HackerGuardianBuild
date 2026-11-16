@@ -355,6 +355,46 @@ dynamic classification still needs a live Paper/ProtocolLib retest and
 independent evaluation of input timing. The default chat view remains
 five lines. No automatic detection or enforcement is connected.
 
+## Dynamics reported zero observations: diagnostic correction (2026-11-16)
+
+During the first live `dyn` test, two screenshots showed zeros for every
+transition, `paired 0`, `breaks 0`, all quantiles `n/a` and
+`Unknown` ground material. This is **not a successful dynamics test**.
+It indicates that the dynamics recorder has not accepted a single eligible
+movement vector during that session. The screenshot alone does not establish
+whether the general ground probe had eligible intervals, and it does not
+identify the rejection cause.
+
+The source revealed an observability gap: `dyn` requires a *known,
+identical supported ground material at both ends of an already eligible
+ground-displacement interval*, and then requires two consecutive such
+intervals before classifying any acceleration/turn. In contrast,
+`profile` only needs one eligible interval. Previously the `dyn` view
+showed no information about the upstream `probe` or material gate.
+
+The six-line `dyn` view now includes:
+- `eligible`: intervals accepted by the general ground research probe;
+- `vectors`: those accepted into dynamics after the block-material gate;
+- `paired`: adjacent accepted dynamics vectors used for phase comparisons;
+- `Last probe`: the most recent general probe outcome;
+- `block`: last sampled support block material;
+- `Gate`: last reject/accept decision; `unknown` and `changed` are
+  cumulative counts of eligible intervals rejected for missing or changing
+  ground material.
+
+A useful next runtime sequence is to stand and walk on a large, **uniform
+STONE platform in Survival** with the opt-in probe enabled. Check the
+`probe` command first, then `dyn`. If `probe eligible` remains zero,
+fix the upstream exclusion first. If `eligible` rises but `vectors`
+stays zero, inspect `Gate` and material counters. If `vectors`
+rises but `paired` remains zero, eligible intervals are too
+intermittent to form two contiguous displacement vectors; inspect
+`NO_CLIENT_DATA`, sprint toggles and correction boundaries rather than
+enabling unsupported movement.
+
+No detection thresholds were changed and the probe remains fail-closed.
+No reports, ML labels, alerts, setbacks, kicks or bans were added.
+
 ## Future real detection work
 
 Before a meaningful ground-speed check, build version-specific motion
