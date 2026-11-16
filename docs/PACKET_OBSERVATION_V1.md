@@ -285,13 +285,37 @@ and rerun the command.
 
 The diagnostic counters are **never** a Speed, Fly, or AntiKnockback verdict.
 
+## Zombie knockback retest: outgoing self-velocity observed (2026-11-16)
+
+The tester repeated the zombie-hit experiment after adding pre-filter
+velocity callback counters. Two in-game `net` screenshots show:
+
+- Before the hit: `Velocity wire 28 | self 0 | other 28 | ID? 0`,
+  with `Bukkit intents 0`.
+- After the hit: `Velocity wire 414 | self 1 | other 413 | ID? 0`,
+  with `Bukkit intents 1 | last VELOCITY`.
+- The cached self entity ID was `172`; the most recent outgoing velocity
+  packet targeted entity `174`, which is a separate entity and not evidence
+  of a self ID mismatch.
+- `Unknown payload 0` after the hit: the matched self-targeting packet
+  yielded a readable vector.
+- Teleport tracking remained independent. One unmatched confirmation was
+  still present, but no teleport was pending.
+
+**Result:** pass for a **single-account, single-server** outgoing self-velocity
+observation smoke test. The earlier zero self count was not enough to diagnose
+the listener, because other-entity velocity callbacks were already being
+observed. These are cumulative per-session counters: 414 is *not* the number
+of knockback incidents. The test does not prove client receipt, correct
+knockback physics, version-wide decoding compatibility, or anti-cheat efficacy.
+
 ## Next increment
 
-Validate outgoing self-velocity observation on the tested server and examine
-the isolated unmatched teleport confirmation without assuming bad client
-behavior. Add server tick, physics and collision/world context, packet-version
-fixtures, and stronger consistency checks before attempting a movement
-predictor. **Do not use raw coordinates or arrival rates for Speed/Fly
-verdicts** until the server/client state timeline is sufficiently accurate.
-All detectors remain evidence-only until false-positive handling is
-independently validated.
+Capture a server-tick-aware movement timeline and a conservative server
+physics/world context, with teleport and velocity events treated separately.
+Investigate the isolated unmatched teleport confirmation without assuming
+bad client behavior. Add packet-version fixtures and stronger consistency
+checks before attempting a movement predictor. **Do not use raw coordinates
+or arrival rates for Speed/Fly verdicts** until the server/client state
+timeline is sufficiently accurate. All detectors remain evidence-only until
+false-positive handling is independently validated.
