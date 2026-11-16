@@ -32,7 +32,8 @@ public final class MovementGroundProbe {
                            long noClientDataSamples, long specialMovementSamples,
                            String lastSurfaceReason,
                            GroundMotionDistributions.Snapshot distributions,
-                           long sprintTransitions) {}
+                           long sprintTransitions,
+                           GroundMotionDynamics.Snapshot dynamics) {}
 
     private record Previous(long tick, long nanos, long epoch,
                             MovementTickTimeline.TickInput input) {}
@@ -46,6 +47,7 @@ public final class MovementGroundProbe {
     private long sprintTransitions;
     private String lastSurfaceReason = "not observed";
     private final GroundMotionDistributions distributions = new GroundMotionDistributions();
+    private final GroundMotionDynamics dynamics = new GroundMotionDynamics();
 
     /**
      * Called under a session lock, once per server tick when enabled.
@@ -109,6 +111,19 @@ public final class MovementGroundProbe {
                         // These measurements are descriptive, independent
                         // of the legacy research-envelope threshold.
                         distributions.observe(input.probeContext().sprinting(), normalized);
+                        String material = input.probeContext().groundMaterial();
+                        if (!material.equals("UNKNOWN")
+                                && material.equals(previous.input().probeContext().groundMaterial())) {
+                            double factor = 50_000_000.0 / elapsed;
+                            dynamics.observe(tick, epoch, (b.x() - a.x()) * factor,
+                                    (b.z() - a.z()) * factor,
+                                    input.probeContext().sprinting(), material);
+                        } else {
+                            // The speed profile remains eligible, but a
+                            // directional/friction comparison across unlike
+                            // or unidentified materials is not supported.
+                            dynamics.interrupt();
+                        }
                         double envelope = RESEARCH_ENVELOPE_BLOCKS_PER_50MS
                                 * (elapsed / 50_000_000.0);
                         lastDistance = horizontal;
@@ -133,6 +148,9 @@ public final class MovementGroundProbe {
                 && next != Result.RESEARCH_OUTLIER) {
             consecutive = 0;
             noDecision++;
+            // No three-position motion comparison may cross a correction,
+            // unknown physics, unsupported block or stale client packet.
+            dynamics.interrupt();
         }
         if (next == Result.UNSAFE_TERRAIN) {
             unsafeTerrainSamples++;
@@ -188,6 +206,7 @@ public final class MovementGroundProbe {
         return new Snapshot(samples, evaluated, noDecision, outliers, consecutive,
                 lastResult, lastTick, lastDistance, lastEnvelope, lastOutlierTick,
                 unsafeTerrainSamples, noClientDataSamples, specialMovementSamples,
-                lastSurfaceReason, distributions.snapshot(), sprintTransitions);
+                lastSurfaceReason, distributions.snapshot(), sprintTransitions,
+                dynamics.snapshot());
     }
 }
