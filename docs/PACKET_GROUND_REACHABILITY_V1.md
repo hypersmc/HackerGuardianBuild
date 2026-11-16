@@ -146,6 +146,44 @@ movement buffer, time-sorting, or packet-thread Bukkit calls were added.
 6. Repeat on separately supported game versions before expanding profile
    registry. Retest decoder boolean layout where ProtocolLib/NMS changes.
 
+## First in-game packet-predictor smoke test: airborne movement (2026-11-16)
+
+The tester ran `/hg detection packets HypersMC predict` while jumping
+in Survival. Three screenshots of the **same session** showed:
+
+| Position packets | Modeled triples | No-decision | Ambiguous tick | Research outside | Last status |
+|---:|---:|---:|---:|---:|---|
+| 5 | 0 | 5 | 0 | 0 | TICK_GAP |
+| 58 | 11 | 47 | 0 | 0 | TICK_GAP |
+| 116 | 16 | 100 | 0 | 0 | UNSUPPORTED_CONTEXT |
+
+The model identified the active profile as `1.20.x`. The correction
+counter remained 3 across the three readings, indicating previously
+recorded correction boundaries rather than new jump-caused teleports.
+
+**Observed:** the independently decoded client-position stream reached
+the predictor and at least 16 research triples qualified during the
+session. A mid-jump reading produced `UNSUPPORTED_CONTEXT` rather than
+applying the ground model to that observation. The final status describes
+*only the most recent packet*, not whether every earlier modeled triple
+was grounded; the screenshots cannot independently prove the model's
+safety on every airborne transition.
+
+**Important limitation:** only 16 of the first 116 received position
+packets formed modeled triples; 100 were no-decisions. Frequent
+`TICK_GAP` statuses suggest the server-scheduler-tick hint is a weak
+proxy for actual client simulation ticks in this test. No ambiguous-tick
+events were recorded, but that does not establish correct client tick
+synchronization. Research outliers stayed zero; this is **not** a
+detection-accuracy claim.
+
+**Next live test:** on a large flat `STONE` platform, walk steadily in
+Survival without jumping for 10–15 seconds and inspect `predict`
+several times; repeat sprinting, then compare with `profile`.
+Record modeled and no-decision count differences for uninterrupted
+ground movement separately from airborne movement. Do not weaken the
+tick-sequencing guard merely to increase modeled counts.
+
 ## Next actual physics work
 
 Capture trustworthy per-player packet order and *validated tick equivalence*,
