@@ -556,6 +556,31 @@ arrived while the teleport ID remained pending. It does not imply a bug.
 This test does not cover high-latency delivery, out-of-order or missing
 confirmations, all Minecraft versions, or knockback correction.
 
+### Survival zombie-hit guard follow-up (2026-11-16)
+
+After switching to Survival for the zombie knockback test, the tester captured
+two `/hg detection packets HypersMC guards` screenshots. Both showed:
+
+- Teleport boundaries: `7`, unchanged since the prior teleport test.
+- Velocity boundaries: `4` (previous teleport-test reading had `0`).
+- Invalidated pending: `0`; invalidated completed: `4`
+  (previous reading `2`).
+- Recovery-window suppressions: `8` (previous reading `4`).
+- Pending-teleport and context suppressions: both `0`.
+- Successful diagnostic pairs: `465` then `548`.
+- Latched status: `CORRECTION_WINDOW`, last suppressed tick `3346`
+  in the first view, `3359` in the second.
+
+**Result:** encouraging single-server knockback correction *follow-up*.
+Velocity correction callbacks were recorded and additional completed pairs
+were invalidated/recovery comparisons suppressed since the preceding
+teleport test. Normal diagnostic pairing continued (465 to 548). The two
+new screenshots were both taken *after* entering Survival/testing knockback,
+not a direct immediate-before/after pair for one zombie strike; therefore the
+exact `+4` velocity boundaries or `+4` suppressions cannot be uniquely
+attributed to one hit. A velocity boundary counts callbacks, not unique
+knockback incidents. No cheat finding or punishment has been introduced.
+
 ## Next increment
 
 Test correction states during `/tp` and zombie knockback, world changes
