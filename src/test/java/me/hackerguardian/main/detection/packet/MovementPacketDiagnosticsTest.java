@@ -238,6 +238,47 @@ class MovementPacketDiagnosticsTest {
     }
 
     @Test
+    void dynamicsViewStaysSixLinesAndNeverCallsMeasuredSlowdownFriction() {
+        AtomicLong clock = new AtomicLong(1_000_000_000L);
+        var probe = new MovementGroundProbe();
+        probe.sample(1, 1_000_000_000L, 0, dynamicFrame(0), true, true);
+        probe.sample(2, 1_050_000_000L, 0, dynamicFrame(.2), true, true);
+        probe.sample(3, 1_100_000_000L, 0, dynamicFrame(.4), true, true);
+        probe.sample(4, 1_150_000_000L, 0, dynamicFrame(.7), true, true);
+
+        var packets = new MovementPacketBuffer(8, clock::get);
+        var lines = MovementPacketDiagnostics.render("HypersMC",
+                packets.snapshot(UUID.randomUUID()), null, null,
+                probe.snapshot(), MovementPacketDiagnostics.View.DYNAMICS, clock.get());
+        assertEquals(6, lines.size());
+        assertTrue(lines.stream().anyMatch(line -> line.contains("no cheat verdicts")));
+        assertTrue(lines.stream().anyMatch(line -> line.contains("Accel 1")));
+        assertTrue(lines.stream().anyMatch(line -> line.contains("Steady 1")));
+        assertTrue(lines.stream().anyMatch(line -> line.contains("Speed change p50")));
+        assertTrue(lines.stream().anyMatch(line -> line.contains("NOT friction")));
+        assertEquals(MovementPacketDiagnostics.View.DYNAMICS,
+                MovementPacketDiagnostics.View.parse("dyn"));
+        assertEquals(MovementPacketDiagnostics.View.DYNAMICS,
+                MovementPacketDiagnostics.View.parse("motion"));
+
+        var disabled = MovementPacketDiagnostics.render("HypersMC",
+                packets.snapshot(UUID.randomUUID()), null, null, null,
+                MovementPacketDiagnostics.View.DYNAMICS, clock.get());
+        assertEquals(2, disabled.size());
+        assertTrue(disabled.get(1).contains("OFF"));
+    }
+
+    private static MovementTickTimeline.TickInput dynamicFrame(double x) {
+        return new MovementTickTimeline.TickInput("world",
+                new MovementPacketBuffer.Position(x, 64, 2),
+                new MovementPacketBuffer.Velocity(.2, 0, 0),
+                new MovementTickTimeline.PlayerFlags(true, false, false, false, false, false),
+                new MovementTickTimeline.Environment(true, false, true, false, false),
+                new MovementTickTimeline.ProbeContext(true, true, true, true,
+                        "", false, "STONE"));
+    }
+
+    @Test
     void missingTransportIsReportedWithoutInventingNetworkSuccess() {
         UUID id = UUID.randomUUID();
         var buffer = new MovementPacketBuffer(2);
