@@ -7,6 +7,8 @@ import me.hackerguardian.main.detection.ml.MlCaptureLabel;
 import me.hackerguardian.main.detection.ml.MlDatasetRecorder;
 import me.hackerguardian.main.detection.normality.IsolationForestModel;
 import me.hackerguardian.main.detection.normality.NormalityDetector;
+import me.hackerguardian.main.detection.packet.MovementPacketBuffer;
+import me.hackerguardian.main.detection.packet.MovementPacketObserver;
 import me.hackerguardian.main.detection.telemetry.BehaviorSnapshot;
 import me.hackerguardian.main.utils.CommandManager;
 import me.hackerguardian.main.utils.textHandling;
@@ -42,6 +44,7 @@ public final class DetectionCommands {
             if (params[0].equalsIgnoreCase("learning")) { handleLearning(sender, params); return; }
             if (params[0].equalsIgnoreCase("probe")) { handleProbe(sender, params); return; }
             if (params[0].equalsIgnoreCase("capture")) { handleCapture(sender, params); return; }
+            if (params[0].equalsIgnoreCase("packets")) { handlePackets(sender, params); return; }
 
             if (params.length != 1) {
                 sendUsage(sender);
@@ -55,6 +58,34 @@ public final class DetectionCommands {
             }
             showAssessment(sender, target);
         });
+    }
+
+    private void handlePackets(CommandSender sender, String[] params) {
+        if (params.length != 2) {
+            sender.sendMessage(tx.playerText(tx.prefix + "§cUsage: /hg detection packets <player>"));
+            return;
+        }
+        MovementPacketObserver observer = runtime.getPacketObserver();
+        if (observer == null || !observer.isRunning()) {
+            sender.sendMessage(tx.playerText(tx.prefix + "§cPacket observation is disabled or unavailable."));
+            return;
+        }
+        Player target = Bukkit.getPlayerExact(params[1]);
+        if (target == null) {
+            sender.sendMessage(tx.playerText(tx.prefix + "§cPlayer not found: " + params[1]));
+            return;
+        }
+        MovementPacketBuffer.Snapshot snapshot = observer.snapshot(target.getUniqueId());
+        sender.sendMessage(tx.playerText(tx.prefix + " §fPacket observation: §e" + target.getName()));
+        sender.sendMessage(tx.playerText(" §7Received: §f" + snapshot.totalReceived()
+                + " §8| §7Retained: §f" + snapshot.retained()
+                + " §8| §7Overwritten: §f" + snapshot.dropped()));
+        if (!snapshot.observations().isEmpty()) {
+            MovementPacketBuffer.Observation latest = snapshot.observations().get(snapshot.retained() - 1);
+            sender.sendMessage(tx.playerText(" §7Last kind: §f" + latest.kind()
+                    + " §8| §7Sequence: §f" + latest.sequence()));
+        }
+        sender.sendMessage(tx.playerText(" §8Receive timing only; not a movement/Timer cheat verdict."));
     }
 
     private void showAssessment(CommandSender sender, Player target) {
@@ -97,6 +128,9 @@ public final class DetectionCommands {
         sender.sendMessage(tx.playerText(" §7Running: " + (runtime.isRunning() ? "§aYES" : "§cNO")));
         sender.sendMessage(tx.playerText(" §7Tracked players: §f" + runtime.getCollector().getTrackedPlayerCount()));
         sender.sendMessage(tx.playerText(" §7Window: §f" + runtime.getCollector().getWindowMs() + "ms"));
+        sender.sendMessage(tx.playerText(" §7Movement packet observation: "
+                + (runtime.getPacketObserver() != null && runtime.getPacketObserver().isRunning()
+                ? "§aenabled (read-only)" : "§8disabled")));
         sender.sendMessage(tx.playerText(" §7Detectors: §f" + String.join(", ", runtime.getEngine().getDetectorIds())));
 
         MlBehaviorDetector ml = runtime.getMlDetector();
@@ -351,6 +385,7 @@ public final class DetectionCommands {
         sender.sendMessage(tx.playerText(" §7/hg detection [player]"));
         sender.sendMessage(tx.playerText(" §7/hg detection learning [player]"));
         sender.sendMessage(tx.playerText(" §7/hg detection probe <player>"));
+        sender.sendMessage(tx.playerText(" §7/hg detection packets <player>"));
         sender.sendMessage(tx.playerText(" §7/hg detection normality [reload]"));
         sender.sendMessage(tx.playerText(" §7/hg detection ml [reload]"));
         sendCaptureUsage(sender);
