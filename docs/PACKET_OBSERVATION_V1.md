@@ -122,6 +122,25 @@ versions, compare collision near a wall vs in free flight. If either on-ground
 or collision values remain implausible, mark this runtime mapping unverified
 for that server version rather than interpreting it as physics evidence.
 
+## Regression retest: on-ground and collision (2026-11-16)
+
+The tester rebuilt and retested the boolean-layout fix on the same Minecraft
+test server. Two in-game readings show:
+
+- While airborne: `Client on-ground: false`.
+- Once standing on the ground: `Client on-ground: true`.
+- In both readings: `Horizontal collision: UNKNOWN` (rather than the
+  incorrect always-true value).
+- `Decoder failures: 0` in both observations.
+- Client position Y changed between readings, consistent with vertical motion.
+
+**Result:** pass for this *single-client, single-server* ground-state/collision
+regression smoke test. Server/client/ProtocolLib version details were not captured
+in the screenshots, so do not claim specific-version support from this test.
+Collision `UNKNOWN` must never be treated as `false` for physics decisions.
+No inference about anti-cheat effectiveness, network packet delivery, latency
+handling, or other Minecraft versions is supported by this result.
+
 ## Next increment
 
 Validate this normalized raw-state capture against actual supported Minecraft/ProtocolLib combinations. Next add explicit outbound teleport IDs, client teleport confirmations, delivered velocity context, server collision/physics snapshots and protocol-version-specific fixtures. **Do not use raw coordinates or arrival rates for speed/fly verdicts** until the server/client state timeline is sufficiently accurate. All detectors remain evidence-only until false-positive handling is independently validated.
