@@ -370,17 +370,41 @@ apart from mentioning the new `tick` option.
    or using the data in a predictor. The current code is opt-in and
    memory-only: no packet or world data is persisted.
 
-**Status:** unit tests and CI required. Real Paper runtime validation,
-correctness of approximate synchronization, and performance under load
-remain to be verified before building actual Speed/Fly checks.
+**Status:** CI passed for the server-tick foundation, and the following
+single-account runtime smoke test passed. Precise client/server tick
+synchronization, all correction scenarios, cross-version accuracy, and
+multiplayer performance remain unverified.
+
+### Single-account tick diagnostics retest (2026-11-16)
+
+The tester supplied two screenshots from the `tick` view:
+
+- **Standing:** server tick 551; 64 retained server samples, 174
+  overwritten; XYZ approximately `110.38 68.00 191.01`;
+  `ground=true`, `flying=false`; feet passable, below not passable;
+  raw delta `0.000` and gap `39.0 ms`.
+- **Creative flight:** server tick 598; 64 retained samples, 222
+  overwritten; XYZ approximately `112.80 72.37 182.59`;
+  `ground=false`, `flying=true`; feet and below passable;
+  raw delta `0.000` and gap `36.6 ms`.
+- The in-game output remained compact. The block hints and movement
+  mode flags were consistent with the reported standing/flight scenarios.
+
+**Result:** pass for these two *single-account, single-server* snapshot
+cases. The raw deltas compare recorded client claims with following
+server snapshots; neither 0.000 nor the gap timings constitute a
+prediction-quality or latency measurement. Pending-teleport suppression,
+knockback correction, unusual block shapes, skipped tick sampling, and
+multi-version runtime correctness are not established by these screenshots.
 
 ## Next increment
 
-Capture a server-tick-aware movement timeline and a conservative server
-physics/world context, with teleport and velocity events treated separately.
-Investigate the isolated unmatched teleport confirmation without assuming
-bad client behavior. Add packet-version fixtures and stronger consistency
-checks before attempting a movement predictor. **Do not use raw coordinates
-or arrival rates for Speed/Fly verdicts** until the server/client state
-timeline is sufficiently accurate. All detectors remain evidence-only until
-false-positive handling is independently validated.
+Test correction states during `/tp` and zombie knockback, world changes
+and reconnects, plus server stress/slow TPS. Validate the on-disk/client
+version fixtures and identify whether per-tick Bukkit block sampling
+remains inexpensive at useful player counts. After that, build a narrow
+**observe-only** horizontal/vertical motion plausibility prototype with
+version-aware physics and explicit no-decision contexts; avoid using
+raw coordinate deltas or packet arrival rates directly as Speed/Fly
+verdicts. All detectors remain evidence-only until false-positive
+handling is independently validated.
