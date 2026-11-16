@@ -446,7 +446,7 @@ class MovementPacketDiagnosticsTest {
                 new MovementPacketBuffer.Position(0, 64, 0),
                 new MovementPacketBuffer.Velocity(0, 0, 0),
                 new MovementTickTimeline.PlayerFlags(true, false, false, false, false, false),
-                new MovementTickTimeline.Environment(true, false, true, false, false, false),
+                new MovementTickTimeline.Environment(true, false, true, false, false),
                 new MovementTickTimeline.ProbeContext(true, true, true, true,
                         "", false, "STONE"));
         var sprint = new MovementTickTimeline.TickInput("world",
