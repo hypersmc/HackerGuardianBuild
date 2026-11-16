@@ -178,6 +178,62 @@ class MovementGroundProbeTest {
     }
 
     @Test
+    void recordsSeparateWalkingAndSprintingDistributionsWithoutTransitionContamination() {
+        var probe = new MovementGroundProbe();
+        probe.sample(1, STEP, 0, sprintFrame(0, false), true, true);
+        probe.sample(2, 2 * STEP, 0, sprintFrame(0.20, false), true, true);
+        probe.sample(3, 3 * STEP, 0, sprintFrame(0.45, false), true, true);
+        // Transition tick must not land in either distribution.
+        probe.sample(4, 4 * STEP, 0, sprintFrame(0.80, true), true, true);
+        probe.sample(5, 5 * STEP, 0, sprintFrame(1.15, true), true, true);
+        probe.sample(6, 6 * STEP, 0, sprintFrame(1.55, true), true, true);
+        var snapshot = probe.snapshot();
+        assertEquals(4, snapshot.evaluated());
+        assertEquals(1, snapshot.sprintTransitions());
+        assertEquals(2, snapshot.noDecision());
+        assertEquals(0, snapshot.researchOutliers());
+        assertEquals(2, snapshot.distributions().walking().totalSamples());
+        assertEquals(2, snapshot.distributions().sprinting().totalSamples());
+        assertEquals(.20, snapshot.distributions().walking().p50(), 1e-10);
+        assertEquals(.25, snapshot.distributions().walking().p95(), 1e-10);
+        assertEquals(.35, snapshot.distributions().sprinting().p50(), 1e-10);
+        assertEquals(.40, snapshot.distributions().sprinting().max(), 1e-10);
+    }
+
+    @Test
+    void correctionAndMissingClientNeverEnterDescriptiveDistribution() {
+        var probe = new MovementGroundProbe();
+        probe.sample(1, STEP, 0, sprintFrame(0, false), true, true);
+        probe.sample(2, 2 * STEP, 0, sprintFrame(.2, false), true, true);
+        probe.sample(3, 3 * STEP, 0, sprintFrame(5, false), false, true);
+        probe.sample(4, 4 * STEP, 1, sprintFrame(10, false), true, true);
+        probe.sample(5, 5 * STEP, 1, sprintFrame(20, false), true, false);
+        var snapshot = probe.snapshot();
+        assertEquals(1, snapshot.distributions().walking().totalSamples());
+        assertEquals(0, snapshot.distributions().sprinting().totalSamples());
+        assertEquals(1, snapshot.evaluated());
+        assertEquals(4, snapshot.noDecision());
+    }
+
+    @Test
+    void normalizesEligibleSamplesToFiftyMillisecondsOfServerObservation() {
+        var probe = new MovementGroundProbe();
+        probe.sample(1, STEP, 0, sprintFrame(0, false), true, true);
+        probe.sample(2, STEP + 100_000_000L, 0, sprintFrame(.4, false), true, true);
+        var result = probe.snapshot();
+        assertEquals(1, result.distributions().walking().retained());
+        assertEquals(.2, result.distributions().walking().p50(), 1e-10);
+        assertEquals(.4, result.horizontalDistance(), 1e-10);
+    }
+
+    private static MovementTickTimeline.TickInput sprintFrame(double x, boolean sprinting) {
+        var f = frame(x);
+        return new MovementTickTimeline.TickInput(f.worldKey(), f.position(),
+                f.velocity(), f.flags(), f.environment(),
+                new MovementTickTimeline.ProbeContext(true, true, true, true, "", sprinting));
+    }
+
+    @Test
     void staleSnapshotNeverChangesCounters() {
         var probe = new MovementGroundProbe();
         probe.sample(1, STEP, 0, frame(0), true, true);
