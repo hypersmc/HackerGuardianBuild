@@ -189,6 +189,14 @@ public final class MovementTickTimeline {
             // Show a recent COMPLETED pair, even if a newer packet arrived
             // after the last server tick. Never call it the latest position.
             comparison = lastCompletedComparison;
+        } else if (lastClient != null && lastCompletedComparison != null
+                && (pendingClient == null
+                    || pendingClient.packetOrder() <= lastCompletedComparison.clientOrder())
+                && now > lastCompletedAtNanos
+                && now - lastCompletedAtNanos > MAX_COMPLETED_AGE_NANOS) {
+            // A formerly valid pair must expire, even if the historical
+            // matching server tick still sits in the 64-sample ring.
+            comparison = result(Status.TOO_OLD, lastClient, null, null);
         } else {
             comparison = compare(history, lastClient,
                     correctionEpoch, correctionSampleCount, sampledCount, now);
