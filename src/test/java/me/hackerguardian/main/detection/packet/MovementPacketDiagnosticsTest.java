@@ -100,6 +100,45 @@ class MovementPacketDiagnosticsTest {
     }
 
     @Test
+    void guardViewKeepsHistoricalCountsAvailableWithoutFloodingChat() {
+        AtomicLong clock = new AtomicLong(1);
+        var timeline = new MovementTickTimeline(clock::incrementAndGet);
+        timeline.sampleServerTick(1, guardTestTick());
+        timeline.observeClientPosition(new MovementPacketBuffer.Position(1, 64, 2));
+        timeline.markCorrection(MovementTickTimeline.Correction.BUKKIT_TELEPORT);
+        timeline.observeClientPosition(new MovementPacketBuffer.Position(2, 64, 2));
+        timeline.sampleServerTick(2, guardTestTick());
+
+        var buffer = new MovementPacketBuffer(8, clock::get);
+        var lines = MovementPacketDiagnostics.render("HypersMC",
+                buffer.snapshot(UUID.randomUUID()), null, timeline.snapshot(),
+                MovementPacketDiagnostics.View.GUARDS, clock.get());
+        assertEquals(6, lines.size());
+        assertTrue(lines.stream().anyMatch(line -> line.contains("Boundaries TP 1")
+                && line.contains("Velocity 0")));
+        assertTrue(lines.stream().anyMatch(line -> line.contains("Invalidated pending 1")));
+        assertTrue(lines.stream().anyMatch(line -> line.contains("Suppressed recovery 1")
+                && line.contains("pending TP 0")));
+        assertTrue(lines.stream().anyMatch(line -> line.contains("Last guard CORRECTION_WINDOW")));
+        assertEquals(MovementPacketDiagnostics.View.GUARDS,
+                MovementPacketDiagnostics.View.parse("guards"));
+
+        var none = MovementPacketDiagnostics.render("HypersMC",
+                buffer.snapshot(UUID.randomUUID()), null, null,
+                MovementPacketDiagnostics.View.GUARDS, clock.get());
+        assertEquals(2, none.size());
+        assertTrue(none.get(1).contains("unavailable"));
+    }
+
+    private static MovementTickTimeline.TickInput guardTestTick() {
+        return new MovementTickTimeline.TickInput("world",
+                new MovementPacketBuffer.Position(2, 64, 2),
+                new MovementPacketBuffer.Velocity(0, 0, 0),
+                new MovementTickTimeline.PlayerFlags(true, false, false, false, false, false),
+                new MovementTickTimeline.Environment(true, false, true, false, false));
+    }
+
+    @Test
     void missingTransportIsReportedWithoutInventingNetworkSuccess() {
         UUID id = UUID.randomUUID();
         var buffer = new MovementPacketBuffer(2);
@@ -121,6 +160,8 @@ class MovementPacketDiagnosticsTest {
                 MovementPacketDiagnostics.View.parse("net"));
         assertEquals(MovementPacketDiagnostics.View.TICK,
                 MovementPacketDiagnostics.View.parse("tick"));
+        assertEquals(MovementPacketDiagnostics.View.GUARDS,
+                MovementPacketDiagnostics.View.parse("safety"));
         assertNull(MovementPacketDiagnostics.View.parse("everything"));
     }
 }
