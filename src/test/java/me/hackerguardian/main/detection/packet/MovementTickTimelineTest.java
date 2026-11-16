@@ -103,6 +103,30 @@ class MovementTickTimelineTest {
     }
 
     @Test
+    void skippedSchedulerTicksDoNotCountAsStableSamplesAfterCorrection() {
+        AtomicLong clock = new AtomicLong(1);
+        var timeline = new MovementTickTimeline(clock::incrementAndGet);
+        timeline.sampleServerTick(1, tick("world", 0));
+        timeline.markCorrection(MovementTickTimeline.Correction.BUKKIT_VELOCITY);
+
+        // Server ticks 2..39 have no sample (e.g. unavailable context).
+        timeline.observeClientPosition(new MovementPacketBuffer.Position(0, 64, 10));
+        timeline.sampleServerTick(40, tick("world", 0));
+        assertEquals(MovementTickTimeline.Status.CORRECTION_WINDOW,
+                timeline.snapshot().comparison().status());
+
+        timeline.observeClientPosition(new MovementPacketBuffer.Position(0, 64, 10));
+        timeline.sampleServerTick(80, tick("world", 0));
+        assertEquals(MovementTickTimeline.Status.CORRECTION_WINDOW,
+                timeline.snapshot().comparison().status());
+
+        timeline.observeClientPosition(new MovementPacketBuffer.Position(0, 64, 10));
+        timeline.sampleServerTick(120, tick("world", 0));
+        assertEquals(MovementTickTimeline.Status.READY_DIAGNOSTIC,
+                timeline.snapshot().comparison().status());
+    }
+
+    @Test
     void worldSwitchCannotBeComparedEvenWithoutTeleportCallback() {
         AtomicLong time = new AtomicLong(1);
         var timeline = new MovementTickTimeline(time::incrementAndGet);
