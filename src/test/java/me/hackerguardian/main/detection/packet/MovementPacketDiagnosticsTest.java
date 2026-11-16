@@ -57,7 +57,8 @@ class MovementPacketDiagnosticsTest {
         transport.outboundTeleport(42);
         transport.movement();
         transport.inboundConfirm(42);
-        transport.outboundSelfVelocity(new MovementPacketBuffer.Velocity(0.5, 0, -0.5));
+        transport.observedOutboundVelocity(7, 7,
+                new MovementPacketBuffer.Velocity(0.5, 0, -0.5));
 
         var movement = MovementPacketDiagnostics.render("Tester", buffer.snapshot(id),
                 transport.snapshot(), MovementPacketDiagnostics.View.MOVEMENT, clock.get());
@@ -67,8 +68,10 @@ class MovementPacketDiagnosticsTest {
         assertTrue(network.size() <= 6);
         assertTrue(movement.stream().anyMatch(s -> s.contains("Overwritten 1")));
         assertTrue(movement.stream().anyMatch(s -> s.contains("5s truncated")));
-        assertTrue(network.stream().anyMatch(s -> s.contains("Last matched ID 42")));
-        assertTrue(network.stream().anyMatch(s -> s.contains("Self velocity 1")));
+        assertTrue(network.stream().anyMatch(s -> s.contains("Velocity wire 1")
+                && s.contains("self 1") && s.contains("other 0")));
+        assertTrue(network.stream().anyMatch(s -> s.contains("Self entity ID 7")
+                && s.contains("last wire ID 7")));
         assertTrue(network.stream().anyMatch(s -> s.contains("TELEPORT (COMMAND)")));
     }
 
