@@ -33,7 +33,16 @@ public final class MovementGroundProbe {
                            String lastSurfaceReason,
                            GroundMotionDistributions.Snapshot distributions,
                            long sprintTransitions,
-                           GroundMotionDynamics.Snapshot dynamics) {}
+                           GroundMotionDynamics.Snapshot dynamics,
+                           DynamicsGate dynamicsGate) {}
+
+    /**
+     * Diagnostic reasons for eligible profile pairs not reaching the more
+     * restrictive three-position dynamics recorder. These are research
+     * instrumentation only and cannot create a finding.
+     */
+    public record DynamicsGate(long unknownMaterialPairs, long changedMaterialPairs,
+                               String lastMaterial, String lastReason) {}
 
     private record Previous(long tick, long nanos, long epoch,
                             MovementTickTimeline.TickInput input) {}
@@ -48,6 +57,9 @@ public final class MovementGroundProbe {
     private String lastSurfaceReason = "not observed";
     private final GroundMotionDistributions distributions = new GroundMotionDistributions();
     private final GroundMotionDynamics dynamics = new GroundMotionDynamics();
+    private long unknownMaterialPairs, changedMaterialPairs;
+    private String lastObservedMaterial = "UNKNOWN";
+    private String lastDynamicsGate = "waiting for eligible position pairs";
 
     /**
      * Called under a session lock, once per server tick when enabled.
@@ -59,6 +71,7 @@ public final class MovementGroundProbe {
         if (input == null) throw new IllegalArgumentException("input required");
         samples++;
         lastTick = tick;
+        lastObservedMaterial = input.probeContext().groundMaterial();
         lastDistance = null;
         lastEnvelope = null;
         Result next;
@@ -112,17 +125,21 @@ public final class MovementGroundProbe {
                         // of the legacy research-envelope threshold.
                         distributions.observe(input.probeContext().sprinting(), normalized);
                         String material = input.probeContext().groundMaterial();
-                        if (!material.equals("UNKNOWN")
-                                && material.equals(previous.input().probeContext().groundMaterial())) {
+                        String previousMaterial = previous.input().probeContext().groundMaterial();
+                        if (material.equals("UNKNOWN") || previousMaterial.equals("UNKNOWN")) {
+                            unknownMaterialPairs++;
+                            lastDynamicsGate = "UNKNOWN_MATERIAL";
+                            dynamics.interrupt();
+                        } else if (!material.equals(previousMaterial)) {
+                            changedMaterialPairs++;
+                            lastDynamicsGate = "CHANGED_MATERIAL";
+                            dynamics.interrupt();
+                        } else {
                             double factor = 50_000_000.0 / elapsed;
                             dynamics.observe(tick, epoch, (b.x() - a.x()) * factor,
                                     (b.z() - a.z()) * factor,
                                     input.probeContext().sprinting(), material);
-                        } else {
-                            // The speed profile remains eligible, but a
-                            // directional/friction comparison across unlike
-                            // or unidentified materials is not supported.
-                            dynamics.interrupt();
+                            lastDynamicsGate = "ACCEPTED";
                         }
                         double envelope = RESEARCH_ENVELOPE_BLOCKS_PER_50MS
                                 * (elapsed / 50_000_000.0);
@@ -148,6 +165,7 @@ public final class MovementGroundProbe {
                 && next != Result.RESEARCH_OUTLIER) {
             consecutive = 0;
             noDecision++;
+            lastDynamicsGate = next.name();
             // No three-position motion comparison may cross a correction,
             // unknown physics, unsupported block or stale client packet.
             dynamics.interrupt();
@@ -207,6 +225,8 @@ public final class MovementGroundProbe {
                 lastResult, lastTick, lastDistance, lastEnvelope, lastOutlierTick,
                 unsafeTerrainSamples, noClientDataSamples, specialMovementSamples,
                 lastSurfaceReason, distributions.snapshot(), sprintTransitions,
-                dynamics.snapshot());
+                dynamics.snapshot(),
+                new DynamicsGate(unknownMaterialPairs, changedMaterialPairs,
+                        lastObservedMaterial, lastDynamicsGate));
     }
 }
