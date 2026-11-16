@@ -50,9 +50,21 @@ public final class MovementTickTimeline {
      * assume a Bukkit snapshot implies ordinary, unmodified vanilla physics.
      */
     public record ProbeContext(boolean verified, boolean ordinaryFlatSurface,
-                               boolean noActiveEffects, boolean defaultWalkSpeed) {
+                               boolean noActiveEffects, boolean defaultWalkSpeed,
+                               String surfaceReason) {
+        // Keep four-argument fixtures compatible: unknown reasons are never
+        // promoted to proof of an ordinary collision surface.
+        public ProbeContext(boolean verified, boolean ordinaryFlatSurface,
+                            boolean noActiveEffects, boolean defaultWalkSpeed) {
+            this(verified, ordinaryFlatSurface, noActiveEffects, defaultWalkSpeed, "");
+        }
+
+        public ProbeContext {
+            if (surfaceReason == null) surfaceReason = "";
+        }
+
         public static ProbeContext unknown() {
-            return new ProbeContext(false, false, false, false);
+            return new ProbeContext(false, false, false, false, "unverified");
         }
     }
 
