@@ -85,6 +85,18 @@ public final class DetectionCommands {
             sender.sendMessage(tx.playerText(" §7Last kind: §f" + latest.kind()
                     + " §8| §7Sequence: §f" + latest.sequence()));
         }
+        MovementPacketBuffer.WindowStats recent = snapshot.recentWindow(
+                System.nanoTime(), java.util.concurrent.TimeUnit.SECONDS.toNanos(5));
+        sender.sendMessage(tx.playerText(" §7Last 5s (retained): §f" + recent.count()
+                + " §8| §7Rate: §f" + String.format(java.util.Locale.ROOT, "%.1f", recent.ratePerSecond())
+                + " §7packets/s"));
+        sender.sendMessage(tx.playerText(" §7POSITION: §f" + recent.position()
+                + " §8| §7POSITION_LOOK: §f" + recent.positionLook()));
+        sender.sendMessage(tx.playerText(" §7LOOK: §f" + recent.look()
+                + " §8| §7GROUND: §f" + recent.ground()));
+        if (recent.truncated()) {
+            sender.sendMessage(tx.playerText(" §eRecent window truncated by buffer capacity; rate is a lower bound."));
+        }
         sender.sendMessage(tx.playerText(" §8Receive timing only; not a movement/Timer cheat verdict."));
     }
 
