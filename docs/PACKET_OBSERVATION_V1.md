@@ -397,6 +397,35 @@ prediction-quality or latency measurement. Pending-teleport suppression,
 knockback correction, unusual block shapes, skipped tick sampling, and
 multi-version runtime correctness are not established by these screenshots.
 
+## Continuous-flight comparison diagnostic fix (2026-11-16)
+
+The tester reported multiple consecutive `tick` views during normal
+Creative flight showing `AWAITING_NEXT_TICK` as the server tick increased
+from 1990 to 2035 to 2073, alongside a displayed last correction of
+`TELEPORT_CONFIRM`. This did **not** show repeated teleports: the
+correction field was historical. The immediate issue was that the
+snapshot tried to compare only the **latest** client position; a client
+packet arriving after the most recent server sample naturally had no
+following sample yet.
+
+The timeline now keeps the latest **completed, validated diagnostic
+pair** when the next client position is still waiting for a server tick.
+Its recorded client packet order and following server sample remain
+available; the pair is never described as the current client position.
+Completed pairs expire after 750 ms, and teleport/velocity/respawn/world
+changes immediately discard them. An outstanding teleport ID still
+suppresses comparisons. No packets or samples are kept indefinitely.
+
+The `tick` view now labels the measurement `Last pair delta` and does
+not imply that a previous `TELEPORT_CONFIRM` is the current cause of
+`AWAITING_NEXT_TICK`. Regression tests reproduce continuous incoming
+movement, pair rollover, expiration, correction invalidation and pending
+teleport suppression.
+
+**Runtime status:** corrected code requires a new in-game flight test.
+The user screenshots predate this fix. This diagnostic is still not a
+Speed/Fly finding or client-physics prediction.
+
 ## Next increment
 
 Test correction states during `/tp` and zombie knockback, world changes
