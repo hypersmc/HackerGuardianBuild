@@ -92,6 +92,40 @@ class PacketGroundReachabilityTest {
     }
 
     @Test
+    void tickHintsExplainGapsAndWarmupsWithoutChangingModeledPacketCount() {
+        var model = new PacketGroundReachability(version("1.20.2"));
+        model.observe(at(0, 64, 0, true), context(1));
+        model.observe(at(.2, 64, 0, true), context(2));
+        model.observe(at(.4, 64, 0, true), context(4)); // TICK_GAP
+        model.observe(at(.6, 64, 0, true), context(5)); // timing warmup
+        model.observe(at(.8, 64, 0, true), context(6)); // modeled
+        var initial = model.snapshot();
+        assertEquals(1, initial.modeledTriples());
+        assertEquals(4, initial.noDecision());
+        assertEquals(2, initial.tickHints().warmupInitial());
+        assertEquals(1, initial.tickHints().warmupAfterTiming());
+        assertEquals(1, initial.tickHints().actualTickGapRejects());
+        assertEquals(1, initial.tickHints().twoTickGaps());
+        assertEquals(3, initial.tickHints().adjacentHints());
+        assertEquals(initial.headingSkips().warmup(), initial.tickHints().attributedWarmups());
+        assertEquals(initial, model.snapshot());
+
+        // A same-hint packet destroys the triple chain, as before.
+        model.observe(at(.81, 64, 0, true), context(6));
+        model.observe(at(.82, 64, 0, true), context(7));
+        model.observe(at(.83, 64, 0, true), context(8));
+        var afterRepeat = model.snapshot();
+        assertEquals(1, afterRepeat.modeledTriples());
+        assertEquals(1, afterRepeat.tickHints().repeatedHints());
+        assertEquals(1, afterRepeat.tickHints().actualAmbiguousRejects());
+        assertEquals(3, afterRepeat.tickHints().warmupAfterTiming());
+        assertEquals(afterRepeat.headingSkips().warmup(),
+                afterRepeat.tickHints().attributedWarmups());
+        assertEquals(afterRepeat.positionPackets(),
+                afterRepeat.modeledTriples() + afterRepeat.noDecision());
+    }
+
+    @Test
     void teleportAndVelocityCorrectionsHardResetPacketHistory() {
         var model = new PacketGroundReachability(version("1.20.2"));
         model.observe(at(0, 64, 0, true), context(1));
