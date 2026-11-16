@@ -26,9 +26,11 @@ public final class PacketMotionTransitions {
                            long accelerating, long decelerating, long turning,
                            long steady, long taggedOutside,
                            Phase lastPhase, boolean lastWasTransition,
-                           PacketReachabilityResiduals.Snapshot switchResiduals) {}
+                           PacketReachabilityResiduals.Snapshot switchResiduals,
+                           PacketSwitchDisplacements.Snapshot switchDisplacements) {}
 
     private final PacketReachabilityResiduals switchResiduals = new PacketReachabilityResiduals();
+    private final PacketSwitchDisplacements switchDisplacements = new PacketSwitchDisplacements();
     private long walkToSprint, sprintToWalk, taggedWalk, taggedSprint;
     private long accelerating, decelerating, turning, steady, taggedOutside;
     private long transitionEpoch = Long.MIN_VALUE;
@@ -68,19 +70,24 @@ public final class PacketMotionTransitions {
                 || residual < 0 || excess < 0) {
             throw new IllegalArgumentException("Non-finite packet motion");
         }
-        boolean tagged = transitionEpoch == epoch && targetSprint == sprint
-                && tickHint > 0 && tickHint <= untilTick;
-        if (tagged) {
-            switchResiduals.observe(sprint, residual, excess);
-            if (sprint) taggedSprint++;
-            else taggedWalk++;
-            if (excess > 0) taggedOutside++;
-        }
-
         double first = Math.hypot(prevDx, prevDz);
         double second = Math.hypot(currentDx, currentDz);
         if (!Double.isFinite(first) || !Double.isFinite(second)) {
             throw new IllegalArgumentException("Unbounded packet displacement");
+        }
+
+        boolean tagged = transitionEpoch == epoch && targetSprint == sprint
+                && tickHint > 0 && tickHint <= untilTick;
+        if (tagged) {
+            // Both rings record the same accepted client packet triple:
+            // residual is required unknown input, displacement is actual XZ
+            // distance from decoded client packets. Zero residual alone
+            // must never be interpreted as the player standing still.
+            switchResiduals.observe(sprint, residual, excess);
+            switchDisplacements.observe(sprint, second, residual);
+            if (sprint) taggedSprint++;
+            else taggedWalk++;
+            if (excess > 0) taggedOutside++;
         }
 
         double angle = 0;
@@ -118,6 +125,7 @@ public final class PacketMotionTransitions {
     public synchronized Snapshot snapshot() {
         return new Snapshot(walkToSprint, sprintToWalk, taggedWalk, taggedSprint,
                 accelerating, decelerating, turning, steady, taggedOutside,
-                lastPhase, lastWasTransition, switchResiduals.snapshot());
+                lastPhase, lastWasTransition, switchResiduals.snapshot(),
+                switchDisplacements.snapshot());
     }
 }
