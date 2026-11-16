@@ -21,7 +21,8 @@ public final class MovementTickTimeline {
 
     public enum Status {
         NO_CLIENT_POSITION, NO_SERVER_TICK, AWAITING_NEXT_TICK,
-        TOO_OLD, CORRECTION_WINDOW, DIFFERENT_CONTEXT, READY_DIAGNOSTIC
+        TOO_OLD, CORRECTION_WINDOW, DIFFERENT_CONTEXT, PENDING_TELEPORT,
+        READY_DIAGNOSTIC
     }
 
     public enum Correction {
@@ -137,14 +138,24 @@ public final class MovementTickTimeline {
     }
 
     public synchronized Snapshot snapshot() {
+        return snapshot(false);
+    }
+
+    /**
+     * A pending outbound teleport must prevent comparisons, even after several
+     * server tick samples. The transport tracker owns the pending-ID truth.
+     */
+    public synchronized Snapshot snapshot(boolean hasPendingTeleport) {
         // Reading diagnostics must NOT advance the serialized timeline clock.
         // Only actual packet/server events get a distinct observation stamp.
         long now = Math.max(lastNanos, clock.getAsLong());
         List<ServerTick> history = List.copyOf(new ArrayList<>(ticks));
         return new Snapshot(sampledTicks, droppedTicks, history,
                 clientPacketsObserved, lastClient, correctionEpoch,
-                lastCorrection, correctionTick, compare(history, lastClient,
-                        correctionEpoch, correctionTick, sampledTicks, now));
+                lastCorrection, correctionTick, hasPendingTeleport && lastClient != null
+                        ? result(Status.PENDING_TELEPORT, lastClient, null, null)
+                        : compare(history, lastClient,
+                                correctionEpoch, correctionTick, sampledTicks, now));
     }
 
     private static Diagnostic compare(List<ServerTick> history, ClientPosition client,
