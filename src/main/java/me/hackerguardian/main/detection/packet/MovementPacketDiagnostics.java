@@ -14,7 +14,7 @@ import java.util.concurrent.TimeUnit;
 public final class MovementPacketDiagnostics {
 
     public enum View {
-        SUMMARY, MOVEMENT, NETWORK;
+        SUMMARY, MOVEMENT, NETWORK, TICK;
 
         public static View parse(String name) {
             if (name == null || name.isBlank()) return SUMMARY;
@@ -22,6 +22,7 @@ public final class MovementPacketDiagnostics {
                 case "summary" -> SUMMARY;
                 case "movement", "move" -> MOVEMENT;
                 case "network", "net" -> NETWORK;
+                case "tick", "state" -> TICK;
                 default -> null;
             };
         }
@@ -31,6 +32,13 @@ public final class MovementPacketDiagnostics {
 
     public static List<String> render(String name, MovementPacketBuffer.Snapshot packet,
                                       MovementPacketTransport.Snapshot transport,
+                                      View view, long nowNanos) {
+        return render(name, packet, transport, null, view, nowNanos);
+    }
+
+    public static List<String> render(String name, MovementPacketBuffer.Snapshot packet,
+                                      MovementPacketTransport.Snapshot transport,
+                                      MovementTickTimeline.Snapshot ticks,
                                       View view, long nowNanos) {
         if (packet == null || view == null) throw new IllegalArgumentException("snapshot and view required");
         List<String> lines = new ArrayList<>();
@@ -54,7 +62,7 @@ public final class MovementPacketDiagnostics {
                             + transport.matchedConfirms() + " | pending " + transport.pendingTeleports()
                             + " | unmatched " + transport.unmatchedConfirms());
                 }
-                lines.add("Details: /hg detection packets " + player + " move|net");
+                lines.add("Details: /hg detection packets " + player + " move|net|tick");
             }
             case MOVEMENT -> {
                 lines.add("Received " + packet.totalReceived() + " | Retained " + packet.retained()
@@ -79,6 +87,41 @@ public final class MovementPacketDiagnostics {
                 lines.add("On-ground " + flag(fields.onGround())
                         + " | Collision " + flag(fields.horizontalCollision())
                         + (recent.truncated() ? " | 5s truncated" : ""));
+            }
+            case TICK -> {
+                if (ticks == null || ticks.latestTick() == null) {
+                    lines.add("No server tick samples available");
+                } else {
+                    var latest = ticks.latestTick();
+                    var state = latest.state();
+                    var pos = state.position();
+                    var vel = state.velocity();
+                    var flags = state.flags();
+                    var env = state.environment();
+                    lines.add("Server tick " + latest.tick() + " | history " + ticks.ticks().size()
+                            + " | overwritten " + ticks.droppedTicks());
+                    lines.add(String.format(Locale.ROOT, "Server XYZ: %.2f %.2f %.2f",
+                            pos.x(), pos.y(), pos.z()));
+                    lines.add(String.format(Locale.ROOT,
+                            "Vel %.2f %.2f %.2f | ground %s | flying %s",
+                            vel.x(), vel.y(), vel.z(),
+                            flags.serverOnGround(), flags.flying()));
+                    lines.add("Feet passable " + env.feetPassable()
+                            + " | below passable " + env.belowPassable()
+                            + " | liquid " + (env.feetLiquid() || env.belowLiquid()));
+                    var comparison = ticks.comparison();
+                    if (comparison.status() == MovementTickTimeline.Status.READY_DIAGNOSTIC
+                            && comparison.positionDifference() != null) {
+                        lines.add(String.format(Locale.ROOT,
+                                "Raw delta %.3f blocks | gap %.1fms (not a verdict)",
+                                comparison.positionDifference(),
+                                comparison.tickLagNanos() / 1_000_000.0));
+                    } else {
+                        lines.add("Comparison " + comparison.status()
+                                + " | correction " + (ticks.lastCorrection() == null
+                                ? "none" : ticks.lastCorrection()));
+                    }
+                }
             }
             case NETWORK -> {
                 if (transport == null) {
