@@ -174,6 +174,70 @@ class PacketGroundReachabilityTest {
     }
 
     @Test
+    void acceptedPacketTriplesPopulateSeparateWalkAndSprintResiduals() {
+        var model = new PacketGroundReachability(version("1.20.2"));
+        model.observe(at(0, 64, 0, true), context(1));
+        model.observe(at(.216, 64, 0, true), context(2));
+        model.observe(at(.432, 64, 0, true), context(3));
+        model.observe(at(.648, 64, 0, true), context(4));
+
+        var walk = model.snapshot().residuals().walking();
+        assertEquals(2, walk.total());
+        assertEquals(0, walk.outside());
+        assertEquals(.216 * (1 - .546), walk.p50(), 1e-12);
+        assertEquals(walk.p50(), walk.p95(), 1e-12);
+
+        var input = flatGround();
+        var sprinting = new MovementTickTimeline.TickInput(input.worldKey(),
+                input.position(), input.velocity(), input.flags(), input.environment(),
+                new MovementTickTimeline.ProbeContext(true, true, true, true,
+                        "", true, "STONE"));
+        model.observe(at(.929, 64, 0, true),
+                new PacketGroundReachability.Context(5, 0, true, false, sprinting));
+        assertEquals(PacketGroundReachability.Status.CONTEXT_CHANGED,
+                model.snapshot().lastStatus(),
+                "Sprint transition must not enter either residual distribution");
+        model.observe(at(1.210, 64, 0, true),
+                new PacketGroundReachability.Context(6, 0, true, false, sprinting));
+        model.observe(at(1.491, 64, 0, true),
+                new PacketGroundReachability.Context(7, 0, true, false, sprinting));
+        model.observe(at(1.772, 64, 0, true),
+                new PacketGroundReachability.Context(8, 0, true, false, sprinting));
+        var snapshot = model.snapshot();
+        assertEquals(4, snapshot.modeledTriples());
+        assertEquals(2, snapshot.residuals().walking().total());
+        assertEquals(2, snapshot.residuals().sprinting().total());
+        assertEquals(.281 * (1 - .546), snapshot.residuals().sprinting().p50(), 1e-12);
+        assertTrue(snapshot.residuals().sprinting().p50()
+                > snapshot.residuals().walking().p50());
+        assertEquals(snapshot, model.snapshot(), "Admin reads cannot change profiles");
+
+        model.observe(at(1.8, 64, 0, false),
+                new PacketGroundReachability.Context(9, 0, true, false, sprinting));
+        model.correction();
+        assertEquals(4, model.snapshot().modeledTriples());
+        assertEquals(2, model.snapshot().residuals().sprinting().total(),
+                "Unsupported client-ground claims and correction resets must not sample residuals");
+    }
+
+    @Test
+    void syntheticResearchOutsideIsRecordedButNotTreatedAsARealCheatVerdict() {
+        var model = new PacketGroundReachability(version("1.21.11"));
+        model.observe(at(0, 64, 0, true), context(1));
+        model.observe(at(.20, 64, 0, true), context(2));
+        model.observe(at(1.1, 64, 0, true), context(3));
+        var snapshot = model.snapshot();
+        var walk = snapshot.residuals().walking();
+        assertEquals(1, snapshot.modeledTriples());
+        assertEquals(1, snapshot.researchedOutside());
+        assertEquals(1, walk.outside());
+        assertEquals(1, walk.total());
+        assertEquals(.9 - .546 * .2, walk.p50(), 1e-12);
+        assertTrue(walk.maxExcess() > .4);
+        assertEquals(0, snapshot.residuals().sprinting().total());
+    }
+
+    @Test
     void boundedSessionStateDoesNotGrowWithPacketCount() {
         var model = new PacketGroundReachability(version("1.20.2"));
         for (int i = 1; i <= 5000; i++) {
