@@ -25,9 +25,10 @@ public final class PacketGroundReachability {
      *  a detection threshold. Real latency/collision uncertainty is unmodeled.
      */
     private static final double RESEARCH_UNCERTAINTY = 0.10;
+    private static final long MAX_SERVER_SAMPLE_AGE_NS = 125_000_000L;
 
     public enum Status {
-        DISABLED_VERSION, NO_SERVER_SAMPLE, UNSUPPORTED_CONTEXT,
+        DISABLED_VERSION, NO_SERVER_SAMPLE, UNSUPPORTED_CONTEXT, STALE_SERVER_SAMPLE,
         RECENT_CORRECTION, INVALID_GROUND_CLAIM, AMBIGUOUS_TICK,
         TICK_GAP, CONTEXT_CHANGED, WARMUP, CONSERVATIVE_REACHABLE,
         OUTSIDE_RESEARCH_ENVELOPE
@@ -58,7 +59,16 @@ public final class PacketGroundReachability {
      */
     public record Context(long serverTick, long correctionEpoch,
                           boolean settled, boolean pendingTeleport,
-                          MovementTickTimeline.TickInput serverState) {}
+                          MovementTickTimeline.TickInput serverState,
+                          boolean serverTickStable, long serverSampleAgeNanos) {
+        /** Pure unit-test constructor with stable, fresh context. */
+        public Context(long serverTick, long correctionEpoch,
+                       boolean settled, boolean pendingTeleport,
+                       MovementTickTimeline.TickInput serverState) {
+            this(serverTick, correctionEpoch, settled, pendingTeleport,
+                    serverState, true, 0);
+        }
+    }
 
     public record Snapshot(String model, boolean enabled, long positionPackets,
                            long modeledTriples, long noDecision, long researchedOutside,
@@ -90,6 +100,10 @@ public final class PacketGroundReachability {
             status = Status.DISABLED_VERSION;
         } else if (context == null || context.serverState() == null || context.serverTick() <= 0) {
             status = Status.NO_SERVER_SAMPLE;
+        } else if (!context.serverTickStable()
+                || context.serverSampleAgeNanos() < 0
+                || context.serverSampleAgeNanos() > MAX_SERVER_SAMPLE_AGE_NS) {
+            status = Status.STALE_SERVER_SAMPLE;
         } else if (context.pendingTeleport() || !context.settled()) {
             status = Status.RECENT_CORRECTION;
             corrections++;
