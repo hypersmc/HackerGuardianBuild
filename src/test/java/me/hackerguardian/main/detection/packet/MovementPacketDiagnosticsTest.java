@@ -90,8 +90,8 @@ class MovementPacketDiagnosticsTest {
         var lines = MovementPacketDiagnostics.render("Tester", buffer.snapshot(UUID.randomUUID()),
                 null, timeline.snapshot(), MovementPacketDiagnostics.View.TICK, clock.get());
         assertEquals(6, lines.size());
-        assertTrue(lines.stream().anyMatch(line -> line.contains("Raw delta")
-                && line.contains("not a verdict")));
+        assertTrue(lines.stream().anyMatch(line -> line.contains("Last pair delta")
+                && line.contains("not verdict")));
         var absent = new MovementTickTimeline();
         var empty = MovementPacketDiagnostics.render("Tester", buffer.snapshot(UUID.randomUUID()),
                 null, absent.snapshot(), MovementPacketDiagnostics.View.TICK, clock.get());
