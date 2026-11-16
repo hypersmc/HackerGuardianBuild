@@ -64,14 +64,14 @@ public final class DetectionCommands {
     private void handlePackets(CommandSender sender, String[] params) {
         if (params.length < 2 || params.length > 3) {
             sender.sendMessage(tx.playerText(tx.prefix
-                    + "§cUsage: /hg detection packets <player> [summary|move|net|tick|guards|probe|profile|dyn|idle|predict|res|trans]"));
+                    + "§cUsage: /hg detection packets <player> [summary|move|net|tick|guards|probe|profile|dyn|idle|predict|res|trans|heading]"));
             return;
         }
         MovementPacketDiagnostics.View view =
                 MovementPacketDiagnostics.View.parse(params.length == 3 ? params[2] : null);
         if (view == null) {
             sender.sendMessage(tx.playerText(tx.prefix
-                    + "§cView must be summary, move, net, tick, guards, probe, profile, dyn, idle, predict, res or trans."));
+                    + "§cView must be summary, move, net, tick, guards, probe, profile, dyn, idle, predict, res, trans or heading."));
             return;
         }
         MovementPacketObserver observer = runtime.getPacketObserver();
