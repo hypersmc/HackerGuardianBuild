@@ -184,6 +184,51 @@ Record modeled and no-decision count differences for uninterrupted
 ground movement separately from airborne movement. Do not weaken the
 tick-sequencing guard merely to increase modeled counts.
 
+## First continuous ground walk/sprint packet comparison (2026-11-16)
+
+The tester supplied two `predict` screenshots, labeled **walking**
+(first) and **after sprinting** (second), with cumulative same-session
+counters:
+
+| Research counter | After walking | After sprinting | Delta |
+|---|---:|---:|---:|
+| Incoming decoded-position observations | 414 | 589 | +175 |
+| Modeled consecutive client-position triples | 176 | 344 | +168 |
+| No-decision observations | 238 | 245 | +7 |
+| Ambiguous scheduler-tick hints | 0 | 0 | 0 |
+| Correction boundaries | 3 | 3 | 0 |
+| Outside research envelope | 0 | 0 | 0 |
+| Most recent status | CONSERVATIVE_REACHABLE | CONSERVATIVE_REACHABLE | — |
+| Last measured packet displacement | 0.003 blocks | 0.007 blocks | — |
+| Last printed drift-plus-radius | 0.231 blocks | 0.235 blocks | — |
+| Last research excess | 0.000 | 0.000 | — |
+
+**Result:** pass for a single-server, normal ground-movement packet
+*collection and reachability eligibility* smoke test. From the walking
+snapshot to the sprinting snapshot, **168 of the next 175** received
+position observations (96%) were modeled. This suggests the restrictive
+scheduler-tick alignment can be useful under steady ground movement,
+unlike the prior jumping test; it does **not** prove that scheduler tick
+hints equal client physics ticks.
+
+These are cumulative snapshots, not separate isolated walking and
+sprinting datasets; the **96% pertains only to the interval between
+screenshots** and may include transition or command-entry movement.
+The last displayed displacements of 0.003 and 0.007 blocks are the
+*latest modeled interval* and should not be compared with the steady
+walking/sprinting median measured by the independent Bukkit profile.
+A later command entry or slowing down may explain the small values,
+but the screenshots do not prove the exact cause.
+
+Neither `CONSERVATIVE_REACHABLE` nor zero research outliers validates
+the unknown-input disk constants or proves client legitimacy. The
+research uncertainty is deliberately generous. Next measure
+**distributions of packet-coordinate residuals**, separated by observed
+ground walk/sprint context and with explicit timing/no-decision
+breakdowns. Maintain all correction boundaries and keep outliers
+non-actionable until tick synchronization and physics accuracy are
+independently validated.
+
 ## Next actual physics work
 
 Capture trustworthy per-player packet order and *validated tick equivalence*,
