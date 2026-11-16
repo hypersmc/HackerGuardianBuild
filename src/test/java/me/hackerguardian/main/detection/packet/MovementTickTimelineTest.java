@@ -197,6 +197,97 @@ class MovementTickTimelineTest {
     }
 
     @Test
+    void recordsBoundaryEventsAndOnlyCountsActualSuppressedSamplePairs() {
+        AtomicLong clock = new AtomicLong(1);
+        var timeline = new MovementTickTimeline(clock::incrementAndGet);
+        timeline.sampleServerTick(1, tick("world", 0));
+
+        timeline.observeClientPosition(new MovementPacketBuffer.Position(0, 64, 10));
+        timeline.markCorrection(MovementTickTimeline.Correction.BUKKIT_TELEPORT);
+        var initial = timeline.snapshot().guards();
+        assertEquals(1, initial.teleportBoundaries());
+        assertEquals(1, initial.pendingClaimsInvalidated());
+        assertEquals(0, initial.recoverySuppressions(),
+                "An invalidated position must not masquerade as a sampled comparison");
+        assertEquals(0, initial.completedPairs());
+
+        // Recovery window: actual client packets and following server samples.
+        timeline.observeClientPosition(new MovementPacketBuffer.Position(1, 64, 10));
+        timeline.sampleServerTick(2, tick("world", 1));
+        assertEquals(1, timeline.snapshot().guards().recoverySuppressions());
+
+        // Pending teleport takes priority over the otherwise normal recovery guard.
+        timeline.observeClientPosition(new MovementPacketBuffer.Position(2, 64, 10));
+        timeline.sampleServerTick(3, tick("world", 2), true);
+        var guarded = timeline.snapshot().guards();
+        assertEquals(1, guarded.pendingTeleportSuppressions());
+        assertEquals(1, guarded.recoverySuppressions());
+        assertEquals(MovementTickTimeline.Status.PENDING_TELEPORT, guarded.lastSuppression());
+        assertEquals(3, guarded.lastSuppressionTick());
+        assertEquals(0, guarded.completedPairs());
+
+        // A client confirmation is an event boundary; no pending comparison
+        // means it doesn't by itself increment the suppression count.
+        timeline.markCorrection(MovementTickTimeline.Correction.TELEPORT_CONFIRM);
+        assertEquals(2, timeline.snapshot().guards().teleportBoundaries());
+        timeline.observeClientPosition(new MovementPacketBuffer.Position(3, 64, 10));
+        timeline.sampleServerTick(4, tick("world", 3));
+        timeline.observeClientPosition(new MovementPacketBuffer.Position(4, 64, 10));
+        timeline.sampleServerTick(5, tick("world", 4));
+        timeline.observeClientPosition(new MovementPacketBuffer.Position(5, 64, 10));
+        timeline.sampleServerTick(6, tick("world", 5));
+        var recovered = timeline.snapshot().guards();
+        assertEquals(3, recovered.recoverySuppressions());
+        assertEquals(1, recovered.pendingTeleportSuppressions());
+        assertEquals(1, recovered.completedPairs());
+
+        timeline.markCorrection(MovementTickTimeline.Correction.OUTBOUND_SELF_VELOCITY);
+        var velocity = timeline.snapshot().guards();
+        assertEquals(1, velocity.velocityBoundaries());
+        assertEquals(1, velocity.completedPairsInvalidated());
+        assertEquals(3, velocity.recoverySuppressions());
+        assertEquals(1, velocity.completedPairs());
+        assertEquals(0, velocity.contextSuppressions());
+    }
+
+    @Test
+    void readingDiagnosticsRepeatedlyNeverCreatesGuardOrCorrectionEvents() {
+        AtomicLong clock = new AtomicLong(100);
+        var timeline = new MovementTickTimeline(clock::get);
+        timeline.sampleServerTick(1, tick("world", 0));
+        timeline.markCorrection(MovementTickTimeline.Correction.BUKKIT_VELOCITY);
+        timeline.observeClientPosition(new MovementPacketBuffer.Position(1, 64, 10));
+        clock.addAndGet(50_000_000L);
+        timeline.sampleServerTick(2, tick("world", 1));
+        var baseline = timeline.snapshot().guards();
+
+        for (int i = 0; i < 100; i++) {
+            clock.addAndGet(1_000_000L);
+            assertEquals(baseline, timeline.snapshot().guards());
+            assertEquals(baseline, timeline.snapshot(true).guards(),
+                    "A pending teleport queried through the UI is not a sampled suppression");
+        }
+
+        assertEquals(1, baseline.velocityBoundaries());
+        assertEquals(1, baseline.recoverySuppressions());
+        assertEquals(0, baseline.pendingTeleportSuppressions());
+    }
+
+    @Test
+    void worldChangeCountsAsOtherBoundaryAndInvalidatesPendingClaims() {
+        AtomicLong clock = new AtomicLong(1);
+        var timeline = new MovementTickTimeline(clock::incrementAndGet);
+        timeline.sampleServerTick(1, tick("overworld", 0));
+        timeline.observeClientPosition(new MovementPacketBuffer.Position(0, 64, 10));
+        timeline.sampleServerTick(2, tick("nether", 100));
+        var guards = timeline.snapshot().guards();
+        assertEquals(1, guards.otherBoundaries());
+        assertEquals(1, guards.pendingClaimsInvalidated());
+        assertEquals(0, guards.completedPairs());
+        assertEquals(0, guards.recoverySuppressions());
+    }
+
+    @Test
     void worldSwitchCannotBeComparedEvenWithoutTeleportCallback() {
         AtomicLong time = new AtomicLong(1);
         var timeline = new MovementTickTimeline(time::incrementAndGet);
