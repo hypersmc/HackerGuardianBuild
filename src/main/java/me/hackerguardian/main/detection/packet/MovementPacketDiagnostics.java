@@ -311,6 +311,8 @@ public final class MovementPacketDiagnostics {
             case HEADING -> {
                 if (prediction == null) {
                     lines.add("Packet heading research OFF (opt-in)");
+                } else if (!prediction.enabled()) {
+                    lines.add("Packet heading model unavailable for this version");
                 } else {
                     var angles = prediction.transitions().headings();
                     var skips = prediction.headingSkips();
