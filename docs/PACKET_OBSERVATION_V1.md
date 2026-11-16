@@ -141,6 +141,59 @@ Collision `UNKNOWN` must never be treated as `false` for physics decisions.
 No inference about anti-cheat effectiveness, network packet delivery, latency
 handling, or other Minecraft versions is supported by this result.
 
+## Network teleport/velocity correlation (2026-11-16)
+
+The packet observer now tracks the *transport observation timeline* independently
+from the Bukkit intent snapshots:
+
+- **Outbound `PacketType.Play.Server.POSITION`:** read the teleport ID and
+  track it as pending. Re-sent IDs refresh their age without inventing a new
+  teleport. At most 32 IDs remain pending; older IDs expire after 30 seconds.
+- **Inbound `PacketType.Play.Client.TELEPORT_ACCEPT`:** decode its teleport
+  ID and remove *only* a matching pending ID. Unknown, repeated, expired or
+  unreadable confirmations are counted separately. A match means the server
+  observed the client's confirmation packet; it is **not proof** that the
+  client applied the correct coordinates or that the server accepted them.
+- **Movement while a teleport is pending:** count observed inbound movement
+  packets during that window and retain the count for the last matched
+  teleport. These movements may be stale packets in flight; this counter
+  must not trigger an anti-cheat finding.
+- **Outbound `PacketType.Play.Server.ENTITY_VELOCITY`:** consider only a
+  velocity packet whose entity ID matches the player's ID previously obtained
+  on the Bukkit thread (also refreshed after respawn). Where possible, read
+  an actual velocity vector; otherwise store an observed event with an
+  unknown payload. This packet has **no equivalent client acknowledgement**.
+- **Bukkit `PlayerTeleportEvent` and `PlayerVelocityEvent`:** remain
+  separate `BUKKIT_*_INTENT` events. We do not claim a one-to-one link to
+  a particular outgoing packet or guarantee that a sending callback equals
+  network delivery.
+
+All observations are per-player, bounded and cleared on disconnect; the
+transport ring retains at most 64 significant events. No new database
+tables, replay triggers, alerts, kicks, bans, setbacks or ML labels are added.
+The feature remains disabled by default.
+
+### Solo runtime checks
+
+1. Run `/hg detection packets <player>` after joining. Teleport counts may
+   include server-issued initial position synchronization.
+2. Perform `/tp` and run the command again. Look for an outgoing teleport,
+   a matching `TELEPORT_ACCEPT`, and a pending count that returns to zero.
+3. If an outbound teleport ID cannot be decoded, `ID decode errors` should
+   increase; this is a compatibility gap, **not** player misconduct.
+4. Try legitimate knockback or a plugin-issued player velocity. Confirm
+   `Self-velocity packets observed` increases only when an actual self-entity
+   velocity packet is sent. `Unknown payload` means the vector layout needs
+   per-version validation.
+5. Reconnect and ensure all transport counters reset.
+6. Check console for exceptions and test on supported Paper versions and
+   ProtocolLib versions separately. Build-time API compatibility alone is
+   not proof of packet compatibility.
+
+A high pending count, an unmatched ACK or an observed packet delay must not
+be used as Timer, Speed or Fly evidence until network ordering, server
+corrections and server tick state are validated.
+
 ## Next increment
 
 Validate this normalized raw-state capture against actual supported Minecraft/ProtocolLib combinations. Next add explicit outbound teleport IDs, client teleport confirmations, delivered velocity context, server collision/physics snapshots and protocol-version-specific fixtures. **Do not use raw coordinates or arrival rates for speed/fly verdicts** until the server/client state timeline is sufficiently accurate. All detectors remain evidence-only until false-positive handling is independently validated.
