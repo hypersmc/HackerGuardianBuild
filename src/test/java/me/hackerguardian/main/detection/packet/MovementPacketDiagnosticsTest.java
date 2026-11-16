@@ -382,6 +382,60 @@ class MovementPacketDiagnosticsTest {
     }
 
     @Test
+    void packetResidualViewIsCompactAndUsesOnlyActualPacketResearchData() {
+        var model = new PacketGroundReachability(
+                PacketGroundReachability.Profile.forMinecraft(
+                        me.hackerguardian.compat.MinecraftVersion.parse("1.20.2")));
+        var input = new MovementTickTimeline.TickInput("world",
+                new MovementPacketBuffer.Position(0, 64, 0),
+                new MovementPacketBuffer.Velocity(0, 0, 0),
+                new MovementTickTimeline.PlayerFlags(true, false, false, false, false, false),
+                new MovementTickTimeline.Environment(true, false, true, false, false),
+                new MovementTickTimeline.ProbeContext(true, true, true, true,
+                        "", false, "STONE"));
+        var sprint = new MovementTickTimeline.TickInput("world",
+                input.position(), input.velocity(), input.flags(), input.environment(),
+                new MovementTickTimeline.ProbeContext(true, true, true, true,
+                        "", true, "STONE"));
+        for (int t = 1; t <= 4; t++) {
+            model.observe(new MovementPacketBuffer.PacketState(
+                    new MovementPacketBuffer.Position(.2 * (t - 1), 64, 0),
+                    null, true, false, true),
+                    new PacketGroundReachability.Context(t, 0, true, false, input));
+        }
+        for (int t = 5; t <= 8; t++) {
+            model.observe(new MovementPacketBuffer.PacketState(
+                    new MovementPacketBuffer.Position(.8 + .28 * (t - 4), 64, 0),
+                    null, true, false, true),
+                    new PacketGroundReachability.Context(t, 0, true, false, sprint));
+        }
+
+        var buffer = new MovementPacketBuffer(8);
+        var lines = MovementPacketDiagnostics.render("HypersMC",
+                buffer.snapshot(UUID.randomUUID()), null, null, null,
+                model.snapshot(), MovementPacketDiagnostics.View.RESIDUALS, System.nanoTime());
+        assertEquals(6, lines.size(), "Residuals should not flood Minecraft chat");
+        assertTrue(lines.stream().anyMatch(l -> l.contains("Client packet input residual")
+                && l.contains("research ONLY")));
+        assertTrue(lines.stream().anyMatch(l -> l.contains("Walk n=2/2")
+                && l.contains("r50") && l.contains("r95") && l.contains("max")));
+        assertTrue(lines.stream().anyMatch(l -> l.contains("Sprint n=2/2")
+                && l.contains("r50") && l.contains("r95")));
+        assertTrue(lines.stream().anyMatch(l -> l.contains("Outside W 0 S 0")));
+        assertTrue(lines.stream().anyMatch(l -> l.contains("no-decision 4")));
+        assertEquals(MovementPacketDiagnostics.View.RESIDUALS,
+                MovementPacketDiagnostics.View.parse("res"));
+        assertEquals(MovementPacketDiagnostics.View.RESIDUALS,
+                MovementPacketDiagnostics.View.parse("predictstats"));
+
+        var off = MovementPacketDiagnostics.render("HypersMC",
+                buffer.snapshot(UUID.randomUUID()), null, null, null,
+                null, MovementPacketDiagnostics.View.RESIDUALS, System.nanoTime());
+        assertEquals(2, off.size());
+        assertTrue(off.get(1).contains("OFF"));
+    }
+
+    @Test
     void missingTransportIsReportedWithoutInventingNetworkSuccess() {
         UUID id = UUID.randomUUID();
         var buffer = new MovementPacketBuffer(2);
