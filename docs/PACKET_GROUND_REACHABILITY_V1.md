@@ -310,6 +310,50 @@ the view. A player disconnect clears the session profile.
 This is distribution instrumentation, **not** verification of the
 research model's acceleration constants or a detection accuracy claim.
 
+## First live walk/sprint client-packet residual profile (2026-11-16)
+
+The tester supplied two `/hg detection packets HypersMC res` screenshots,
+identifying the **top as the walking test** and the bottom as the reading
+**after sprinting** on the same session:
+
+| Counter | Walking snapshot | Later snapshot |
+|---|---:|---:|
+| Walk retained / total packet triples | 128 / 256 | 128 / 261 |
+| Walk residual r50, r95 | 0.098, 0.098 | 0.098, 0.098 |
+| Walk residual maximum | 0.098 | 0.127 |
+| Sprint retained / total packet triples | 0 / 0 | 128 / 261 |
+| Sprint residual r50, r95, maximum | n/a | 0.127, 0.127, 0.127 |
+| Cumulative research outside W / S | 0 / 0 | 0 / 0 |
+| Retained peak research excess W / S | 0 / n/a | 0 / 0 |
+
+The rolling rings correctly stopped at 128 entries while session totals
+continued increasing. Between screenshots the walk session total increased
+by only **5** while sprint gained **261** samples. This confirms the
+basic walk/sprint data split in a real client-packet collection test.
+The increase in the walking **maximum** from 0.098 to 0.127 warrants
+investigation around mode transitions and server sprint-state timing;
+it is not evidence of cheating or proof of a labeling bug.
+
+For **steady-state** packet displacement `v`, the experimental disk
+center implies `residual = (1 - 0.546) * v` when velocity direction and
+magnitude remain unchanged. Using earlier Bukkit-observed steady speeds
+as a rough reference gives `0.216 * 0.454 = 0.0981` for walking and
+`0.281 * 0.454 = 0.1276` for sprinting, close to these recorded
+client-packet residuals.
+
+**Result:** pass for the **packet-derived residual distribution collection**
+smoke test and bounded walk/sprint grouping. This agreement is mainly
+an internal consistency check: the residual is **defined using the
+assumed drag** and does not independently validate the drag coefficient,
+maximum acceleration, server/client tick correspondence or cheating
+detection accuracy. Research outside counts of zero are unsurprising
+under the permissive 0.2274-block input-plus-uncertainty radius.
+
+**Next:** explicitly study acceleration and deceleration transitions,
+turns, and the rare high walking residual after sprinting; capture
+no-decision timing explanations while still making no enforcement
+decisions. Do not treat any retained percentile as a violation threshold.
+
 ## Next actual physics work
 
 Capture trustworthy per-player packet order and *validated tick equivalence*,
