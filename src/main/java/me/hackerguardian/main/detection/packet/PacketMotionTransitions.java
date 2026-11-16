@@ -17,7 +17,6 @@ public final class PacketMotionTransitions {
     private static final long TRANSITION_TICK_HINTS = 6L;
     private static final double SPEED_CHANGE = 0.025;
     private static final double TURN_DEGREES = 35.0;
-    private static final double MIN_TURN_SPEED = 0.075;
 
     public enum Phase { ACCELERATING, DECELERATING, TURNING, STEADY, NONE }
 
@@ -27,10 +26,12 @@ public final class PacketMotionTransitions {
                            long steady, long taggedOutside,
                            Phase lastPhase, boolean lastWasTransition,
                            PacketReachabilityResiduals.Snapshot switchResiduals,
-                           PacketSwitchDisplacements.Snapshot switchDisplacements) {}
+                           PacketSwitchDisplacements.Snapshot switchDisplacements,
+                           PacketHeadingAngles.Snapshot headings) {}
 
     private final PacketReachabilityResiduals switchResiduals = new PacketReachabilityResiduals();
     private final PacketSwitchDisplacements switchDisplacements = new PacketSwitchDisplacements();
+    private final PacketHeadingAngles headingAngles = new PacketHeadingAngles();
     private long walkToSprint, sprintToWalk, taggedWalk, taggedSprint;
     private long accelerating, decelerating, turning, steady, taggedOutside;
     private long transitionEpoch = Long.MIN_VALUE;
@@ -90,14 +91,11 @@ public final class PacketMotionTransitions {
             if (excess > 0) taggedOutside++;
         }
 
-        double angle = 0;
-        if (first >= MIN_TURN_SPEED && second >= MIN_TURN_SPEED) {
-            double normalized = (prevDx * currentDx + prevDz * currentDz) / (first * second);
-            if (Double.isFinite(normalized)) {
-                angle = Math.toDegrees(Math.acos(Math.max(-1, Math.min(1, normalized))));
-            }
-        }
-        if (angle >= TURN_DEGREES) {
+        // Direction is meaningful only when both packet vectors move far
+        // enough. Low-motion vectors count as excluded angle observations,
+        // but still participate in existing accel/decel phase research.
+        Double angle = headingAngles.observe(prevDx, prevDz, currentDx, currentDz);
+        if (angle != null && angle >= TURN_DEGREES) {
             turning++;
             lastPhase = Phase.TURNING;
         } else if (second - first >= SPEED_CHANGE) {
@@ -126,6 +124,6 @@ public final class PacketMotionTransitions {
         return new Snapshot(walkToSprint, sprintToWalk, taggedWalk, taggedSprint,
                 accelerating, decelerating, turning, steady, taggedOutside,
                 lastPhase, lastWasTransition, switchResiduals.snapshot(),
-                switchDisplacements.snapshot());
+                switchDisplacements.snapshot(), headingAngles.snapshot());
     }
 }
