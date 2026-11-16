@@ -25,7 +25,7 @@ public final class GroundIdleTransitions {
                          DISCONTINUITY, TRANSITION_PENDING }
 
     public record Snapshot(long capturedTicks, long eligibleIntervals,
-                           long noDecisionIntervals, long serverStarts,
+                           long noDecisionTicks, long serverStarts,
                            long serverStops, long startsWithRecentClient,
                            long stopsWithoutRecentClient, long interruptedChains,
                            State state, Status lastStatus, String lastBlock,
