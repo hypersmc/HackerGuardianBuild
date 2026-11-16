@@ -176,6 +176,71 @@ punishments, reports, or ML labels.
 6. Do not use any research-outlier counters as training labels or
    moderation evidence.
 
+## Walking and sprinting measurement profile (2026-11-16)
+
+After the passing Survival eligibility retest, a second **descriptive-only**
+measurement view was added, without changing the existing `probe` view:
+
+```text
+/hg detection packets HypersMC profile
+```
+
+This shows a short profile of **eligible server-observed horizontal movement**
+separated by Bukkit's sprinting flag:
+
+- **Walk**: the player reported `isSprinting() == false` at both samples.
+- **Sprint**: `isSprinting() == true` at both samples.
+- If the sprint flag differs across the pair, mark
+  `SPRINT_TRANSITION` (a **no-decision** sample) and exclude it from
+  both groups. This is a server state label, not verified client input.
+- Each group retains the **most recent 128 eligible observations** in a
+  fixed-size in-memory ring. The `n=retained/total` field distinguishes
+  current rolling sample size from lifetime observations for the session.
+  Disconnecting or disabling the observer clears both groups.
+- Measurements are normalized to **blocks per 50 ms** using the monotonic
+  elapsed time between successive sampled server ticks. We still reject
+  intervals outside 25–125 ms, skipped server samples, recent teleports,
+  knockback, invalid movement context, and unsupported ground.
+- The view shows the **median (p50), 95th percentile (p95), and maximum**
+  among retained samples, using nearest-rank percentiles. With very small
+  sample counts, percentiles are not reliable estimates of normal play.
+
+These distributions do **not** use the old 1.2-block research envelope
+to decide which eligible observations enter the sample ring. That legacy
+heuristic still exists in the optional `probe` view for historical
+continuity, but it is not a physics limit, a statistical cutoff, or
+a punishment threshold.
+
+**Interpretation constraints:** stationary samples can legitimately record
+zero displacement; a player can remain sprint-flagged while slowing down;
+a server tick is not an authenticated client simulation tick; and the
+surface/correction filters create selection bias. Therefore these p50/p95
+numbers do not establish a universal walking or sprinting distribution,
+and must **not** be used to train ML or flag other players.
+
+### Manual comparison protocol
+
+1. Keep ground-probe observation enabled. In Survival on a large level
+   `STONE` or `GRASS_BLOCK` platform, walk steadily for 10–20 seconds;
+   run `... profile` and inspect **Walk n**.
+2. Sprint steadily on the same surface without jumping; inspect
+   **Sprint n**. If a mode remains at zero, confirm the server is actually
+   reporting its sprint flag (or collect more consecutive eligible samples).
+3. Switch repeatedly between walking and sprinting. Confirm that
+   **transition skips** may increase and neither group is mixed across
+   a single toggle.
+4. Use `... probe` to identify any excess `NO_CLIENT_DATA`,
+   `UNSAFE_TERRAIN` or `SPECIAL_MOVEMENT` exclusions.
+5. Fly in Creative, teleport, take knockback, jump, or stand on unsupported
+   materials: no new **eligible** values should be recorded from those
+   contexts. The rolling profile remains available for retrospective study.
+6. Reconnect and verify both sample histories restart at zero.
+
+**Status:** code + pure Java unit tests added; the precise behavior of
+Bukkit sprint state, real-world sample bias, and multiplayer performance
+still require in-game verification. No scoring, bans, alerts, database
+writes, web frontend, reports or replay integration were added.
+
 ## Future real detection work
 
 Before a meaningful ground-speed check, build version-specific motion
