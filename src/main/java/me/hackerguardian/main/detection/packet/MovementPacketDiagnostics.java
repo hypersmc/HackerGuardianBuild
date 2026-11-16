@@ -294,7 +294,8 @@ public final class MovementPacketDiagnostics {
                 } else {
                     var trans = prediction.transitions();
                     var tail = trans.switchResiduals();
-                    lines.add("Packet deltas | Bukkit sprint label | RESEARCH");
+                    var move = trans.switchDisplacements();
+                    lines.add("Real packet deltas | Bukkit sprint label | RESEARCH");
                     lines.add("Walk>sprint " + trans.walkToSprint()
                             + " | Sprint>walk " + trans.sprintToWalk()
                             + " | tagged " + (trans.taggedWalk() + trans.taggedSprint()));
@@ -302,8 +303,8 @@ public final class MovementPacketDiagnostics {
                             + " Slow " + trans.decelerating()
                             + " Turn " + trans.turning()
                             + " Steady " + trans.steady());
-                    lines.add(transitionTailLine("After sprint>walk", tail.walking()));
-                    lines.add(transitionTailLine("After walk>sprint", tail.sprinting()));
+                    lines.add(transitionTailLine("S>W", tail.walking(), move.enteringWalk()));
+                    lines.add(transitionTailLine("W>S", tail.sprinting(), move.enteringSprint()));
                 }
             }
             case NETWORK -> {
@@ -342,9 +343,15 @@ public final class MovementPacketDiagnostics {
     }
 
     private static String transitionTailLine(String mode,
-                                             PacketReachabilityResiduals.ModeStats stats) {
-        return mode + " n=" + stats.total()
-                + " p95 " + value(stats.p95()) + " max " + value(stats.max());
+                                             PacketReachabilityResiduals.ModeStats residual,
+                                             PacketSwitchDisplacements.Stats movement) {
+        // r95 = required unknown input; d95 = observed packet displacement.
+        // near0 and drag~ are descriptive labels, NOT key-state estimates.
+        return mode + " n" + movement.total()
+                + " r95 " + value(residual.p95())
+                + " d95 " + value(movement.p95())
+                + " near0 " + movement.nearZero()
+                + " drag~ " + movement.dragLike();
     }
 
     private static String packetResidualLine(String mode,
