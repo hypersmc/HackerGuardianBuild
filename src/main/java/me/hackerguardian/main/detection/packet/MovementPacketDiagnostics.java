@@ -228,7 +228,7 @@ public final class MovementPacketDiagnostics {
                     var id = probe.idleTransitions();
                     lines.add("Bukkit SERVER samples, NOT client key presses");
                     lines.add("Ticks " + id.capturedTicks() + " | intervals "
-                            + id.eligibleIntervals() + " | skipped " + id.noDecisionIntervals());
+                            + id.eligibleIntervals() + " | no-decision " + id.noDecisionTicks());
                     lines.add("Observed starts " + id.serverStarts()
                             + " | stops " + id.serverStops()
                             + " | breaks " + id.interruptedChains());
