@@ -23,7 +23,24 @@ class PacketMotionTransitionsTest {
         assertEquals(0, out.taggedWalk());
         assertEquals(0, out.taggedSprint());
         assertEquals(PacketMotionTransitions.Phase.STEADY, out.lastPhase());
+        assertEquals(4, out.headings().measured());
+        assertEquals(1, out.headings().over35());
+        assertEquals(90, out.headings().max(), 1e-9);
         assertEquals(out, data.snapshot(), "Admin snapshots must never add measurements");
+    }
+
+    @Test
+    void lowMotionCannotCreateFalseTurnsWhileAccelSlowStillClassifies() {
+        var data = new PacketMotionTransitions();
+        data.observe(1, 0, false, .04, 0, 0, .09, .02, 0);
+        data.observe(2, 0, false, .09, 0, 0, .04, .01, 0);
+        var stats = data.snapshot();
+        assertEquals(0, stats.turning());
+        assertEquals(0, stats.headings().measured());
+        assertEquals(2, stats.headings().lowMotion());
+        assertEquals(1, stats.accelerating());
+        assertEquals(1, stats.decelerating());
+        assertEquals(0, stats.headings().over35());
     }
 
     @Test
