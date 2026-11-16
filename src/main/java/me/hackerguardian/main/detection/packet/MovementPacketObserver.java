@@ -19,6 +19,7 @@ import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.event.player.PlayerVelocityEvent;
 import org.bukkit.Location;
 import org.bukkit.util.Vector;
+import org.bukkit.scheduler.BukkitTask;
 
 import java.util.Map;
 import java.util.UUID;
@@ -37,6 +38,8 @@ public final class MovementPacketObserver implements Listener {
     private final HackerGuardian plugin;
     private final MovementPacketBuffer buffer;
     private final Map<Player, Session> sessions = new ConcurrentHashMap<>();
+    private BukkitTask tickTask;
+    private long schedulerTickIndex;
     private PacketAdapter inboundAdapter;
     private PacketAdapter outboundAdapter;
     private boolean running;
@@ -97,6 +100,7 @@ public final class MovementPacketObserver implements Listener {
             };
             ProtocolLibrary.getProtocolManager().addPacketListener(outgoing);
             outboundAdapter = outgoing;
+            tickTask = Bukkit.getScheduler().runTaskTimer(plugin, this::captureServerTicks, 1L, 1L);
             running = true;
         } catch (RuntimeException e) {
             stop();
@@ -105,6 +109,10 @@ public final class MovementPacketObserver implements Listener {
     }
 
     public void stop() {
+        if (tickTask != null) {
+            tickTask.cancel();
+            tickTask = null;
+        }
         if (inboundAdapter != null) {
             ProtocolLibrary.getProtocolManager().removePacketListener(inboundAdapter);
             inboundAdapter = null;
@@ -122,6 +130,22 @@ public final class MovementPacketObserver implements Listener {
 
     public boolean isRunning() {
         return running;
+    }
+
+    /** Server-sampled state and conservative client/server position comparison. */
+    public MovementTickTimeline.Snapshot tickSnapshot(Player player) {
+        Session session = player == null ? null : sessions.get(player);
+        return session == null ? null : session.tickSnapshot();
+    }
+
+    private void captureServerTicks() {
+        long tick = ++schedulerTickIndex;
+        for (Map.Entry<Player, Session> entry : sessions.entrySet()) {
+            Player player = entry.getKey();
+            if (!player.isOnline()) continue;
+            MovementTickTimeline.TickInput input = MovementTickSampler.sample(player);
+            if (input != null) entry.getValue().sampleServerTick(tick, input);
+        }
     }
 
     public MovementPacketBuffer.Snapshot snapshot(UUID playerId) {
@@ -202,6 +226,7 @@ public final class MovementPacketObserver implements Listener {
     private final class Session {
         private final UUID playerId;
         private final MovementPacketTransport transport = new MovementPacketTransport();
+        private final MovementTickTimeline timeline = new MovementTickTimeline();
         private int selfEntityId;
         private boolean active = true;
 
@@ -218,11 +243,22 @@ public final class MovementPacketObserver implements Listener {
             return active ? transport.snapshot() : null;
         }
 
+        private synchronized MovementTickTimeline.Snapshot tickSnapshot() {
+            return active ? timeline.snapshot() : null;
+        }
+
+        private synchronized void sampleServerTick(long tick, MovementTickTimeline.TickInput input) {
+            if (active) timeline.sampleServerTick(tick, input);
+        }
+
         private synchronized void record(MovementPacketBuffer.Kind kind,
                                          MovementPacketBuffer.PacketState state) {
             if (active) {
                 buffer.record(playerId, kind, state);
                 transport.movement();
+                if (state != null && state.decoded() && state.position() != null) {
+                    timeline.observeClientPosition(state.position());
+                }
             }
         }
 
@@ -231,6 +267,7 @@ public final class MovementPacketObserver implements Listener {
             if (active) {
                 buffer.recordServerTeleport(playerId, worldKey, position, rotation, cause);
                 transport.serverTeleportIntent();
+                timeline.markCorrection(MovementTickTimeline.Correction.BUKKIT_TELEPORT);
             }
         }
 
@@ -238,15 +275,22 @@ public final class MovementPacketObserver implements Listener {
             if (active) {
                 buffer.recordServerVelocity(playerId, worldKey, velocity);
                 transport.serverVelocityIntent(velocity);
+                timeline.markCorrection(MovementTickTimeline.Correction.BUKKIT_VELOCITY);
             }
         }
 
         private synchronized void outboundTeleport(Integer id) {
-            if (active) transport.outboundTeleport(id);
+            if (active) {
+                transport.outboundTeleport(id);
+                timeline.markCorrection(MovementTickTimeline.Correction.OUTBOUND_TELEPORT);
+            }
         }
 
         private synchronized void confirmTeleport(Integer id) {
-            if (active) transport.inboundConfirm(id);
+            if (active) {
+                transport.inboundConfirm(id);
+                timeline.markCorrection(MovementTickTimeline.Correction.TELEPORT_CONFIRM);
+            }
         }
 
         private synchronized void outboundSelfVelocity(com.comphenix.protocol.events.PacketContainer packet) {
@@ -259,6 +303,9 @@ public final class MovementPacketObserver implements Listener {
                 velocity = decoded.forSelf() ? decoded.velocity() : null;
             }
             transport.observedOutboundVelocity(targetId, selfEntityId, velocity);
+            if (targetId != null && targetId.intValue() == selfEntityId) {
+                timeline.markCorrection(MovementTickTimeline.Correction.OUTBOUND_SELF_VELOCITY);
+            }
         }
 
         private synchronized void close() {
