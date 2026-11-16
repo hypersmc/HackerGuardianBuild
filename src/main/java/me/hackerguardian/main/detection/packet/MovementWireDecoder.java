@@ -42,25 +42,27 @@ public final class MovementWireDecoder {
                 return SelfVelocity.notForSelf();
             }
 
-            // Legacy NMS layout contains entity id, velocityX, velocityY,
-            // velocityZ as four primitive integer fields.
-            if (ints.size() == 4) {
-                Integer x = ints.read(1), y = ints.read(2), z = ints.read(3);
-                return new SelfVelocity(true, legacyVelocity(x, y, z));
+            // The target entity is known: failures in payload decoding must
+            // still be recorded as a self-directed outbound packet.
+            try {
+                // Legacy NMS: entity id + three quantized integer velocities.
+                if (ints.size() == 4) {
+                    Integer x = ints.read(1), y = ints.read(2), z = ints.read(3);
+                    return new SelfVelocity(true, legacyVelocity(x, y, z));
+                }
+                // Newer NMS: entity id + one Vec3 (Bukkit Vector conversion).
+                var vectors = packet.getVectors();
+                if (vectors.size() == 1) {
+                    Vector vector = vectors.read(0);
+                    return new SelfVelocity(true, vector == null ? null
+                            : finiteVelocity(vector.getX(), vector.getY(), vector.getZ()));
+                }
+                return new SelfVelocity(true, null);
+            } catch (RuntimeException | LinkageError ignored) {
+                return new SelfVelocity(true, null);
             }
-
-            // Newer NMS layout contains entity id + one Vec3; ProtocolLib
-            // maps Vec3 to Bukkit Vector on supported versions.
-            var vectors = packet.getVectors();
-            if (vectors.size() == 1) {
-                Vector vector = vectors.read(0);
-                return new SelfVelocity(true, vector == null ? null
-                        : finiteVelocity(vector.getX(), vector.getY(), vector.getZ()));
-            }
-            // We can still document a relevant outgoing velocity packet even
-            // when its payload layout is not supported.
-            return new SelfVelocity(true, null);
         } catch (RuntimeException | LinkageError ignored) {
+            // Entity ID itself could not be read, so do not guess the target.
             return SelfVelocity.notForSelf();
         }
     }
