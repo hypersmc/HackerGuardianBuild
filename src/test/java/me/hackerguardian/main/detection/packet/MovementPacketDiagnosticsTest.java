@@ -251,11 +251,15 @@ class MovementPacketDiagnosticsTest {
                 packets.snapshot(UUID.randomUUID()), null, null,
                 probe.snapshot(), MovementPacketDiagnostics.View.DYNAMICS, clock.get());
         assertEquals(6, lines.size());
-        assertTrue(lines.stream().anyMatch(line -> line.contains("no cheat verdicts")));
+        assertTrue(lines.stream().anyMatch(line -> line.contains("Research only")
+                && line.contains("eligible 3") && line.contains("vectors 3")));
+        assertTrue(lines.stream().anyMatch(line -> line.contains("Last probe")
+                && line.contains("block STONE")));
+        assertTrue(lines.stream().anyMatch(line -> line.contains("Gate ACCEPTED")
+                && line.contains("unknown 0") && line.contains("changed 0")));
         assertTrue(lines.stream().anyMatch(line -> line.contains("Accel 1")));
         assertTrue(lines.stream().anyMatch(line -> line.contains("Steady 1")));
-        assertTrue(lines.stream().anyMatch(line -> line.contains("Speed change p50")));
-        assertTrue(lines.stream().anyMatch(line -> line.contains("NOT friction")));
+        assertTrue(lines.stream().anyMatch(line -> line.contains("slowdown")));
         assertEquals(MovementPacketDiagnostics.View.DYNAMICS,
                 MovementPacketDiagnostics.View.parse("dyn"));
         assertEquals(MovementPacketDiagnostics.View.DYNAMICS,
@@ -266,6 +270,34 @@ class MovementPacketDiagnosticsTest {
                 MovementPacketDiagnostics.View.DYNAMICS, clock.get());
         assertEquals(2, disabled.size());
         assertTrue(disabled.get(1).contains("OFF"));
+    }
+
+    @Test
+    void zeroDynamicVectorsAreExplainedInsteadOfLookingLikeSuccessfulMeasurements() {
+        var probe = new MovementGroundProbe();
+        var fixture = new MovementTickTimeline.TickInput("world",
+                new MovementPacketBuffer.Position(0, 64, 2),
+                new MovementPacketBuffer.Velocity(.2, 0, 0),
+                new MovementTickTimeline.PlayerFlags(true, false, false, false, false, false),
+                new MovementTickTimeline.Environment(true, false, true, false, false),
+                // Old fixture has no known ground material: profile can count
+                // it, but dynamics must refuse a cross-material prediction.
+                new MovementTickTimeline.ProbeContext(true, true, true, true));
+        var moved = new MovementTickTimeline.TickInput("world",
+                new MovementPacketBuffer.Position(.2, 64, 2),
+                fixture.velocity(), fixture.flags(), fixture.environment(), fixture.probeContext());
+        probe.sample(1, 50_000_000L, 0, fixture, true, true);
+        probe.sample(2, 100_000_000L, 0, moved, true, true);
+        var packets = new MovementPacketBuffer(8);
+        var lines = MovementPacketDiagnostics.render("HypersMC",
+                packets.snapshot(UUID.randomUUID()), null, null, probe.snapshot(),
+                MovementPacketDiagnostics.View.DYNAMICS, System.nanoTime());
+        assertEquals(6, lines.size());
+        assertTrue(lines.stream().anyMatch(line -> line.contains("eligible 1")
+                && line.contains("vectors 0")));
+        assertTrue(lines.stream().anyMatch(line -> line.contains("UNKNOWN_MATERIAL")
+                && line.contains("unknown 1")));
+        assertTrue(lines.stream().anyMatch(line -> line.contains("block UNKNOWN")));
     }
 
     private static MovementTickTimeline.TickInput dynamicFrame(double x) {
