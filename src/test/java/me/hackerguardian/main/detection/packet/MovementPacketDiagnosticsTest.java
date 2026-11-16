@@ -139,6 +139,39 @@ class MovementPacketDiagnosticsTest {
     }
 
     @Test
+    void researchProbeViewIsShortAndDisabledStateIsExplicit() {
+        AtomicLong clock = new AtomicLong(1_000_000_000L);
+        var buffer = new MovementPacketBuffer(16, clock::get);
+        var sample = new MovementTickTimeline.TickInput("world",
+                new MovementPacketBuffer.Position(1, 64, 2),
+                new MovementPacketBuffer.Velocity(0, 0, 0),
+                new MovementTickTimeline.PlayerFlags(true, false, false, false, false, false),
+                new MovementTickTimeline.Environment(true, false, true, false, false),
+                new MovementTickTimeline.ProbeContext(true, true, true, true));
+        var probe = new MovementGroundProbe();
+        probe.sample(1, 1_000_000_000L, 0, sample, true, true);
+        probe.sample(2, 1_050_000_000L, 0, sample, true, true);
+
+        var lines = MovementPacketDiagnostics.render("HypersMC",
+                buffer.snapshot(UUID.randomUUID()), null, null, probe.snapshot(),
+                MovementPacketDiagnostics.View.PROBE, clock.get());
+        assertEquals(6, lines.size());
+        assertTrue(lines.stream().anyMatch(line -> line.contains("NOT a cheat check")));
+        assertTrue(lines.stream().anyMatch(line -> line.contains("eligible 1")
+                && line.contains("no-decision 1")));
+        assertTrue(lines.stream().anyMatch(line -> line.contains("RESEARCH_ENVELOPE")));
+        assertTrue(lines.stream().anyMatch(line -> line.contains("Research outliers 0")));
+
+        var disabled = MovementPacketDiagnostics.render("HypersMC",
+                buffer.snapshot(UUID.randomUUID()), null, null, null,
+                MovementPacketDiagnostics.View.PROBE, clock.get());
+        assertEquals(2, disabled.size());
+        assertTrue(disabled.get(1).contains("OFF"));
+        assertEquals(MovementPacketDiagnostics.View.PROBE,
+                MovementPacketDiagnostics.View.parse("plausibility"));
+    }
+
+    @Test
     void missingTransportIsReportedWithoutInventingNetworkSuccess() {
         UUID id = UUID.randomUUID();
         var buffer = new MovementPacketBuffer(2);
