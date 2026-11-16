@@ -137,7 +137,7 @@ class PacketGroundReachabilityTest {
         assertEquals(4, beforeCorrection.runs().totalModeled());
         assertEquals(6, beforeCorrection.noDecision());
         assertEquals(2, beforeCorrection.runs().totalTimingRejects());
-        assertEquals(2, beforeCorrection.runs().warmupsBetweenTimingRejects());
+        assertEquals(2, beforeCorrection.runs().warmupsInsideTimingClusters());
         assertEquals(1, beforeCorrection.runs().acceptedRuns().completed());
         assertEquals(2L, beforeCorrection.runs().acceptedRuns().p95());
         assertEquals(2, beforeCorrection.runs().activeAcceptedRun());
