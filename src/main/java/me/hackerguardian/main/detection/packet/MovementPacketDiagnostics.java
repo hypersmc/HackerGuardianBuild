@@ -202,16 +202,21 @@ public final class MovementPacketDiagnostics {
                     lines.add("Ground dynamics OFF (enable ground probe first)");
                 } else {
                     var d = probe.dynamics();
-                    lines.add("Ground motion research ONLY, no cheat verdicts");
+                    var gate = probe.dynamicsGate();
+                    lines.add("Research only | eligible " + probe.evaluated()
+                            + " | vectors " + d.eligibleVectors()
+                            + " | paired " + d.comparedTransitions());
+                    lines.add("Last probe " + probe.lastResult()
+                            + " | block " + gate.lastMaterial());
+                    lines.add("Gate " + gate.lastReason() + " | unknown "
+                            + gate.unknownMaterialPairs()
+                            + " | changed " + gate.changedMaterialPairs());
                     lines.add("Start " + d.starts() + " Stop " + d.stops()
-                            + " | Accel " + d.accelerations() + " Slow " + d.decelerations());
+                            + " | Accel " + d.accelerations()
+                            + " Slow " + d.decelerations());
                     lines.add("Turn " + d.turns() + " Steady " + d.steady()
-                            + " | paired " + d.comparedTransitions()
-                            + " | breaks " + d.discontinuities());
-                    lines.add("Speed change p50 " + value(d.absoluteSpeedChange().p50())
-                            + " p95 " + value(d.absoluteSpeedChange().p95()) + " b/50ms");
-                    lines.add("Slowdown ratio p50 " + value(d.slowingRetention().p50())
-                            + " | NOT friction | " + d.lastSurface());
+                            + " | breaks " + d.discontinuities()
+                            + " | slowdown " + value(d.slowingRetention().p50()));
                 }
             }
             case NETWORK -> {
