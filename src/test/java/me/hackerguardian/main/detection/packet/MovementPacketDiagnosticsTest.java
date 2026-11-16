@@ -76,6 +76,30 @@ class MovementPacketDiagnosticsTest {
     }
 
     @Test
+    void tickViewStaysCompactAndDoesNotCallRawDeltaCheatEvidence() {
+        AtomicLong clock = new AtomicLong(1000);
+        var timeline = new MovementTickTimeline(clock::get);
+        timeline.observeClientPosition(new MovementPacketBuffer.Position(1, 64, 2));
+        clock.addAndGet(20_000_000L);
+        timeline.sampleServerTick(1, new MovementTickTimeline.TickInput("world",
+                new MovementPacketBuffer.Position(1.1, 64, 2),
+                new MovementPacketBuffer.Velocity(0, -0.1, 0),
+                new MovementTickTimeline.PlayerFlags(true, false, false, false, false, false),
+                new MovementTickTimeline.Environment(true, false, true, false, false)));
+        var buffer = new MovementPacketBuffer(8, clock::get);
+        var lines = MovementPacketDiagnostics.render("Tester", buffer.snapshot(UUID.randomUUID()),
+                null, timeline.snapshot(), MovementPacketDiagnostics.View.TICK, clock.get());
+        assertEquals(6, lines.size());
+        assertTrue(lines.stream().anyMatch(line -> line.contains("Raw delta")
+                && line.contains("not a verdict")));
+        var absent = new MovementTickTimeline();
+        var empty = MovementPacketDiagnostics.render("Tester", buffer.snapshot(UUID.randomUUID()),
+                null, absent.snapshot(), MovementPacketDiagnostics.View.TICK, clock.get());
+        assertEquals(2, empty.size());
+        assertTrue(empty.get(1).contains("No server tick samples"));
+    }
+
+    @Test
     void missingTransportIsReportedWithoutInventingNetworkSuccess() {
         UUID id = UUID.randomUUID();
         var buffer = new MovementPacketBuffer(2);
@@ -95,6 +119,8 @@ class MovementPacketDiagnosticsTest {
                 MovementPacketDiagnostics.View.parse("MOVE"));
         assertEquals(MovementPacketDiagnostics.View.NETWORK,
                 MovementPacketDiagnostics.View.parse("net"));
+        assertEquals(MovementPacketDiagnostics.View.TICK,
+                MovementPacketDiagnostics.View.parse("tick"));
         assertNull(MovementPacketDiagnostics.View.parse("everything"));
     }
 }
