@@ -167,15 +167,17 @@ public final class MovementPacketDiagnostics {
                     lines.add("Observe-only ground research, NOT a cheat check");
                     lines.add("Tick samples " + probe.tickSamples() + " | eligible "
                             + probe.evaluated() + " | no-decision " + probe.noDecision());
-                    lines.add("Last " + probe.lastResult() + " @tick " + probe.lastTick());
+                    lines.add("Last " + probe.lastResult() + " | terrain skips "
+                            + probe.unsafeTerrainSamples());
                     if (probe.horizontalDistance() == null || probe.envelope() == null) {
-                        lines.add("Ground movement: no eligible consecutive pair");
+                        lines.add("Surface clue: " + probe.lastSurfaceReason());
                     } else {
-                        lines.add(String.format(Locale.ROOT, "Horizontal %.3f | loose envelope %.3f blocks",
+                        lines.add(String.format(Locale.ROOT, "Horizontal %.3f | loose bound %.3f",
                                 probe.horizontalDistance(), probe.envelope()));
                     }
-                    lines.add("Research outliers " + probe.researchOutliers()
-                            + " | consecutive " + probe.consecutiveOutlierSamples());
+                    lines.add("No-client " + probe.noClientDataSamples()
+                            + " | special " + probe.specialMovementSamples()
+                            + " | research outliers " + probe.researchOutliers());
                 }
             }
             case NETWORK -> {
