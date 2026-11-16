@@ -15,7 +15,7 @@ public final class MovementPacketDiagnostics {
 
     public enum View {
         SUMMARY, MOVEMENT, NETWORK, TICK, GUARDS, PROBE, PROFILE, DYNAMICS, IDLE,
-        PREDICT, RESIDUALS, SWITCHES, HEADING, TIMING;
+        PREDICT, RESIDUALS, SWITCHES, HEADING, TIMING, RUNS;
 
         public static View parse(String name) {
             if (name == null || name.isBlank()) return SUMMARY;
@@ -34,6 +34,7 @@ public final class MovementPacketDiagnostics {
                 case "switch", "switches", "trans", "transitions" -> SWITCHES;
                 case "heading", "headings", "angles", "turns" -> HEADING;
                 case "timing", "tickhints", "sync" -> TIMING;
+                case "runs", "clusters", "runlengths" -> RUNS;
                 default -> null;
             };
         }
@@ -92,7 +93,7 @@ public final class MovementPacketDiagnostics {
                 }
                 // Print the command suffixes rather than the long full
                 // command: avoid wrapping the five-line default in chat.
-                lines.add("Views: move|net|tick|guards|probe|profile|dyn|idle|predict|res|trans|heading|timing");
+                lines.add("Views: move|net|tick|guards|probe|profile|dyn|idle|predict|res|trans|heading|timing|runs");
             }
             case MOVEMENT -> {
                 lines.add("Received " + packet.totalReceived() + " | Retained " + packet.retained()
@@ -361,6 +362,36 @@ public final class MovementPacketDiagnostics {
                             + " other " + t.warmupAfterOther());
                 }
             }
+            case RUNS -> {
+                if (prediction == null) {
+                    lines.add("Packet run research OFF (opt-in)");
+                } else if (!prediction.enabled()) {
+                    lines.add("Packet run model unavailable for this version");
+                } else {
+                    var r = prediction.runs();
+                    var accepted = r.acceptedRuns();
+                    var clusters = r.timingClusters();
+                    lines.add("Model runs | SERVER tick hints, NOT client ticks");
+                    lines.add("Accepted runs n " + accepted.completed()
+                            + " p50 " + count(accepted.p50())
+                            + " p95 " + count(accepted.p95())
+                            + " max " + count(accepted.max())
+                            + " live " + r.activeAcceptedRun());
+                    lines.add("Runs len1 " + r.singleRuns()
+                            + " len2-4 " + r.runs2to4()
+                            + " len5-19 " + r.runs5to19()
+                            + " len20+ " + r.runs20Plus());
+                    lines.add("Gap clusters n " + clusters.completed()
+                            + " p50 " + count(clusters.p50())
+                            + " p95 " + count(clusters.p95())
+                            + " max " + count(clusters.max())
+                            + " live " + r.activeTimingCluster());
+                    lines.add("Gap singles " + r.isolatedTimingClusters()
+                            + " multi " + r.multiTimingClusters()
+                            + " | timing reject " + r.totalTimingRejects()
+                            + " | warmups between " + r.warmupsBetweenTimingRejects());
+                }
+            }
             case NETWORK -> {
                 if (transport == null) {
                     lines.add("Transport tracking unavailable");
@@ -390,6 +421,10 @@ public final class MovementPacketDiagnostics {
             }
         }
         return List.copyOf(lines);
+    }
+
+    private static String count(Long value) {
+        return value == null ? "n/a" : value.toString();
     }
 
     private static String value(Double number) {
