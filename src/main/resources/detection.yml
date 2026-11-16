@@ -13,6 +13,14 @@ DetectionV2:
   # Recent assessments retained in RAM per online player.
   history_size: 20
 
+  # Optional foundation for future packet-aware movement checks. Stores only
+  # inbound packet kinds, receive order and monotonic arrival times in memory.
+  # OFF by default until verified on a real Paper server. It has no verdict,
+  # replay, persistence or punishment side effects. ProtocolLib is required.
+  packet_observation:
+    enabled: false
+    max_packets_per_player: 256
+
   detectors:
     reach:
       enabled: true
