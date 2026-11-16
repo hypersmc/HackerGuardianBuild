@@ -14,7 +14,7 @@ import java.util.concurrent.TimeUnit;
 public final class MovementPacketDiagnostics {
 
     public enum View {
-        SUMMARY, MOVEMENT, NETWORK, TICK, GUARDS;
+        SUMMARY, MOVEMENT, NETWORK, TICK, GUARDS, PROBE;
 
         public static View parse(String name) {
             if (name == null || name.isBlank()) return SUMMARY;
@@ -24,6 +24,7 @@ public final class MovementPacketDiagnostics {
                 case "network", "net" -> NETWORK;
                 case "tick", "state" -> TICK;
                 case "guards", "guard", "safety" -> GUARDS;
+                case "probe", "plausibility" -> PROBE;
                 default -> null;
             };
         }
@@ -40,6 +41,14 @@ public final class MovementPacketDiagnostics {
     public static List<String> render(String name, MovementPacketBuffer.Snapshot packet,
                                       MovementPacketTransport.Snapshot transport,
                                       MovementTickTimeline.Snapshot ticks,
+                                      View view, long nowNanos) {
+        return render(name, packet, transport, ticks, null, view, nowNanos);
+    }
+
+    public static List<String> render(String name, MovementPacketBuffer.Snapshot packet,
+                                      MovementPacketTransport.Snapshot transport,
+                                      MovementTickTimeline.Snapshot ticks,
+                                      MovementGroundProbe.Snapshot probe,
                                       View view, long nowNanos) {
         if (packet == null || view == null) throw new IllegalArgumentException("snapshot and view required");
         List<String> lines = new ArrayList<>();
@@ -63,7 +72,7 @@ public final class MovementPacketDiagnostics {
                             + transport.matchedConfirms() + " | pending " + transport.pendingTeleports()
                             + " | unmatched " + transport.unmatchedConfirms());
                 }
-                lines.add("Details: /hg detection packets " + player + " move|net|tick|guards");
+                lines.add("Details: /hg detection packets " + player + " move|net|tick|guards|probe");
             }
             case MOVEMENT -> {
                 lines.add("Received " + packet.totalReceived() + " | Retained " + packet.retained()
@@ -149,6 +158,24 @@ public final class MovementPacketDiagnostics {
                             ? "none" : g.lastSuppression())
                             + " @tick " + (g.lastSuppressionTick() < 0
                             ? "n/a" : g.lastSuppressionTick()));
+                }
+            }
+            case PROBE -> {
+                if (probe == null) {
+                    lines.add("Ground research probe OFF (opt-in in detection.yml)");
+                } else {
+                    lines.add("Observe-only ground research, NOT a cheat check");
+                    lines.add("Tick samples " + probe.tickSamples() + " | eligible "
+                            + probe.evaluated() + " | no-decision " + probe.noDecision());
+                    lines.add("Last " + probe.lastResult() + " @tick " + probe.lastTick());
+                    if (probe.horizontalDistance() == null || probe.envelope() == null) {
+                        lines.add("Ground movement: no eligible consecutive pair");
+                    } else {
+                        lines.add(String.format(Locale.ROOT, "Horizontal %.3f | loose envelope %.3f blocks",
+                                probe.horizontalDistance(), probe.envelope()));
+                    }
+                    lines.add("Research outliers " + probe.researchOutliers()
+                            + " | consecutive " + probe.consecutiveOutlierSamples());
                 }
             }
             case NETWORK -> {
