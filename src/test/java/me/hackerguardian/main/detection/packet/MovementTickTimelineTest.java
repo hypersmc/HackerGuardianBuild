@@ -87,6 +87,22 @@ class MovementTickTimelineTest {
     }
 
     @Test
+    void pendingTeleportPreventsDiagnosticComparisonEvenWhenTicksContinue() {
+        AtomicLong clock = new AtomicLong(1);
+        var timeline = new MovementTickTimeline(clock::incrementAndGet);
+        timeline.sampleServerTick(1, tick("world", 0));
+        timeline.observeClientPosition(new MovementPacketBuffer.Position(0, 64, 10));
+        timeline.sampleServerTick(2, tick("world", 0));
+        assertEquals(MovementTickTimeline.Status.READY_DIAGNOSTIC,
+                timeline.snapshot().comparison().status());
+        assertEquals(MovementTickTimeline.Status.PENDING_TELEPORT,
+                timeline.snapshot(true).comparison().status());
+        assertNull(timeline.snapshot(true).comparison().positionDifference());
+        assertEquals(MovementTickTimeline.Status.READY_DIAGNOSTIC,
+                timeline.snapshot(false).comparison().status());
+    }
+
+    @Test
     void worldSwitchCannotBeComparedEvenWithoutTeleportCallback() {
         AtomicLong time = new AtomicLong(1);
         var timeline = new MovementTickTimeline(time::incrementAndGet);
