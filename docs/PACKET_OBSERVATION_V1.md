@@ -565,7 +565,7 @@ two `/hg detection packets HypersMC guards` screenshots. Both showed:
 - Velocity boundaries: `4` (previous teleport-test reading had `0`).
 - Invalidated pending: `0`; invalidated completed: `4`
   (previous reading `2`).
-- Recovery-window suppressions: `8` (previous reading `4`).
+- Recovery-window suppressions: `6` in the first new screenshot and `8` in the second (previous teleport-test reading `4`). Two additional recovery comparisons were suppressed between the two new screenshots, even though the correction boundary totals stayed unchanged.
 - Pending-teleport and context suppressions: both `0`.
 - Successful diagnostic pairs: `465` then `548`.
 - Latched status: `CORRECTION_WINDOW`, last suppressed tick `3346`
@@ -577,8 +577,8 @@ were invalidated/recovery comparisons suppressed since the preceding
 teleport test. Normal diagnostic pairing continued (465 to 548). The two
 new screenshots were both taken *after* entering Survival/testing knockback,
 not a direct immediate-before/after pair for one zombie strike; therefore the
-exact `+4` velocity boundaries or `+4` suppressions cannot be uniquely
-attributed to one hit. A velocity boundary counts callbacks, not unique
+exact `+4` velocity boundaries or `+4` suppressions (relative to the older
+teleport-test reading) cannot be uniquely attributed to one hit. A velocity boundary counts callbacks, not unique
 knockback incidents. No cheat finding or punishment has been introduced.
 
 ## Next increment
