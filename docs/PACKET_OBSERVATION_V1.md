@@ -422,9 +422,25 @@ not imply that a previous `TELEPORT_CONFIRM` is the current cause of
 movement, pair rollover, expiration, correction invalidation and pending
 teleport suppression.
 
-**Runtime status:** corrected code requires a new in-game flight test.
-The user screenshots predate this fix. This diagnostic is still not a
-Speed/Fly finding or client-physics prediction.
+### Ground/Creative flight regression retest (2026-11-16)
+
+The tester rebuilt the corrected branch and provided screenshots of repeated
+`/hg detection packets HypersMC tick` readings while alternating between
+Creative flight and being on the ground:
+
+- Server tick 1289: `ground=false`, `flying=true`, feet/below passable,
+  `Last pair delta 0.000`, gap 36.5 ms.
+- Server tick 1361: `ground=true`, `flying=false`, feet passable,
+  below not passable, `Last pair delta 0.000`, gap 39.3 ms.
+- Server tick 1390: `ground=false`, `flying=true`, feet/below passable,
+  `Last pair delta 0.000`, gap 40.3 ms.
+
+**Result:** pass for this single-server continuous-movement/ground-flight
+diagnostic regression test. Completed position comparisons remained available
+instead of repeatedly showing `AWAITING_NEXT_TICK`, and the Bukkit movement
+mode/block context changed consistently with the tester's actions. This does
+NOT validate client physics prediction, lag/teleport/knockback boundary
+handling, multi-version compatibility, or detection accuracy.
 
 ## Next increment
 
