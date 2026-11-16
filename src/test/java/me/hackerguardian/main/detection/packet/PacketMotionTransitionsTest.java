@@ -39,6 +39,10 @@ class PacketMotionTransitionsTest {
         assertEquals(2, snapshot.taggedWalk());
         assertEquals(2, snapshot.switchResiduals().walking().total());
         assertEquals(.1276, snapshot.switchResiduals().walking().max(), 1e-12);
+        assertEquals(2, snapshot.switchDisplacements().enteringWalk().total());
+        assertEquals(.281, snapshot.switchDisplacements().enteringWalk().p95(), 1e-12);
+        assertEquals(0, snapshot.switchDisplacements().enteringWalk().nearZero());
+        assertEquals(0, snapshot.switchDisplacements().enteringWalk().dragLike());
         assertEquals(0, snapshot.taggedSprint());
         assertFalse(snapshot.lastWasTransition());
 
@@ -47,6 +51,7 @@ class PacketMotionTransitionsTest {
         assertEquals(1, data.snapshot().walkToSprint());
         assertEquals(1, data.snapshot().taggedSprint());
         assertEquals(1, data.snapshot().switchResiduals().sprinting().total());
+        assertEquals(.281, data.snapshot().switchDisplacements().enteringSprint().p95(), 1e-12);
     }
 
     @Test
@@ -56,10 +61,12 @@ class PacketMotionTransitionsTest {
         data.interruption();
         assertFalse(data.observe(12, 1, true, .216, 0, .281, 0, .127, 0));
         assertEquals(0, data.snapshot().taggedSprint());
+        assertEquals(0, data.snapshot().switchDisplacements().enteringSprint().total());
         data.sprintChange(20, 2, true, false);
         assertFalse(data.observe(22, 3, false, .281, 0, .216, 0, .10, 0),
                 "A correction epoch change cannot share a post-switch window");
         assertEquals(0, data.snapshot().taggedWalk());
+        assertEquals(0, data.snapshot().switchDisplacements().enteringWalk().total());
         assertEquals(2, data.snapshot().accelerating() +
                 data.snapshot().decelerating() + data.snapshot().turning() +
                 data.snapshot().steady(), "Both packets were still research-only phase samples");
@@ -77,6 +84,8 @@ class PacketMotionTransitionsTest {
         var snapshot = data.snapshot();
         assertEquals(250, snapshot.taggedWalk());
         assertEquals(128, snapshot.switchResiduals().walking().retained());
+        assertEquals(250, snapshot.switchDisplacements().enteringWalk().total());
+        assertEquals(128, snapshot.switchDisplacements().enteringWalk().retained());
         assertEquals(250, snapshot.switchResiduals().walking().total());
         assertEquals(.249, snapshot.switchResiduals().walking().max(), 1e-12);
         assertThrows(IllegalArgumentException.class,
