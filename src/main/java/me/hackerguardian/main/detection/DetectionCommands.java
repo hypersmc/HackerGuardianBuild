@@ -131,7 +131,34 @@ public final class DetectionCommands {
                 }
             }
         }
-        sender.sendMessage(tx.playerText(" §8Raw client claims + Bukkit server intent only; no cheat verdict."));
+        me.hackerguardian.main.detection.packet.MovementPacketTransport.Snapshot wire =
+                observer.transportSnapshot(target);
+        if (wire != null) {
+            sender.sendMessage(tx.playerText(" §7Teleport packets observed: §f" + wire.sentTeleports()
+                    + " §8| §7Client confirms: §f" + wire.receivedConfirms()));
+            sender.sendMessage(tx.playerText(" §7Matched: §f" + wire.matchedConfirms()
+                    + " §8| §7Pending: §f" + wire.pendingTeleports()
+                    + " §8| §7Unmatched: §f" + wire.unmatchedConfirms()));
+            sender.sendMessage(tx.playerText(" §7Resends: §f" + wire.resends()
+                    + " §8| §7Expired/evicted: §f" + wire.expiredOrEvicted()
+                    + " §8| §7ID decode errors: §f" + wire.unreadableIds()));
+            sender.sendMessage(tx.playerText(" §7Movement received while pending: §f"
+                    + wire.movementWhilePending()));
+            if (wire.lastMatchedId() != null) {
+                sender.sendMessage(tx.playerText(" §7Last matched teleport ID: §f"
+                        + wire.lastMatchedId() + " §8| §7Movement before ACK: §f"
+                        + wire.lastMatchMovementCount()));
+            }
+            sender.sendMessage(tx.playerText(" §7Self-velocity packets observed: §f"
+                    + wire.outboundSelfVelocities()
+                    + " §8| §7Unknown payload: §f" + wire.unknownVelocityPayloads()));
+            if (!wire.recentEvents().isEmpty()) {
+                var last = wire.recentEvents().get(wire.recentEvents().size() - 1);
+                sender.sendMessage(tx.playerText(" §7Last transport event: §f"
+                        + last.kind() + " §8(" + last.result() + ")"));
+            }
+        }
+        sender.sendMessage(tx.playerText(" §8Observed send/receive callbacks, not proof of delivery or a cheat verdict."));
     }
 
     private void showAssessment(CommandSender sender, Player target) {
