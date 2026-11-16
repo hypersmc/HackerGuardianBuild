@@ -51,7 +51,9 @@ A pair must have:
 - Survival/Adventure (not Creative/Spectator), grounded at *both* samples;
   no flight, Elytra, swimming, or vehicle movement;
 - an ordinary full block under the player's feet from a tiny allowlist
-  (`STONE`, `DIRT`, `GRASS_BLOCK`, `COBBLESTONE`, `DEEPSLATE`);
+  (`STONE`, `DIRT`, `GRASS_BLOCK`, `COBBLESTONE`, `DEEPSLATE`,
+  `STONE_BRICKS`, common vanilla planks, `ANDESITE`, `DIORITE`,
+  `GRANITE`, `SANDSTONE`);
 - block passability/liquid hints compatible with ordinary flat ground,
   feet near an integer Y coordinate, no active potion effects,
   standard Bukkit walk speed, no plugin-granted flight or Riptide;
@@ -82,6 +84,45 @@ and it should never be used in any enforcement policy.
   `UNKNOWN_PHYSICS`: no decision. These are expected, not failures.
 - `eligible` and `no-decision` count sampled tick pairs and do not
   measure detection accuracy, false-positive rate, or client packet loss.
+
+## Survival retest: zero eligible samples (2026-11-16)
+
+The tester ran the probe in Survival and saw **0 eligible / 1037
+no-decision samples**. Repeated last statuses included `UNSAFE_TERRAIN`
+and `NO_CLIENT_DATA`; research outliers remained 0.
+
+This is **not proof of legitimate or illegitimate movement**, and does not
+mean the packet observer itself failed. An eligible sample must pass a chain
+of conservative conditions. The original allowlist (only five ground block
+types) and strict full-block Y test could exclude normal-looking surfaces
+such as stone-brick paths, wood floors, dirt paths, partial blocks, and
+players still granted flight permission by another plugin. The screenshot
+alone cannot identify which of these applied.
+
+To diagnose rather than blindly enable all surfaces:
+
+- Extend the allowlist modestly to ordinary, common full blocks with
+  conventional ground friction. Keep partial blocks, ice, slime, honey,
+  dirt paths and water outside this first version.
+- Store **cumulative terrain skips, missing-client skips, and special
+  movement skips**, not just the last status.
+- Preserve the **last precise terrain explanation**, such as
+  `feet=DIRT_PATH`, `below=UNKNOWN_BLOCK`, `feetY-offset=0.938`
+  or `flight permission enabled`, even when the latest tick has
+  `NO_CLIENT_DATA`.
+- Keep the `probe` view at six lines. The **Surface clue** is historical
+  and must not be mistaken for the current block if the player has moved.
+
+For the next test, use `/hg detection packets HypersMC probe` in
+Survival while walking on a large level platform of full `STONE` or
+`GRASS_BLOCK` blocks. If eligible remains 0, read the surface clue and
+the cumulative skip counters. A result like `feet=DIRT_PATH` is
+correctly ineligible, while `flight permission enabled` means the
+player still has an altered movement capability in Survival.
+
+**No default enablement, detection scoring, report events or enforcement
+was changed.** CI and a fresh Paper runtime retest are needed to confirm
+the updated explanations and eligibility.
 
 ## Solo test
 
