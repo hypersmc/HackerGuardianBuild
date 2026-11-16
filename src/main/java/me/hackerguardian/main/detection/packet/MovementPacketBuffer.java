@@ -29,6 +29,46 @@ public final class MovementPacketBuffer {
         public int retained() {
             return observations.size();
         }
+
+        /**
+         * Counts packet kinds in the recent receive-time window. Only the bounded
+         * retained history is available, so a sufficiently busy client may have
+         * truncated the requested window. No result is a cheat verdict.
+         *
+         * @param nowNanos System.nanoTime() from the same VM/clock origin
+         * @param windowNanos positive receive-time window duration
+         */
+        public WindowStats recentWindow(long nowNanos, long windowNanos) {
+            if (windowNanos <= 0L) throw new IllegalArgumentException("windowNanos must be positive");
+            long ground = 0, position = 0, look = 0, positionLook = 0;
+            for (Observation observation : observations) {
+                long age = nowNanos - observation.arrivalNanos();
+                if (age < 0 || age > windowNanos) continue;
+                switch (observation.kind()) {
+                    case GROUND -> ground++;
+                    case POSITION -> position++;
+                    case LOOK -> look++;
+                    case POSITION_LOOK -> positionLook++;
+                }
+            }
+            // Dropped history is relevant only if the oldest retained observation
+            // lies inside this window: older drops cannot affect the recent counts.
+            boolean truncated = dropped > 0 && !observations.isEmpty()
+                    && nowNanos - observations.get(0).arrivalNanos() >= 0
+                    && nowNanos - observations.get(0).arrivalNanos() < windowNanos;
+            return new WindowStats(windowNanos, ground, position, look, positionLook, truncated);
+        }
+    }
+
+    public record WindowStats(long windowNanos, long ground, long position,
+                              long look, long positionLook, boolean truncated) {
+        public long count() {
+            return ground + position + look + positionLook;
+        }
+
+        public double ratePerSecond() {
+            return count() * 1_000_000_000.0 / windowNanos;
+        }
     }
 
     private final int maxPerPlayer;
