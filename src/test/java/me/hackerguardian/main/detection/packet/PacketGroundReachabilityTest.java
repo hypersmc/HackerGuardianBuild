@@ -330,6 +330,65 @@ class PacketGroundReachabilityTest {
     }
 
     @Test
+    void rightAngleClientPacketMotionIsMeasuredWithoutUsingBukkitYaw() {
+        var model = new PacketGroundReachability(version("1.20.2"));
+        model.observe(at(0, 64, 0, true), context(1));
+        model.observe(at(.2, 64, 0, true), context(2));
+        model.observe(at(.2, 64, .2, true), context(3)); // actual 90-degree XZ turn
+
+        var result = model.snapshot();
+        assertEquals(1, result.modeledTriples());
+        assertEquals(1, result.transitions().turning());
+        assertEquals(1, result.transitions().headings().measured());
+        assertEquals(1, result.transitions().headings().over35());
+        assertEquals(90, result.transitions().headings().p95(), 1e-9);
+        assertEquals(0, result.transitions().headings().lowMotion());
+        assertEquals(2, result.noDecision());
+    }
+
+    @Test
+    void headingsExplainExcludedPacketsWithoutInventingDirectionalAngles() {
+        var model = new PacketGroundReachability(version("1.20.2"));
+        model.observe(at(0, 64, 0, true), null); // no server sample
+        model.observe(at(0, 64, 0, true), context(1)); // warmup
+        model.observe(at(.2, 64, 0, true), context(2)); // warmup
+        model.observe(at(.2, 64, .2, true), context(3)); // 90-degree turn
+        model.observe(at(.2001, 64, .2001, true), context(4)); // too slow for heading
+        model.observe(at(.2, 64, .2, false), context(5)); // client claim invalid
+        model.observe(at(.2, 64, .2, true), context(6)); // warmup
+        model.observe(at(.3, 64, .2, true), context(8)); // tick gap
+
+        var creative = new MovementTickTimeline.TickInput("world",
+                flatGround().position(), flatGround().velocity(),
+                new MovementTickTimeline.PlayerFlags(false, true, false, false, false, true),
+                flatGround().environment(), flatGround().probeContext());
+        model.observe(at(.4, 64, .2, true), new PacketGroundReachability.Context(
+                9, 0, true, false, creative));
+        model.observe(at(.5, 64, .2, true), new PacketGroundReachability.Context(
+                10, 0, false, true, flatGround())); // correction pending
+        model.observe(at(.6, 64, .2, true), new PacketGroundReachability.Context(
+                11, 0, true, false, flatGround(), false, 200_000_000L));
+
+        var result = model.snapshot();
+        var excluded = result.headingSkips();
+        assertEquals(11, result.positionPackets());
+        assertEquals(2, result.modeledTriples());
+        assertEquals(9, result.noDecision());
+        assertEquals(3, excluded.warmup());
+        assertEquals(2, excluded.timing());
+        assertEquals(1, excluded.context());
+        assertEquals(1, excluded.invalidPacket());
+        assertEquals(1, excluded.correction());
+        assertEquals(1, excluded.unavailable());
+        assertEquals(result.noDecision(), excluded.warmup() + excluded.timing()
+                + excluded.context() + excluded.invalidPacket()
+                + excluded.correction() + excluded.unavailable());
+        assertEquals(1, result.transitions().headings().measured());
+        assertEquals(1, result.transitions().headings().lowMotion());
+        assertEquals(90, result.transitions().headings().max(), 1e-9);
+    }
+
+    @Test
     void boundedSessionStateDoesNotGrowWithPacketCount() {
         var model = new PacketGroundReachability(version("1.20.2"));
         for (int i = 1; i <= 5000; i++) {
