@@ -277,6 +277,34 @@ public final class MovementTickTimeline {
                 lastSuppressionTick);
     }
 
+    /**
+     * Immutable context for packet-thread research. The tick number is only
+     * the most recent Bukkit scheduler sample, never a client tick. Avoid
+     * copying 64 history objects for each inbound packet.
+     */
+    public synchronized PacketGroundReachability.Context packetResearchContext(
+            boolean pendingTeleport) {
+        ServerTick latest = ticks.peekLast();
+        if (latest == null) return null;
+        ServerTick previous = null;
+        var descending = ticks.descendingIterator();
+        if (descending.hasNext()) descending.next();
+        if (descending.hasNext()) previous = descending.next();
+
+        boolean stableSpacing = false;
+        if (previous != null) {
+            long delta = latest.sampledNanos() - previous.sampledNanos();
+            stableSpacing = latest.tick() == previous.tick() + 1
+                    && delta >= 25_000_000L && delta <= 125_000_000L;
+        }
+        long age = Math.max(0L, clock.getAsLong() - latest.sampledNanos());
+        boolean settled = !pendingTeleport && (correctionSampleCount == Long.MIN_VALUE
+                || sampledCount - correctionSampleCount > MIN_STABLE_SAMPLES_AFTER_CORRECTION);
+        return new PacketGroundReachability.Context(latest.tick(),
+                correctionEpoch, settled, pendingTeleport,
+                latest.state(), stableSpacing, age);
+    }
+
     /** A recent, current-epoch inbound client position is needed for the
      *  research probe, though the measured displacement is server-side.
      *  Does not mutate timeline state.
