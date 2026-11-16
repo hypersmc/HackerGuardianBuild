@@ -6,6 +6,7 @@ import com.comphenix.protocol.events.ListenerPriority;
 import com.comphenix.protocol.events.PacketAdapter;
 import com.comphenix.protocol.events.PacketEvent;
 import me.hackerguardian.main.HackerGuardian;
+import me.hackerguardian.compat.MinecraftVersion;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -39,6 +40,8 @@ public final class MovementPacketObserver implements Listener {
     private final HackerGuardian plugin;
     private final MovementPacketBuffer buffer;
     private final boolean groundProbeEnabled;
+    private final boolean packetPredictorEnabled;
+    private final PacketGroundReachability.Profile packetModel;
     private final Map<Player, Session> sessions = new ConcurrentHashMap<>();
     private BukkitTask tickTask;
     private long schedulerTickIndex;
@@ -52,9 +55,17 @@ public final class MovementPacketObserver implements Listener {
 
     public MovementPacketObserver(HackerGuardian plugin, int maxPerPlayer,
                                   boolean groundProbeEnabled) {
+        this(plugin, maxPerPlayer, groundProbeEnabled, false, null);
+    }
+
+    public MovementPacketObserver(HackerGuardian plugin, int maxPerPlayer,
+                                  boolean groundProbeEnabled, boolean packetPredictorEnabled,
+                                  MinecraftVersion serverVersion) {
         this.plugin = plugin;
         this.buffer = new MovementPacketBuffer(maxPerPlayer);
         this.groundProbeEnabled = groundProbeEnabled;
+        this.packetPredictorEnabled = groundProbeEnabled && packetPredictorEnabled;
+        this.packetModel = PacketGroundReachability.Profile.forMinecraft(serverVersion);
     }
 
     public void start() {
@@ -138,6 +149,12 @@ public final class MovementPacketObserver implements Listener {
 
     public boolean isRunning() {
         return running;
+    }
+
+    /** Packet-coordinate research, not a detector or a Bukkit-speed profile. */
+    public PacketGroundReachability.Snapshot packetPredictionSnapshot(Player player) {
+        Session session = player == null ? null : sessions.get(player);
+        return session == null ? null : session.packetPredictionSnapshot();
     }
 
     /** Pure research statistics, intentionally disconnected from detection and enforcement. */
@@ -250,6 +267,8 @@ public final class MovementPacketObserver implements Listener {
         private final MovementTickTimeline timeline = new MovementTickTimeline();
         private final MovementGroundProbe groundProbe = groundProbeEnabled
                 ? new MovementGroundProbe() : null;
+        private final PacketGroundReachability packetPrediction = packetPredictorEnabled
+                ? new PacketGroundReachability(packetModel) : null;
         private int selfEntityId;
         private boolean active = true;
 
@@ -281,6 +300,10 @@ public final class MovementPacketObserver implements Listener {
             return active && groundProbe != null ? groundProbe.snapshot() : null;
         }
 
+        private synchronized PacketGroundReachability.Snapshot packetPredictionSnapshot() {
+            return active && packetPrediction != null ? packetPrediction.snapshot() : null;
+        }
+
         private synchronized void sampleServerTick(long tick, MovementTickTimeline.TickInput input) {
             if (!active) return;
             boolean pendingTeleport = transport.hasPendingTeleport();
@@ -301,6 +324,15 @@ public final class MovementPacketObserver implements Listener {
                 if (state != null && state.decoded() && state.position() != null) {
                     timeline.observeClientPosition(state.position());
                 }
+                if (packetPrediction != null
+                        && (kind == MovementPacketBuffer.Kind.POSITION
+                            || kind == MovementPacketBuffer.Kind.POSITION_LOOK)) {
+                    // All Bukkit references were copied into immutable
+                    // tick state on the main thread; never use Player APIs
+                    // during ProtocolLib's packet receive callback.
+                    var context = timeline.packetResearchContext(transport.hasPendingTeleport());
+                    packetPrediction.observe(state, context);
+                }
             }
         }
 
@@ -310,6 +342,7 @@ public final class MovementPacketObserver implements Listener {
                 buffer.recordServerTeleport(playerId, worldKey, position, rotation, cause);
                 transport.serverTeleportIntent();
                 timeline.markCorrection(MovementTickTimeline.Correction.BUKKIT_TELEPORT);
+                if (packetPrediction != null) packetPrediction.correction();
             }
         }
 
@@ -318,6 +351,7 @@ public final class MovementPacketObserver implements Listener {
                 buffer.recordServerVelocity(playerId, worldKey, velocity);
                 transport.serverVelocityIntent(velocity);
                 timeline.markCorrection(MovementTickTimeline.Correction.BUKKIT_VELOCITY);
+                if (packetPrediction != null) packetPrediction.correction();
             }
         }
 
@@ -325,6 +359,7 @@ public final class MovementPacketObserver implements Listener {
             if (active) {
                 transport.outboundTeleport(id);
                 timeline.markCorrection(MovementTickTimeline.Correction.OUTBOUND_TELEPORT);
+                if (packetPrediction != null) packetPrediction.correction();
             }
         }
 
@@ -332,6 +367,7 @@ public final class MovementPacketObserver implements Listener {
             if (active) {
                 transport.inboundConfirm(id);
                 timeline.markCorrection(MovementTickTimeline.Correction.TELEPORT_CONFIRM);
+                if (packetPrediction != null) packetPrediction.correction();
             }
         }
 
@@ -347,6 +383,7 @@ public final class MovementPacketObserver implements Listener {
             transport.observedOutboundVelocity(targetId, selfEntityId, velocity);
             if (targetId != null && targetId.intValue() == selfEntityId) {
                 timeline.markCorrection(MovementTickTimeline.Correction.OUTBOUND_SELF_VELOCITY);
+                if (packetPrediction != null) packetPrediction.correction();
             }
         }
 
