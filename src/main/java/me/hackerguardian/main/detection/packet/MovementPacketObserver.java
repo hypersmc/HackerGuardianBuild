@@ -251,9 +251,14 @@ public final class MovementPacketObserver implements Listener {
 
         private synchronized void outboundSelfVelocity(com.comphenix.protocol.events.PacketContainer packet) {
             if (!active) return;
-            MovementWireDecoder.SelfVelocity value =
-                    MovementWireDecoder.selfVelocity(packet, selfEntityId);
-            if (value.forSelf()) transport.outboundSelfVelocity(value.velocity());
+            Integer targetId = MovementWireDecoder.velocityTargetId(packet);
+            MovementPacketBuffer.Velocity velocity = null;
+            if (targetId != null && targetId.intValue() == selfEntityId) {
+                MovementWireDecoder.SelfVelocity decoded =
+                        MovementWireDecoder.selfVelocity(packet, selfEntityId);
+                velocity = decoded.forSelf() ? decoded.velocity() : null;
+            }
+            transport.observedOutboundVelocity(targetId, selfEntityId, velocity);
         }
 
         private synchronized void close() {
