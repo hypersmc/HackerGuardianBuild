@@ -15,6 +15,7 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
+import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.event.player.PlayerVelocityEvent;
 import org.bukkit.Location;
@@ -175,6 +176,12 @@ public final class MovementPacketObserver implements Listener {
     }
 
     @EventHandler
+    public void onChangedWorld(PlayerChangedWorldEvent event) {
+        Session session = sessions.get(event.getPlayer());
+        if (session != null) session.markCorrection(MovementTickTimeline.Correction.WORLD_CHANGE);
+    }
+
+    @EventHandler
     public void onQuit(PlayerQuitEvent event) {
         Session session = sessions.remove(event.getPlayer());
         if (session != null) session.close();
@@ -236,7 +243,14 @@ public final class MovementPacketObserver implements Listener {
         }
 
         private synchronized void updateEntityId(int entityId) {
-            if (active) selfEntityId = entityId;
+            if (active) {
+                selfEntityId = entityId;
+                timeline.markCorrection(MovementTickTimeline.Correction.RESPAWN);
+            }
+        }
+
+        private synchronized void markCorrection(MovementTickTimeline.Correction reason) {
+            if (active) timeline.markCorrection(reason);
         }
 
         private synchronized MovementPacketTransport.Snapshot transportSnapshot() {
