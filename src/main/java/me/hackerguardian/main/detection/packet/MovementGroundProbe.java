@@ -136,12 +136,12 @@ public final class MovementGroundProbe {
         var e = input.environment();
         var p = input.probeContext();
         if (!p.verified()) return "profile unverified";
+        // Prefer the precise sampler reason (block material, fractional Y
+        // or flight permission) over a generic feet-blocked hint.
+        if (!p.surfaceReason().isBlank()) return p.surfaceReason();
         if (!e.feetPassable()) return "feet blocked";
         if (!e.headPassable()) return "head blocked";
-        if (!p.ordinaryFlatSurface()) {
-            return p.surfaceReason().isBlank() ? "ordinary surface not verified"
-                    : p.surfaceReason();
-        }
+        if (!p.ordinaryFlatSurface()) return "ordinary surface not verified";
         if (e.belowPassable()) return "below passable";
         if (e.feetLiquid() || e.belowLiquid()) return "liquid nearby";
         return "terrain unknown";
