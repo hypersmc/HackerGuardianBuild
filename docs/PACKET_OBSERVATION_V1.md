@@ -63,16 +63,26 @@ Operators with `hg.admin.detection` can run:
 /hg detection packets <online-player>
 ```
 
-The command shows the accumulated received count for the current session,
-retained history length, overwritten count, latest movement packet kind, and
-sequence. It also displays a **recent five-second breakdown** of POSITION,
-POSITION_LOOK, LOOK and GROUND packets, plus their receive rate.
+The in-game command defaults to a **five-line summary** instead of dumping
+every diagnostic value into Minecraft chat:
 
-The command also shows the latest raw client position/look/ground/collision fields, their packet sequence provenance, `decodeFailures`, and the latest Bukkit server intent where available. The recent breakdown is calculated from the **bounded retained observations**,
-not from an independent unbounded event log. If old observations were overwritten
-inside that five-second interval, the command flags the window as truncated;
-the displayed rate and per-kind counts are then lower bounds. A high packet rate
-**is not** a Timer finding and triggers no action.
+```text
+/hg detection packets <player>          # 5-line summary
+/hg detection packets <player> move     # detailed movement, <=6 lines
+/hg detection packets <player> net      # teleport + velocity, <=6 lines
+```
+
+The summary includes total packets, decode errors, the recent five-second
+receive rate, ground/collision flags, and teleport pending/matched/unmatched
+counts. Use `move` for coordinates, rotation, buffer capacity and packet-kind
+breakdown; use `net` for teleport confirmation IDs, resends, timeouts,
+outgoing self-velocity, and Bukkit server intent.
+
+The recent breakdown is calculated from the **bounded retained observations**,
+not from an independent unbounded event log. When old observations were
+overwritten inside that five-second interval, `move` explicitly shows
+`5s truncated` and the rates are lower bounds. A high packet rate or
+unmatched teleport confirmation **is not** proof of cheating.
 
 Disable the switch and restart to turn off the observer.
 
@@ -193,6 +203,18 @@ The feature remains disabled by default.
 A high pending count, an unmatched ACK or an observed packet delay must not
 be used as Timer, Speed or Fly evidence until network ordering, server
 corrections and server tick state are validated.
+
+## Minecraft chat output compacted (2026-11-16)
+
+The initial transport diagnostics overflowed the user's Minecraft chat
+window: a long sequence of packet counts, coordinates, flags and matching
+counters scrolled earlier results out of view.
+
+The default `/hg detection packets <player>` now emits **five lines**.
+Explicit `move` and `net` modes keep the detailed information available
+in short, single-purpose views. Unit tests assert the maximum line counts
+and retain important unmatched/pending/decoder-error information.
+No packet capture, physics scoring, punishment or API behavior changed.
 
 ## Next increment
 
