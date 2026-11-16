@@ -334,8 +334,10 @@ does not cross an invalidating context boundary. A position gap is an
 
 Teleport intent, outbound teleport packet observation, teleport confirmation,
 Bukkit velocity intent, outbound self-velocity, respawn, and world change
-each invalidate comparisons across their boundary. The first two following
-server samples are treated as a correction window; missing/late samples,
+each invalidate comparisons across their boundary. The first two **successfully captured**
+server samples are treated as a correction window (skipped scheduler ticks
+do not count). Any still-pending teleport confirmation also blocks the
+comparison, even after the normal cooldown. Missing/late samples,
 uncertain ordering, and world changes show a reason instead of an invented
 position comparison. A scheduled tick is a local sampling index and is **not**
 the client's simulation tick; actual tick duration can vary with server load.
