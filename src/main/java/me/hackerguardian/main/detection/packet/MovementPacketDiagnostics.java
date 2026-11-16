@@ -14,7 +14,8 @@ import java.util.concurrent.TimeUnit;
 public final class MovementPacketDiagnostics {
 
     public enum View {
-        SUMMARY, MOVEMENT, NETWORK, TICK, GUARDS, PROBE, PROFILE, DYNAMICS, IDLE, PREDICT;
+        SUMMARY, MOVEMENT, NETWORK, TICK, GUARDS, PROBE, PROFILE, DYNAMICS, IDLE,
+        PREDICT, RESIDUALS;
 
         public static View parse(String name) {
             if (name == null || name.isBlank()) return SUMMARY;
@@ -29,6 +30,7 @@ public final class MovementPacketDiagnostics {
                 case "dynamics", "dyn", "motion" -> DYNAMICS;
                 case "idle", "startstop", "resume" -> IDLE;
                 case "predict", "reachability", "pktphysics" -> PREDICT;
+                case "residuals", "res", "predstats", "predictstats" -> RESIDUALS;
                 default -> null;
             };
         }
@@ -87,7 +89,7 @@ public final class MovementPacketDiagnostics {
                 }
                 // Print the command suffixes rather than the long full
                 // command: avoid wrapping the five-line default in chat.
-                lines.add("Views: move|net|tick|guards|probe|profile|dyn|idle|predict");
+                lines.add("Views: move|net|tick|guards|probe|profile|dyn|idle|predict|res");
             }
             case MOVEMENT -> {
                 lines.add("Received " + packet.totalReceived() + " | Retained " + packet.retained()
@@ -267,6 +269,21 @@ public final class MovementPacketDiagnostics {
                             + " | excess " + value(prediction.lastExcess()));
                 }
             }
+            case RESIDUALS -> {
+                if (prediction == null) {
+                    lines.add("Packet residual research OFF (opt-in)");
+                } else {
+                    var stats = prediction.residuals();
+                    lines.add("Client packet input residual | research ONLY");
+                    lines.add(packetResidualLine("Walk", stats.walking()));
+                    lines.add(packetResidualLine("Sprint", stats.sprinting()));
+                    lines.add("Outside W " + stats.walking().outside()
+                            + " S " + stats.sprinting().outside()
+                            + " | peak excess W " + value(stats.walking().maxExcess())
+                            + " S " + value(stats.sprinting().maxExcess()));
+                    lines.add("Only modeled triples | no-decision " + prediction.noDecision());
+                }
+            }
             case NETWORK -> {
                 if (transport == null) {
                     lines.add("Transport tracking unavailable");
@@ -300,6 +317,15 @@ public final class MovementPacketDiagnostics {
 
     private static String value(Double number) {
         return number == null ? "n/a" : String.format(Locale.ROOT, "%.3f", number);
+    }
+
+    private static String packetResidualLine(String mode,
+                                             PacketReachabilityResiduals.ModeStats stats) {
+        if (!stats.available()) return mode + " n=0 | no modeled triples";
+        return String.format(Locale.ROOT,
+                "%s n=%d/%d | r50 %.3f r95 %.3f max %.3f",
+                mode, stats.retained(), stats.total(),
+                stats.p50(), stats.p95(), stats.max());
     }
 
     private static String profileLine(String mode, GroundMotionDistributions.Stats stats) {
