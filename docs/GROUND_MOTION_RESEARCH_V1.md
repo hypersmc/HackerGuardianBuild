@@ -395,6 +395,41 @@ enabling unsupported movement.
 No detection thresholds were changed and the probe remains fail-closed.
 No reports, ML labels, alerts, setbacks, kicks or bans were added.
 
+## Survival dynamics live validation — initial pass (2026-11-16)
+
+The tester identified why the earlier zero-value `dyn` view never populated:
+the original test was in **Creative**, which is intentionally excluded.
+They then switched to Survival and supplied a screenshot showing both
+`profile` and `dyn` reporting useful server-observed data.
+
+Profile screenshot:
+- Walk: 116 retained / 116 total; p50 0.215, p95 0.216, max 0.216
+  blocks per 50ms.
+- Sprint: 128 retained / 153 total; p50 0.280, p95 0.281, max 0.281
+  blocks per 50ms.
+- Eligible 269; sprint transition skips 2; no-decision 5254.
+
+Dynamics screenshot:
+- Start 0; Stop 0; Accelerate 10; Slow 6; Turn 5; Steady 251.
+- Classified paired transitions 272; breaks 7. Class totals equal
+  272 (10 + 6 + 5 + 251).
+- Absolute speed change p50 0.001, p95 0.051 blocks per 50ms.
+- Median observed slowdown retention 0.710; last material STONE.
+
+**Result:** pass for first single-account Survival dynamics **recording**
+smoke test. Moving/turning/speed-change data reached the recorder. The
+two commands were taken at different instants while samples continued
+accumulating, so their cumulative counters need not match exactly.
+The retention ratio is *not* a verified friction coefficient.
+
+**Remaining limitations:** start/stop counts were both zero despite the
+user's movement test. That can occur when idle periods have no recent
+inbound client positions or when an eligibility guard interrupts the
+three-position sequence. These transitions are not yet validated. The
+new richer `dyn` diagnostics are still useful for subsequent cases,
+but the screenshots shown here predate that output change. No detection
+accuracy or enforcement capability has been established.
+
 ## Future real detection work
 
 Before a meaningful ground-speed check, build version-specific motion
