@@ -241,6 +241,49 @@ Bukkit sprint state, real-world sample bias, and multiplayer performance
 still require in-game verification. No scoring, bans, alerts, database
 writes, web frontend, reports or replay integration were added.
 
+## Walk/sprint distribution runtime validation (2026-11-16)
+
+The tester provided two in-game `/hg detection packets HypersMC profile`
+readings: first after walking, then after sprinting on the test server.
+
+| Profile observation | Walk-only screenshot | After sprinting |
+|---|---:|---:|
+| Walk retained / session total | 128 / 311 | 128 / 334 |
+| Walk p50, p95 (blocks per 50ms) | 0.216, 0.216 | 0.216, 0.216 |
+| Walk maximum | 0.218 | 0.216 |
+| Sprint retained / session total | 0 / 0 | 128 / 253 |
+| Sprint p50, p95 (blocks per 50ms) | n/a | 0.281, 0.281 |
+| Sprint maximum | n/a | 0.282 |
+| Eligible total | 311 | 587 |
+| Sprint transitions excluded | 0 | 2 |
+| All other no-decisions | 52 | 65 |
+
+**Consistency:** walk+sprint lifetime group totals match eligible counts in
+both screenshots (311 + 0 = 311; 334 + 253 = 587). Each group correctly
+retains at most the last 128 entries. These are *server-observed,
+time-normalized, opt-in research samples*, not client prediction errors.
+
+The walking median 0.216 blocks/50ms and sprinting median 0.281
+blocks/50ms correspond closely to the commonly cited default vanilla
+walk/sprint rates of about 4.317 and 5.612 blocks/s at 20 TPS (about
+0.2159 and 0.2806 blocks/50ms). The observed sprint/walk ratio is roughly
+1.30. Reference: https://minecraft.wiki/w/The_player
+
+**Result:** pass for a single-server walking/sprinting *profile collection*
+smoke test. Both mode labels populated independently, with two transition
+skips and no cross-contamination evident in these aggregates. The screenshot
+does not validate latency, changing TPS, acceleration transitions,
+nonstandard block friction, speed attributes/effects, custom movement
+plugins or multi-version support. Near-identical p50/p95 values reflect the
+retained steady-state samples and do **not** justify using either statistic
+as a speed limit or cheat classification cutoff.
+
+Next work: assess eligible speed during starts, stops and changes of
+direction, record ground friction/collision details and separate sustained
+steady-state motion from acceleration transients. Keep all observations
+read-only until protocol/version-aware physics prediction has independent
+false-positive validation.
+
 ## Future real detection work
 
 Before a meaningful ground-speed check, build version-specific motion
