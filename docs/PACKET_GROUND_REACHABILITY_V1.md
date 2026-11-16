@@ -354,6 +354,92 @@ turns, and the rare high walking residual after sprinting; capture
 no-decision timing explanations while still making no enforcement
 decisions. Do not treat any retained percentile as a violation threshold.
 
+## Client-packet acceleration and sprint-switch transition study (2026-11-16)
+
+The first real residual profile showed walking `r50/r95=0.098`, then
+sprinting `r50/r95=0.127`. After sprinting, the **rolling walking
+maximum** increased to `0.127` while its median stayed `0.098`.
+This is consistent with transient momentum still being observed after the
+server's sprint flag switches off, but the snapshots do not prove whether
+that was the exact cause. The sprint flag is **Bukkit-sampled server
+state**, not a decoded key-down/key-up event.
+
+The packet predictor now keeps **post-switch residuals separate** from
+the rolling steady walking/sprinting distribution. The new, read-only
+command:
+
+```text
+/hg detection packets HypersMC trans
+```
+
+Aliases: `transitions`, `switches`, `switch`.
+
+The six-line view shows:
+
+- Server-observed **walk→sprint** and **sprint→walk** flag changes
+  detected between consecutive genuine client position-packet claims,
+  on the same world, correction epoch and ground block material.
+- Count of modeled packet triples attributed to a **six server-tick-hint
+  window** following a sprint-state change. The window is a deliberate
+  *research convention*; tick hints are not authenticated client ticks.
+- Phase counts for **accelerating, slowing, turning and steady**,
+  classified from changes in two successive decoded client displacement
+  vectors. Thresholds (0.025 block speed change and 35-degree turning
+  angle) are provisional **research labels**, not vanilla movement
+  constraints or detection limits.
+- Separate bounded post-switch residual distributions for entering walk
+  versus entering sprint, with per-mode counts, rolling p95 and max.
+  Each tail retains no more than **128** values; lifetime counts continue.
+
+The existing `... res` view now reports **steady-mode residuals only**.
+The new excluded-tail counters on that view explain why adding its two
+mode sample counts may yield a lower total than `... predict modeled`.
+The underlying `modeled`, `outside research` and `no-decision`
+counters and the original conservative reachable disk are **unchanged**;
+only the grouping of research telemetry differs.
+
+### Critical provenance and no-decision rules
+
+A sprint-state flip breaks the active three-packet reachability chain.
+The new mode needs normal warmup before any triple is modeled. Invalid
+client ground claims, missing or stale server sample context, unsupported
+terrain/game mode, unusual vertical displacement, teleport/knockback,
+cross-world/material changes, duplicate or skipped server tick hints all
+preserve the existing **no-decision** behavior. Such uncertainty also
+**aborts** any unfinished post-switch attribution window.
+
+A server-observed sprint flag change is not proof that the player
+pressed or released a sprint key. A high walking residual immediately
+after such a change is not an anomaly by itself, and a low residual is
+not evidence of legitimacy. The model still lacks true client input
+state, packet-to-client-tick equivalence and full version-aware physics
+parameters. Neither tail nor phase statistics feed reports, alerts,
+punishments, ML labels or evidence journaling.
+
+### Retest protocol
+
+1. In Survival on uniform flat `STONE`, walk steadily and run
+   `/hg detection packets HypersMC res` (steady Walk population).
+2. Sprint steadily; run `... res` and `... trans`. Expect a
+   walk→sprint flag event, some post-switch sprint samples, and more
+   steady sprint observations after the initial window.
+3. Release sprint **while continuing to walk**, then check both views.
+   The new `sprint→walk` tail should collect residuals while steady
+   walking p95/max should no longer be inflated *by the attributed
+   post-switch packets*. Verify the distinction rather than assuming
+   all high values must disappear.
+4. Alternate start/stop, direction changes and several sharp turns.
+   `trans` should accumulate phase observations from real decoded
+   client position packets where three consecutive packet claims and
+   eligible server tick hints exist.
+5. Teleport, jump, enter Creative, change block material or take
+   zombie knockback. Inspect `predict`, `res` and `trans`:
+   uncertain packets must not contribute to new residual/phase samples.
+6. Reconnect to verify session reset. Test slow ticks/network jitter
+   separately. All measurements are observational and non-actionable.
+
+**Status:** committed as research-only, subject to CI and runtime testing.
+
 ## Next actual physics work
 
 Capture trustworthy per-player packet order and *validated tick equivalence*,
