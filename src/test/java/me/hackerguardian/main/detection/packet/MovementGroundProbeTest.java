@@ -133,6 +133,51 @@ class MovementGroundProbeTest {
     }
 
     @Test
+    void unsafeTerrainRetainsSpecificReasonEvenIfLaterClientDataIsMissing() {
+        var probe = new MovementGroundProbe();
+        var safe = frame(0);
+        var path = new MovementTickTimeline.TickInput("world",
+                new MovementPacketBuffer.Position(0.3, 64.9375, 10),
+                new MovementPacketBuffer.Velocity(0.1, 0, 0),
+                frame(0).flags(),
+                new MovementTickTimeline.Environment(false, false, true, false, false),
+                new MovementTickTimeline.ProbeContext(true, false, true, true,
+                        "feet=DIRT_PATH"));
+        probe.sample(1, STEP, 0, safe, true, true);
+        probe.sample(2, 2 * STEP, 0, path, true, true);
+        assertEquals(MovementGroundProbe.Result.UNSAFE_TERRAIN, probe.snapshot().lastResult());
+        assertEquals("feet=DIRT_PATH", probe.snapshot().lastSurfaceReason());
+        assertEquals(1, probe.snapshot().unsafeTerrainSamples());
+
+        probe.sample(3, 3 * STEP, 0, path, true, false);
+        assertEquals(MovementGroundProbe.Result.NO_CLIENT_DATA, probe.snapshot().lastResult());
+        assertEquals(1, probe.snapshot().noClientDataSamples());
+        assertEquals("feet=DIRT_PATH", probe.snapshot().lastSurfaceReason(),
+                "We need the last known ground exclusion, even if an idle client has no fresh packet");
+        assertEquals(0, probe.snapshot().evaluated());
+    }
+
+    @Test
+    void eligibleSamplesRecoverOnOrdinaryGroundAfterUnsafeTerrain() {
+        var probe = new MovementGroundProbe();
+        var path = new MovementTickTimeline.TickInput("world",
+                new MovementPacketBuffer.Position(0, 64.9375, 10),
+                new MovementPacketBuffer.Velocity(0.1, 0, 0),
+                frame(0).flags(),
+                frame(0).environment(),
+                new MovementTickTimeline.ProbeContext(true, false, true, true,
+                        "feetY-offset=0.938"));
+        probe.sample(1, STEP, 0, path, true, true);
+        probe.sample(2, 2 * STEP, 0, frame(0.2), true, true);
+        assertEquals(MovementGroundProbe.Result.UNSAFE_TERRAIN, probe.snapshot().lastResult());
+        probe.sample(3, 3 * STEP, 0, frame(0.5), true, true);
+        assertEquals(MovementGroundProbe.Result.WITHIN_RESEARCH_ENVELOPE,
+                probe.snapshot().lastResult());
+        assertEquals(1, probe.snapshot().evaluated());
+        assertEquals(1, probe.snapshot().unsafeTerrainSamples());
+    }
+
+    @Test
     void staleSnapshotNeverChangesCounters() {
         var probe = new MovementGroundProbe();
         probe.sample(1, STEP, 0, frame(0), true, true);
