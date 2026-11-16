@@ -389,7 +389,7 @@ public final class MovementPacketDiagnostics {
                     lines.add("Gap singles " + r.isolatedTimingClusters()
                             + " multi " + r.multiTimingClusters()
                             + " | timing reject " + r.totalTimingRejects()
-                            + " | warmups between " + r.warmupsBetweenTimingRejects());
+                            + " | warmups in " + r.warmupsInsideTimingClusters());
                 }
             }
             case NETWORK -> {
