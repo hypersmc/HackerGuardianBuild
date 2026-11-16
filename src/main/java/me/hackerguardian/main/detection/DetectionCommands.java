@@ -8,6 +8,7 @@ import me.hackerguardian.main.detection.ml.MlDatasetRecorder;
 import me.hackerguardian.main.detection.normality.IsolationForestModel;
 import me.hackerguardian.main.detection.normality.NormalityDetector;
 import me.hackerguardian.main.detection.packet.MovementPacketBuffer;
+import me.hackerguardian.main.detection.packet.MovementPacketDiagnostics;
 import me.hackerguardian.main.detection.packet.MovementPacketObserver;
 import me.hackerguardian.main.detection.telemetry.BehaviorSnapshot;
 import me.hackerguardian.main.utils.CommandManager;
@@ -61,8 +62,16 @@ public final class DetectionCommands {
     }
 
     private void handlePackets(CommandSender sender, String[] params) {
-        if (params.length != 2) {
-            sender.sendMessage(tx.playerText(tx.prefix + "§cUsage: /hg detection packets <player>"));
+        if (params.length < 2 || params.length > 3) {
+            sender.sendMessage(tx.playerText(tx.prefix
+                    + "§cUsage: /hg detection packets <player> [summary|move|net]"));
+            return;
+        }
+        MovementPacketDiagnostics.View view =
+                MovementPacketDiagnostics.View.parse(params.length == 3 ? params[2] : null);
+        if (view == null) {
+            sender.sendMessage(tx.playerText(tx.prefix
+                    + "§cView must be summary, move or net."));
             return;
         }
         MovementPacketObserver observer = runtime.getPacketObserver();
@@ -76,89 +85,14 @@ public final class DetectionCommands {
             return;
         }
         MovementPacketBuffer.Snapshot snapshot = observer.snapshot(target.getUniqueId());
-        sender.sendMessage(tx.playerText(tx.prefix + " §fPacket observation: §e" + target.getName()));
-        sender.sendMessage(tx.playerText(" §7Received: §f" + snapshot.totalReceived()
-                + " §8| §7Retained: §f" + snapshot.retained()
-                + " §8| §7Overwritten: §f" + snapshot.dropped()));
-        if (!snapshot.observations().isEmpty()) {
-            MovementPacketBuffer.Observation latest = snapshot.observations().get(snapshot.retained() - 1);
-            sender.sendMessage(tx.playerText(" §7Last kind: §f" + latest.kind()
-                    + " §8| §7Sequence: §f" + latest.sequence()));
+        var transport = observer.transportSnapshot(target);
+        List<String> lines = MovementPacketDiagnostics.render(target.getName(), snapshot,
+                transport, view, System.nanoTime());
+
+        // One readable, compact header. Detailed views are explicitly requested.
+        for (int i = 0; i < lines.size(); i++) {
+            sender.sendMessage(tx.playerText((i == 0 ? tx.prefix + " §f" : " §7") + lines.get(i)));
         }
-        MovementPacketBuffer.WindowStats recent = snapshot.recentWindow(
-                System.nanoTime(), java.util.concurrent.TimeUnit.SECONDS.toNanos(5));
-        sender.sendMessage(tx.playerText(" §7Last 5s (retained): §f" + recent.count()
-                + " §8| §7Rate: §f" + String.format(java.util.Locale.ROOT, "%.1f", recent.ratePerSecond())
-                + " §7packets/s"));
-        sender.sendMessage(tx.playerText(" §7POSITION: §f" + recent.position()
-                + " §8| §7POSITION_LOOK: §f" + recent.positionLook()));
-        sender.sendMessage(tx.playerText(" §7LOOK: §f" + recent.look()
-                + " §8| §7GROUND: §f" + recent.ground()));
-        if (recent.truncated()) {
-            sender.sendMessage(tx.playerText(" §eRecent window truncated by buffer capacity; rate is a lower bound."));
-        }
-        MovementPacketBuffer.LastKnown fields = snapshot.lastKnownClientFields();
-        sender.sendMessage(tx.playerText(" §7Decoder failures: §f" + snapshot.decodeFailures()));
-        if (fields.position() != null) {
-            var pos = fields.position();
-            sender.sendMessage(tx.playerText(String.format(java.util.Locale.ROOT,
-                    " §7Last client position (#%d): §f%.2f, %.2f, %.2f",
-                    fields.positionSequence(), pos.x(), pos.y(), pos.z())));
-        }
-        if (fields.rotation() != null) {
-            var rot = fields.rotation();
-            sender.sendMessage(tx.playerText(String.format(java.util.Locale.ROOT,
-                    " §7Last client look (#%d): §f%.1f yaw / %.1f pitch",
-                    fields.rotationSequence(), rot.yaw(), rot.pitch())));
-        }
-        sender.sendMessage(tx.playerText(" §7Client on-ground: §f"
-                + (fields.onGround() == null ? "UNKNOWN" : fields.onGround())
-                + " §8| §7Horizontal collision: §f"
-                + (fields.horizontalCollision() == null ? "UNKNOWN" : fields.horizontalCollision())));
-        sender.sendMessage(tx.playerText(" §7Server intent events: §f" + snapshot.totalContexts()
-                + " §8| §7Overwritten: §f" + snapshot.droppedContexts()));
-        if (!snapshot.contexts().isEmpty()) {
-            MovementPacketBuffer.ServerContext context =
-                    snapshot.contexts().get(snapshot.contexts().size() - 1);
-            if (context.kind() == MovementPacketBuffer.ContextKind.SERVER_TELEPORT) {
-                sender.sendMessage(tx.playerText(" §7Last server intent: §fTELEPORT (" + context.cause() + ")"));
-            } else {
-                var v = context.velocity();
-                if (v != null) {
-                    sender.sendMessage(tx.playerText(String.format(java.util.Locale.ROOT,
-                            " §7Last server velocity: §f%.2f, %.2f, %.2f",
-                            v.x(), v.y(), v.z())));
-                }
-            }
-        }
-        me.hackerguardian.main.detection.packet.MovementPacketTransport.Snapshot wire =
-                observer.transportSnapshot(target);
-        if (wire != null) {
-            sender.sendMessage(tx.playerText(" §7Teleport packets observed: §f" + wire.sentTeleports()
-                    + " §8| §7Client confirms: §f" + wire.receivedConfirms()));
-            sender.sendMessage(tx.playerText(" §7Matched: §f" + wire.matchedConfirms()
-                    + " §8| §7Pending: §f" + wire.pendingTeleports()
-                    + " §8| §7Unmatched: §f" + wire.unmatchedConfirms()));
-            sender.sendMessage(tx.playerText(" §7Resends: §f" + wire.resends()
-                    + " §8| §7Expired/evicted: §f" + wire.expiredOrEvicted()
-                    + " §8| §7ID decode errors: §f" + wire.unreadableIds()));
-            sender.sendMessage(tx.playerText(" §7Movement received while pending: §f"
-                    + wire.movementWhilePending()));
-            if (wire.lastMatchedId() != null) {
-                sender.sendMessage(tx.playerText(" §7Last matched teleport ID: §f"
-                        + wire.lastMatchedId() + " §8| §7Movement before ACK: §f"
-                        + wire.lastMatchMovementCount()));
-            }
-            sender.sendMessage(tx.playerText(" §7Self-velocity packets observed: §f"
-                    + wire.outboundSelfVelocities()
-                    + " §8| §7Unknown payload: §f" + wire.unknownVelocityPayloads()));
-            if (!wire.recentEvents().isEmpty()) {
-                var last = wire.recentEvents().get(wire.recentEvents().size() - 1);
-                sender.sendMessage(tx.playerText(" §7Last transport event: §f"
-                        + last.kind() + " §8(" + last.result() + ")"));
-            }
-        }
-        sender.sendMessage(tx.playerText(" §8Observed send/receive callbacks, not proof of delivery or a cheat verdict."));
     }
 
     private void showAssessment(CommandSender sender, Player target) {
