@@ -91,8 +91,8 @@ public final class MovementTickSampler {
             } else if (!supportedBlock) {
                 reason = "below=" + belowType.name();
             } else if (!levelY) {
-                reason = String.format(java.util.Locale.ROOT,
-                        "feetY-offset=%.3f", loc.getY() - Math.floor(loc.getY()));
+                double fraction = loc.getY() - Math.floor(loc.getY());
+                reason = "feetY-offset=" + (Math.round(fraction * 1000.0) / 1000.0);
             } else if (allowedFlight) {
                 reason = "flight permission enabled";
             } else if (riptiding) {
