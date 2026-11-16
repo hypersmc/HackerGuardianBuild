@@ -66,16 +66,46 @@ public final class MovementTickSampler {
             // plugin flight, unusual speed settings and status effects are
             // explicitly NOT within this research envelope.
             Material belowType = below.getType();
-            boolean ordinary = (belowType == Material.STONE
-                    || belowType == Material.DIRT
-                    || belowType == Material.GRASS_BLOCK
-                    || belowType == Material.COBBLESTONE
-                    || belowType == Material.DEEPSLATE)
-                    && Math.abs(loc.getY() - Math.rint(loc.getY())) < 0.02
-                    && !player.getAllowFlight() && !player.isRiptiding();
+            // An intentionally conservative allowlist of ordinary full
+            // blocks. In particular, DIRT_PATH is NOT a full block and must
+            // remain ineligible: feet may be inside its fractional hitbox.
+            boolean supportedBlock = switch (belowType) {
+                case STONE, DIRT, GRASS_BLOCK, COBBLESTONE, DEEPSLATE,
+                        STONE_BRICKS, OAK_PLANKS, SPRUCE_PLANKS,
+                        BIRCH_PLANKS, ANDESITE, DIORITE, GRANITE, SANDSTONE -> true;
+                default -> false;
+            };
+            boolean levelY = Math.abs(loc.getY() - Math.rint(loc.getY())) < 0.02;
+            boolean allowedFlight = player.getAllowFlight();
+            boolean riptiding = player.isRiptiding();
+            boolean ordinary = supportedBlock && levelY && !allowedFlight && !riptiding;
+
+            // Only collect these explanations when the opt-in research probe
+            // is enabled. All values are simple text derived on the main
+            // thread, not Bukkit objects retained across callbacks.
+            String reason;
+            if (!feet.isPassable()) {
+                reason = "feet=" + feet.getType().name();
+            } else if (!head.isPassable()) {
+                reason = "head=" + head.getType().name();
+            } else if (!supportedBlock) {
+                reason = "below=" + belowType.name();
+            } else if (!levelY) {
+                reason = String.format(java.util.Locale.ROOT,
+                        "feetY-offset=%.3f", loc.getY() - Math.floor(loc.getY()));
+            } else if (allowedFlight) {
+                reason = "flight permission enabled";
+            } else if (riptiding) {
+                reason = "riptide active";
+            } else if (below.isPassable() || feet.isLiquid() || below.isLiquid()) {
+                reason = "block/liquid collision hints";
+            } else {
+                reason = "";
+            }
+
             var probeContext = new MovementTickTimeline.ProbeContext(
                     true, ordinary, player.getActivePotionEffects().isEmpty(),
-                    Math.abs(player.getWalkSpeed() - 0.2F) < 0.0001F);
+                    Math.abs(player.getWalkSpeed() - 0.2F) < 0.0001F, reason);
             return new MovementTickTimeline.TickInput(
                     world.getUID().toString(), position, velocity, flags, env, probeContext);
         } catch (IllegalArgumentException ex) {
