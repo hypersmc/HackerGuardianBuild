@@ -64,14 +64,14 @@ public final class DetectionCommands {
     private void handlePackets(CommandSender sender, String[] params) {
         if (params.length < 2 || params.length > 3) {
             sender.sendMessage(tx.playerText(tx.prefix
-                    + "§cUsage: /hg detection packets <player> [summary|move|net|tick|guards]"));
+                    + "§cUsage: /hg detection packets <player> [summary|move|net|tick|guards|probe]"));
             return;
         }
         MovementPacketDiagnostics.View view =
                 MovementPacketDiagnostics.View.parse(params.length == 3 ? params[2] : null);
         if (view == null) {
             sender.sendMessage(tx.playerText(tx.prefix
-                    + "§cView must be summary, move, net, tick or guards."));
+                    + "§cView must be summary, move, net, tick, guards or probe."));
             return;
         }
         MovementPacketObserver observer = runtime.getPacketObserver();
@@ -87,8 +87,9 @@ public final class DetectionCommands {
         MovementPacketBuffer.Snapshot snapshot = observer.snapshot(target.getUniqueId());
         var transport = observer.transportSnapshot(target);
         var ticks = observer.tickSnapshot(target);
+        var probe = observer.groundProbeSnapshot(target);
         List<String> lines = MovementPacketDiagnostics.render(target.getName(), snapshot,
-                transport, ticks, view, System.nanoTime());
+                transport, ticks, probe, view, System.nanoTime());
 
         // One readable, compact header. Detailed views are explicitly requested.
         for (int i = 0; i < lines.size(); i++) {
