@@ -430,6 +430,72 @@ new richer `dyn` diagnostics are still useful for subsequent cases,
 but the screenshots shown here predate that output change. No detection
 accuracy or enforcement capability has been established.
 
+## Start/stop visibility and packet-source provenance (2026-11-16)
+
+The initial Survival dynamics retest recorded acceleration, deceleration,
+turning and steady movement, but no starts or stops. This is partly expected:
+the existing `dyn` movement comparisons intentionally require fresh
+decoded **incoming client-position packets** and two contiguous eligible
+horizontal motion vectors. When the player comes to rest, client position
+packets can stop, breaking the sequence just as a stop might be observed.
+
+A **separate server-only research stream** now observes stable idle/resume
+transitions on ordinary supported flat ground, even during a gap in client
+position packet observations:
+
+```text
+/hg detection packets HypersMC idle
+```
+
+- `Observed starts` and `stops` mean transitions between **two consecutive
+  measured moving** and **two consecutive measured near-stationary** server
+  intervals, not key-down/key-up confirmations. Intermediate ambiguous
+  movement is excluded from classification.
+- `Starts w/recent packet` counts starts where an incoming position packet
+  had been observed recently. `Stops w/o recent packet` counts stops
+  without that hint. A "recent packet" only indicates local receive
+  freshness; it cannot authenticate what keys the client pressed.
+- The tracker uses **server positions sampled via Bukkit API once per tick**,
+  not the coordinates in the incoming client packet stream. The existing
+  packet listener continues to observe genuine movement/teleport/velocity
+  packets independently.
+- Consecutive server ticks must have stable 25–125 ms observation intervals,
+  the same world, correction epoch, movement mode, sprint state and supported
+  ground material. The full strict flat-ground eligibility checks and
+  teleport/knockback pending/correction guards are still applied.
+- Client position packet freshness is deliberately **not required** for
+  server-observed idle transitions, but this never broadens eligibility for
+  the existing `profile` or `dyn` research studies.
+- All observations are session-only, constant memory and observe-only. They
+  cannot produce cheat findings, punishment actions, ML labels or reports.
+
+The independent `idle` view fits in six lines. The `dyn` view also shows
+**server starts/stops**, making the source of these extra observations
+explicit. Its acceleration/turn stats still come from the stricter
+packet-freshness-gated server displacement stream.
+
+### Manual verification
+
+1. Enable the existing ground probe in `detection.yml`, remain in
+   **Survival**, and use a large flat `STONE` platform with no effects.
+2. While idle, check `/hg detection packets HypersMC idle`: the state
+   should settle to `IDLE` with 0 server starts/stops.
+3. Walk steadily for several ticks, then stop for several ticks. Check
+   `idle` again. An observed start and stop should accumulate; the stop
+   can register with no recent client position packet.
+4. Alternate walking/sprinting, turn and pause. Sprint toggles may interrupt
+   observation; this is intentional, not cheating.
+5. Teleport, receive knockback, enter Creative, move onto slabs/paths or
+   switch worlds. Transitions must not be joined across those events.
+6. Compare `profile`, `dyn` and `idle` to understand which quantities
+   came from packet-gated research vs server-only idle observations.
+
+**Outstanding:** runtime validation and a subsequent version-aware
+client-packet movement predictor. A genuine physics checker will need
+version-specific acceleration/friction/attribute handling, packet ordering,
+server permission context and uncertainty about client inputs. No confirmed
+key-state input can be inferred from Minecraft's ordinary movement packets.
+
 ## Future real detection work
 
 Before a meaningful ground-speed check, build version-specific motion
