@@ -216,6 +216,37 @@ in short, single-purpose views. Unit tests assert the maximum line counts
 and retain important unmatched/pending/decoder-error information.
 No packet capture, physics scoring, punishment or API behavior changed.
 
+## Solo transport and chat diagnostic retest (2026-11-16)
+
+The tester captured screenshots of all three compact views after a legitimate
+teleport. Observed:
+
+- Default `summary`: five lines, 15 received, 0 decoder failures, 1.4/s
+  recent rate; on-ground false; collision UNKNOWN.
+- `move`: 23 received, 23 retained, 0 overwritten, 0 decoder failures.
+  Last client XYZ approximately `74.75, 105.37, 200.99` at packet #23;
+  last yaw/pitch at packet #10 (not an atomic sample).
+- `net`: one outgoing teleport observed, two client confirmations, one
+  matched (ID 2), one unmatched, zero pending, zero resends or expirations,
+  zero ID decode errors and zero movement observed before the matched ACK.
+- Bukkit intent: one teleport event with cause COMMAND. The position matches
+  the in-game teleport destination to the precision displayed.
+- Neither the screenshot nor the counters establish that every outbound
+  packet reached the client. A single unmatched confirmation could reflect
+  connection-start timing, but its specific cause was not established.
+
+**Result:** pass for the single-account teleport-correlation and compact-chat
+smoke test. Outgoing self-velocity delivery/decoding, multiple-version
+compatibility and stress behavior remain untested. This is not validation of
+cheat detection or enforcement.
+
 ## Next increment
 
-Validate this normalized raw-state capture against actual supported Minecraft/ProtocolLib combinations. Next add explicit outbound teleport IDs, client teleport confirmations, delivered velocity context, server collision/physics snapshots and protocol-version-specific fixtures. **Do not use raw coordinates or arrival rates for speed/fly verdicts** until the server/client state timeline is sufficiently accurate. All detectors remain evidence-only until false-positive handling is independently validated.
+Validate outgoing self-velocity observation on the tested server and examine
+the isolated unmatched teleport confirmation without assuming bad client
+behavior. Add server tick, physics and collision/world context, packet-version
+fixtures, and stronger consistency checks before attempting a movement
+predictor. **Do not use raw coordinates or arrival rates for Speed/Fly
+verdicts** until the server/client state timeline is sufficiently accurate.
+All detectors remain evidence-only until false-positive handling is
+independently validated.
