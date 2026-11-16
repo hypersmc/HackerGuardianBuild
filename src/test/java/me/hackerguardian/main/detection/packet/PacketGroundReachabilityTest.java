@@ -126,6 +126,36 @@ class PacketGroundReachabilityTest {
     }
 
     @Test
+    void packetRunStudyIsDownstreamFromTheExistingResearchModel() {
+        var model = new PacketGroundReachability(version("1.20.2"));
+        // Initial two packets warm up; next two become modeled triples.
+        for (int tick : new int[]{1, 2, 3, 4, 7, 8, 10, 11, 12, 13}) {
+            model.observe(at(tick * .2, 64, 0, true), context(tick));
+        }
+        var beforeCorrection = model.snapshot();
+        assertEquals(4, beforeCorrection.modeledTriples());
+        assertEquals(4, beforeCorrection.runs().totalModeled());
+        assertEquals(6, beforeCorrection.noDecision());
+        assertEquals(2, beforeCorrection.runs().totalTimingRejects());
+        assertEquals(2, beforeCorrection.runs().warmupsBetweenTimingRejects());
+        assertEquals(1, beforeCorrection.runs().acceptedRuns().completed());
+        assertEquals(2L, beforeCorrection.runs().acceptedRuns().p95());
+        assertEquals(2, beforeCorrection.runs().activeAcceptedRun());
+        assertEquals(1, beforeCorrection.runs().timingClusters().completed());
+        assertEquals(2L, beforeCorrection.runs().timingClusters().max());
+        assertEquals(0, beforeCorrection.runs().activeTimingCluster());
+        assertEquals(beforeCorrection.positionPackets(),
+                beforeCorrection.modeledTriples() + beforeCorrection.noDecision());
+
+        model.correction(); // external server event, not another client packet
+        var afterCorrection = model.snapshot();
+        assertEquals(2, afterCorrection.runs().acceptedRuns().completed());
+        assertEquals(0, afterCorrection.runs().activeAcceptedRun());
+        assertEquals(beforeCorrection.positionPackets(), afterCorrection.positionPackets());
+        assertEquals(afterCorrection, model.snapshot());
+    }
+
+    @Test
     void teleportAndVelocityCorrectionsHardResetPacketHistory() {
         var model = new PacketGroundReachability(version("1.20.2"));
         model.observe(at(0, 64, 0, true), context(1));
