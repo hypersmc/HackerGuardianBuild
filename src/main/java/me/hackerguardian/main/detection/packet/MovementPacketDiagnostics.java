@@ -15,7 +15,7 @@ public final class MovementPacketDiagnostics {
 
     public enum View {
         SUMMARY, MOVEMENT, NETWORK, TICK, GUARDS, PROBE, PROFILE, DYNAMICS, IDLE,
-        PREDICT, RESIDUALS, SWITCHES, HEADING;
+        PREDICT, RESIDUALS, SWITCHES, HEADING, TIMING;
 
         public static View parse(String name) {
             if (name == null || name.isBlank()) return SUMMARY;
@@ -33,6 +33,7 @@ public final class MovementPacketDiagnostics {
                 case "residuals", "res", "predstats", "predictstats" -> RESIDUALS;
                 case "switch", "switches", "trans", "transitions" -> SWITCHES;
                 case "heading", "headings", "angles", "turns" -> HEADING;
+                case "timing", "tickhints", "sync" -> TIMING;
                 default -> null;
             };
         }
@@ -91,7 +92,7 @@ public final class MovementPacketDiagnostics {
                 }
                 // Print the command suffixes rather than the long full
                 // command: avoid wrapping the five-line default in chat.
-                lines.add("Views: move|net|tick|guards|probe|profile|dyn|idle|predict|res|trans|heading");
+                lines.add("Views: move|net|tick|guards|probe|profile|dyn|idle|predict|res|trans|heading|timing");
             }
             case MOVEMENT -> {
                 lines.add("Received " + packet.totalReceived() + " | Retained " + packet.retained()
@@ -333,6 +334,31 @@ public final class MovementPacketDiagnostics {
                             + " | warmup " + skips.warmup()
                             + " | correction " + skips.correction()
                             + " | unavailable " + skips.unavailable());
+                }
+            }
+            case TIMING -> {
+                if (prediction == null) {
+                    lines.add("Packet timing research OFF (opt-in)");
+                } else if (!prediction.enabled()) {
+                    lines.add("Packet timing profile unavailable for this version");
+                } else {
+                    var t = prediction.tickHints();
+                    lines.add("SERVER tick hints | NOT client simulation ticks");
+                    lines.add("Hint pairs +1 " + t.adjacentHints()
+                            + " same " + t.repeatedHints()
+                            + " gaps " + (t.twoTickGaps() + t.largerGaps())
+                            + " reverse " + t.reverseHints());
+                    lines.add("Gap +2 " + t.twoTickGaps()
+                            + " >=3 " + t.largerGaps()
+                            + " | model gaps " + t.actualTickGapRejects());
+                    lines.add("Model same-tick " + t.actualAmbiguousRejects()
+                            + " | stale " + t.staleServerSamples()
+                            + " | unstable " + t.unstableTickSpacing());
+                    lines.add("Warmup init " + t.warmupInitial()
+                            + " timing " + t.warmupAfterTiming()
+                            + " context " + t.warmupAfterContext()
+                            + " correction " + t.warmupAfterCorrection()
+                            + " other " + t.warmupAfterOther());
                 }
             }
             case NETWORK -> {
