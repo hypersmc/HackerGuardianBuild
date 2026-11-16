@@ -51,7 +51,10 @@ public final class MovementPacketTransport {
                            long outboundSelfVelocities, long unknownVelocityPayloads,
                            Integer lastSentId, Integer lastMatchedId,
                            long lastMatchDelayNanos, long lastMatchMovementCount,
-                           long eventsDropped, List<Event> recentEvents) {
+                           long eventsDropped, List<Event> recentEvents,
+                           long velocityCallbacks, long velocityOtherEntity,
+                           long velocityEntityIdUnreadable,
+                           Integer lastVelocityPacketEntityId, int expectedSelfEntityId) {
         public boolean hasUnverifiedTeleport() {
             return pendingTeleports > 0;
         }
@@ -67,6 +70,9 @@ public final class MovementPacketTransport {
     private long sentTeleports, receivedConfirms, matchedConfirms, unmatchedConfirms;
     private long resends, expiredOrEvicted, unreadableIds;
     private long outboundSelfVelocities, unknownVelocityPayloads;
+    private long velocityCallbacks, velocityOtherEntity, velocityEntityIdUnreadable;
+    private Integer lastVelocityPacketEntityId;
+    private int expectedSelfEntityId = -1;
     private long eventsDropped, lastMatchDelayNanos = -1, lastMatchMovementCount = -1;
     private Integer lastSentId, lastMatchedId;
 
@@ -149,6 +155,26 @@ public final class MovementPacketTransport {
         append(now, EventKind.TELEPORT_CONFIRM_INBOUND, result, id, null);
     }
 
+    /**
+     * Records every outbound ENTITY_VELOCITY callback BEFORE filtering on the
+     * target ID. Without these totals a zero self counter cannot distinguish
+     * listener failure, unknown target ID and another entity being updated.
+     * Must not be interpreted as proof of a packet reaching the client.
+     */
+    public synchronized void observedOutboundVelocity(Integer entityId, int selfEntityId,
+                                                       MovementPacketBuffer.Velocity velocity) {
+        velocityCallbacks++;
+        expectedSelfEntityId = selfEntityId;
+        lastVelocityPacketEntityId = entityId;
+        if (entityId == null) {
+            velocityEntityIdUnreadable++;
+        } else if (entityId.intValue() != selfEntityId) {
+            velocityOtherEntity++;
+        } else {
+            outboundSelfVelocity(velocity);
+        }
+    }
+
     /** Only invoke for a packet addressed to the player's own entity ID. */
     public synchronized void outboundSelfVelocity(MovementPacketBuffer.Velocity velocity) {
         long now = tick();
@@ -165,7 +191,9 @@ public final class MovementPacketTransport {
                 resends, expiredOrEvicted, unreadableIds, pending.size(),
                 outboundSelfVelocities, unknownVelocityPayloads, lastSentId,
                 lastMatchedId, lastMatchDelayNanos, lastMatchMovementCount,
-                eventsDropped, List.copyOf(new ArrayList<>(recent)));
+                eventsDropped, List.copyOf(new ArrayList<>(recent)),
+                velocityCallbacks, velocityOtherEntity, velocityEntityIdUnreadable,
+                lastVelocityPacketEntityId, expectedSelfEntityId);
     }
 
     private long tick() {
