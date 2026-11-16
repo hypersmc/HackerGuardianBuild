@@ -75,14 +75,17 @@ public final class PacketGroundReachability {
                            long ambiguousTicks, long corrections,
                            Status lastStatus, Long lastTick, Double lastActual,
                            Double lastReachable, Double lastExcess,
-                           PacketReachabilityResiduals.Snapshot residuals) {}
+                           PacketReachabilityResiduals.Snapshot residuals,
+                           PacketMotionTransitions.Snapshot transitions) {}
 
     private record Claim(long tick, long epoch, String world,
                          MovementPacketBuffer.Position position, String material,
                          boolean sprint) {}
 
     private final Profile profile;
+    // Steady-only residuals; sprint-change tails go to separate bounded rings.
     private final PacketReachabilityResiduals residuals = new PacketReachabilityResiduals();
+    private final PacketMotionTransitions transitions = new PacketMotionTransitions();
     private Claim older, newest;
     private long positionPackets, modeled, noDecision, outside, ambiguous, corrections;
     private Status lastStatus = Status.WARMUP;
@@ -98,6 +101,7 @@ public final class PacketGroundReachability {
         positionPackets++;
         lastActual = lastReachable = lastExcess = null;
         Status status;
+        boolean sprintSwitchObserved = false;
         if (profile == null) {
             status = Status.DISABLED_VERSION;
         } else if (context == null || context.serverState() == null || context.serverTick() <= 0) {
@@ -140,6 +144,16 @@ public final class PacketGroundReachability {
                 newest = current;
                 status = Status.TICK_GAP;
             } else if (!sameContext(newest, current)) {
+                // This is a SERVER sprint-state change seen between two
+                // real client packet observations, not a client sprint
+                // intent packet. Never compare a triple across the flip.
+                if (newest.epoch() == current.epoch()
+                        && newest.world().equals(current.world())
+                        && newest.material().equals(current.material())
+                        && newest.sprint() != current.sprint()) {
+                    transitions.sprintChange(tick, epoch, newest.sprint(), current.sprint());
+                    sprintSwitchObserved = true;
+                }
                 older = null;
                 newest = current;
                 status = Status.CONTEXT_CHANGED;
@@ -189,7 +203,15 @@ public final class PacketGroundReachability {
                     // Only completed, eligible CLIENT PACKET triples enter
                     // the bounded distributions; even envelope-exceeding
                     // research points remain descriptive and non-actionable.
-                    residuals.observe(current.sprint(), residual, lastExcess);
+                    boolean postSwitch = transitions.observe(tick, epoch,
+                            current.sprint(), prevDx, prevDz, dx, dz,
+                            residual, lastExcess);
+                    // The first handful of eligible packet triples after
+                    // switching mode can retain legitimate prior momentum.
+                    // Research them separately, not under steady walking.
+                    if (!postSwitch) {
+                        residuals.observe(current.sprint(), residual, lastExcess);
+                    }
                     if (residual > radius) {
                         outside++;
                         status = Status.OUTSIDE_RESEARCH_ENVELOPE;
@@ -211,6 +233,13 @@ public final class PacketGroundReachability {
                 older = null;
                 newest = null;
             }
+            // A timing gap, packet ambiguity, changed material/world, or
+            // unknown game state makes post-switch attribution unreliable.
+            // Preserve tagging only through the matching sprint-flip
+            // context change and normal two-claim warmup.
+            if (status != Status.WARMUP && !sprintSwitchObserved) {
+                transitions.interruption();
+            }
         }
         lastStatus = status;
     }
@@ -222,6 +251,7 @@ public final class PacketGroundReachability {
         corrections++;
         lastActual = lastReachable = lastExcess = null;
         lastStatus = Status.RECENT_CORRECTION;
+        transitions.interruption();
     }
 
     private static boolean sameContext(Claim a, Claim b) {
@@ -248,6 +278,7 @@ public final class PacketGroundReachability {
         return new Snapshot(profile == null ? "unsupported" : profile.family(),
                 profile != null, positionPackets, modeled, noDecision, outside,
                 ambiguous, corrections, lastStatus, lastTick,
-                lastActual, lastReachable, lastExcess, residuals.snapshot());
+                lastActual, lastReachable, lastExcess,
+                residuals.snapshot(), transitions.snapshot());
     }
 }
