@@ -51,28 +51,40 @@ public final class MovementTickTimeline {
      */
     public record ProbeContext(boolean verified, boolean ordinaryFlatSurface,
                                boolean noActiveEffects, boolean defaultWalkSpeed,
-                               String surfaceReason, boolean sprinting) {
-        // Preserve existing test fixtures and callers. Legacy contexts have
-        // no sprint reading, so they default to the walking group in tests;
-        // the actual Bukkit sampler always passes Player.isSprinting().
+                               String surfaceReason, boolean sprinting,
+                               String groundMaterial) {
+        // Preserve earlier fixture constructors. Only the main-thread Bukkit
+        // sampler can declare the block material actually observed below.
         public ProbeContext(boolean verified, boolean ordinaryFlatSurface,
                             boolean noActiveEffects, boolean defaultWalkSpeed) {
-            this(verified, ordinaryFlatSurface, noActiveEffects, defaultWalkSpeed, "", false);
+            this(verified, ordinaryFlatSurface, noActiveEffects,
+                    defaultWalkSpeed, "", false, "UNKNOWN");
         }
 
         public ProbeContext(boolean verified, boolean ordinaryFlatSurface,
                             boolean noActiveEffects, boolean defaultWalkSpeed,
                             String surfaceReason) {
-            this(verified, ordinaryFlatSurface, noActiveEffects, defaultWalkSpeed,
-                    surfaceReason, false);
+            this(verified, ordinaryFlatSurface, noActiveEffects,
+                    defaultWalkSpeed, surfaceReason, false, "UNKNOWN");
+        }
+
+        public ProbeContext(boolean verified, boolean ordinaryFlatSurface,
+                            boolean noActiveEffects, boolean defaultWalkSpeed,
+                            String surfaceReason, boolean sprinting) {
+            this(verified, ordinaryFlatSurface, noActiveEffects,
+                    defaultWalkSpeed, surfaceReason, sprinting, "UNKNOWN");
         }
 
         public ProbeContext {
             if (surfaceReason == null) surfaceReason = "";
+            if (groundMaterial == null || groundMaterial.isBlank()) {
+                groundMaterial = "UNKNOWN";
+            }
         }
 
         public static ProbeContext unknown() {
-            return new ProbeContext(false, false, false, false, "unverified", false);
+            return new ProbeContext(false, false, false, false,
+                    "unverified", false, "UNKNOWN");
         }
     }
 
