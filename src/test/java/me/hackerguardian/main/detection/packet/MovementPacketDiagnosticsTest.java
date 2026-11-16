@@ -194,6 +194,50 @@ class MovementPacketDiagnosticsTest {
     }
 
     @Test
+    void profileViewIsSixLinesAndSeparatesWalkSprintStatistics() {
+        AtomicLong clock = new AtomicLong(1_000_000_000L);
+        var probe = new MovementGroundProbe();
+        var walk = profileFrame(0, false);
+        var walkNext = profileFrame(.25, false);
+        var sprint = profileFrame(.5, true);
+        var sprintNext = profileFrame(.85, true);
+        probe.sample(1, 1_000_000_000L, 0, walk, true, true);
+        probe.sample(2, 1_050_000_000L, 0, walkNext, true, true);
+        probe.sample(3, 1_100_000_000L, 0, sprint, true, true);
+        probe.sample(4, 1_150_000_000L, 0, sprintNext, true, true);
+
+        var buffer = new MovementPacketBuffer(8, clock::get);
+        var lines = MovementPacketDiagnostics.render("HypersMC",
+                buffer.snapshot(UUID.randomUUID()), null, null, probe.snapshot(),
+                MovementPacketDiagnostics.View.PROFILE, clock.get());
+        assertEquals(6, lines.size());
+        assertTrue(lines.stream().anyMatch(line -> line.contains("NOT a cheat check")));
+        assertTrue(lines.stream().anyMatch(line ->
+                line.contains("Walk n=1/1") && line.contains("p50 0.250")));
+        assertTrue(lines.stream().anyMatch(line ->
+                line.contains("Sprint n=1/1") && line.contains("p50 0.350")));
+        assertTrue(lines.stream().anyMatch(line -> line.contains("transition skips 1")));
+        assertTrue(lines.stream().anyMatch(line -> line.contains("last 128")));
+        assertEquals(MovementPacketDiagnostics.View.PROFILE,
+                MovementPacketDiagnostics.View.parse("distribution"));
+
+        var disabled = MovementPacketDiagnostics.render("HypersMC",
+                buffer.snapshot(UUID.randomUUID()), null, null, null,
+                MovementPacketDiagnostics.View.PROFILE, clock.get());
+        assertEquals(2, disabled.size());
+        assertTrue(disabled.get(1).contains("OFF"));
+    }
+
+    private static MovementTickTimeline.TickInput profileFrame(double x, boolean sprinting) {
+        return new MovementTickTimeline.TickInput("world",
+                new MovementPacketBuffer.Position(x, 64, 2),
+                new MovementPacketBuffer.Velocity(.20, 0, 0),
+                new MovementTickTimeline.PlayerFlags(true, false, false, false, false, false),
+                new MovementTickTimeline.Environment(true, false, true, false, false),
+                new MovementTickTimeline.ProbeContext(true, true, true, true, "", sprinting));
+    }
+
+    @Test
     void missingTransportIsReportedWithoutInventingNetworkSuccess() {
         UUID id = UUID.randomUUID();
         var buffer = new MovementPacketBuffer(2);
