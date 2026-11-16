@@ -206,9 +206,13 @@ class PacketGroundReachabilityTest {
         var snapshot = model.snapshot();
         assertEquals(4, snapshot.modeledTriples());
         assertEquals(2, snapshot.residuals().walking().total());
-        assertEquals(2, snapshot.residuals().sprinting().total());
-        assertEquals(.281 * (1 - .546), snapshot.residuals().sprinting().p50(), 1e-12);
-        assertTrue(snapshot.residuals().sprinting().p50()
+        assertEquals(0, snapshot.residuals().sprinting().total(),
+                "Post-switch residuals must not contaminate steady sprint statistics");
+        assertEquals(2, snapshot.transitions().switchResiduals().sprinting().total());
+        assertEquals(1, snapshot.transitions().walkToSprint());
+        assertEquals(.281 * (1 - .546),
+                snapshot.transitions().switchResiduals().sprinting().p50(), 1e-12);
+        assertTrue(snapshot.transitions().switchResiduals().sprinting().p50()
                 > snapshot.residuals().walking().p50());
         assertEquals(snapshot, model.snapshot(), "Admin reads cannot change profiles");
 
@@ -216,8 +220,48 @@ class PacketGroundReachabilityTest {
                 new PacketGroundReachability.Context(9, 0, true, false, sprinting));
         model.correction();
         assertEquals(4, model.snapshot().modeledTriples());
-        assertEquals(2, model.snapshot().residuals().sprinting().total(),
+        assertEquals(2, model.snapshot().transitions().switchResiduals().sprinting().total(),
                 "Unsupported client-ground claims and correction resets must not sample residuals");
+        assertEquals(0, model.snapshot().residuals().sprinting().total());
+    }
+
+    @Test
+    void sprintMomentumAfterSwitchBackToWalkingDoesNotPolluteWalkP95OrMax() {
+        var model = new PacketGroundReachability(version("1.20.2"));
+        var normal = flatGround();
+        var sprint = new MovementTickTimeline.TickInput(normal.worldKey(),
+                normal.position(), normal.velocity(), normal.flags(), normal.environment(),
+                new MovementTickTimeline.ProbeContext(true, true, true, true,
+                        "", true, "STONE"));
+        double x = 0;
+        for (int tick = 1; tick <= 35; tick++) {
+            boolean sprinting = tick >= 9 && tick < 24;
+            // Deliberately retain full sprint displacement for the first
+            // four received walking packets AFTER server sprint flag flips.
+            double distance = sprinting || (tick >= 24 && tick <= 27) ? .281 : .216;
+            x += distance;
+            model.observe(at(x, 64, 0, true), new PacketGroundReachability.Context(
+                    tick, 0, true, false, sprinting ? sprint : normal));
+        }
+
+        var result = model.snapshot();
+        assertEquals(1, result.transitions().walkToSprint());
+        assertEquals(1, result.transitions().sprintToWalk());
+        assertTrue(result.transitions().taggedWalk() > 0);
+        assertTrue(result.transitions().taggedSprint() > 0);
+        assertTrue(result.residuals().walking().total() > 0);
+        assertTrue(result.residuals().sprinting().total() > 0);
+        assertEquals(.216 * (1 - .546), result.residuals().walking().p95(), 1e-9);
+        assertEquals(.216 * (1 - .546), result.residuals().walking().max(), 1e-9);
+        assertTrue(result.transitions().switchResiduals().walking().max()
+                > result.residuals().walking().max(),
+                "Old sprint momentum must remain in the separate sprint-to-walk tail");
+        assertEquals(result.modeledTriples(),
+                result.residuals().walking().total()
+                        + result.residuals().sprinting().total()
+                        + result.transitions().taggedWalk()
+                        + result.transitions().taggedSprint());
+        assertEquals(result, model.snapshot());
     }
 
     @Test
