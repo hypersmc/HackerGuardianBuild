@@ -74,13 +74,15 @@ public final class PacketGroundReachability {
                            long modeledTriples, long noDecision, long researchedOutside,
                            long ambiguousTicks, long corrections,
                            Status lastStatus, Long lastTick, Double lastActual,
-                           Double lastReachable, Double lastExcess) {}
+                           Double lastReachable, Double lastExcess,
+                           PacketReachabilityResiduals.Snapshot residuals) {}
 
     private record Claim(long tick, long epoch, String world,
                          MovementPacketBuffer.Position position, String material,
                          boolean sprint) {}
 
     private final Profile profile;
+    private final PacketReachabilityResiduals residuals = new PacketReachabilityResiduals();
     private Claim older, newest;
     private long positionPackets, modeled, noDecision, outside, ambiguous, corrections;
     private Status lastStatus = Status.WARMUP;
@@ -184,6 +186,10 @@ public final class PacketGroundReachability {
                     lastActual = actual;
                     lastReachable = Math.hypot(cx, cz) + radius;
                     lastExcess = Math.max(0, residual - radius);
+                    // Only completed, eligible CLIENT PACKET triples enter
+                    // the bounded distributions; even envelope-exceeding
+                    // research points remain descriptive and non-actionable.
+                    residuals.observe(current.sprint(), residual, lastExcess);
                     if (residual > radius) {
                         outside++;
                         status = Status.OUTSIDE_RESEARCH_ENVELOPE;
@@ -242,6 +248,6 @@ public final class PacketGroundReachability {
         return new Snapshot(profile == null ? "unsupported" : profile.family(),
                 profile != null, positionPackets, modeled, noDecision, outside,
                 ambiguous, corrections, lastStatus, lastTick,
-                lastActual, lastReachable, lastExcess);
+                lastActual, lastReachable, lastExcess, residuals.snapshot());
     }
 }
