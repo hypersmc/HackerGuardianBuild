@@ -14,7 +14,7 @@ import java.util.concurrent.TimeUnit;
 public final class MovementPacketDiagnostics {
 
     public enum View {
-        SUMMARY, MOVEMENT, NETWORK, TICK, GUARDS, PROBE, PROFILE, DYNAMICS;
+        SUMMARY, MOVEMENT, NETWORK, TICK, GUARDS, PROBE, PROFILE, DYNAMICS, IDLE;
 
         public static View parse(String name) {
             if (name == null || name.isBlank()) return SUMMARY;
@@ -27,6 +27,7 @@ public final class MovementPacketDiagnostics {
                 case "probe", "plausibility" -> PROBE;
                 case "profile", "dist", "distribution" -> PROFILE;
                 case "dynamics", "dyn", "motion" -> DYNAMICS;
+                case "idle", "startstop", "resume" -> IDLE;
                 default -> null;
             };
         }
@@ -76,7 +77,7 @@ public final class MovementPacketDiagnostics {
                 }
                 // Print the command suffixes rather than the long full
                 // command: avoid wrapping the five-line default in chat.
-                lines.add("Views: move|net|tick|guards|probe|profile|dyn");
+                lines.add("Views: move|net|tick|guards|probe|profile|dyn|idle");
             }
             case MOVEMENT -> {
                 lines.add("Received " + packet.totalReceived() + " | Retained " + packet.retained()
@@ -211,12 +212,31 @@ public final class MovementPacketDiagnostics {
                     lines.add("Gate " + gate.lastReason() + " | unknown "
                             + gate.unknownMaterialPairs()
                             + " | changed " + gate.changedMaterialPairs());
-                    lines.add("Start " + d.starts() + " Stop " + d.stops()
+                    var idle = probe.idleTransitions();
+                    lines.add("Server starts " + idle.serverStarts() + " stops " + idle.serverStops()
                             + " | Accel " + d.accelerations()
                             + " Slow " + d.decelerations());
                     lines.add("Turn " + d.turns() + " Steady " + d.steady()
                             + " | breaks " + d.discontinuities()
                             + " | slowdown " + value(d.slowingRetention().p50()));
+                }
+            }
+            case IDLE -> {
+                if (probe == null) {
+                    lines.add("Ground start/stop research OFF (enable probe)");
+                } else {
+                    var id = probe.idleTransitions();
+                    lines.add("Bukkit SERVER samples, NOT client key presses");
+                    lines.add("Ticks " + id.capturedTicks() + " | intervals "
+                            + id.eligibleIntervals() + " | skipped " + id.noDecisionIntervals());
+                    lines.add("Observed starts " + id.serverStarts()
+                            + " | stops " + id.serverStops()
+                            + " | breaks " + id.interruptedChains());
+                    lines.add("Starts w/recent packet " + id.startsWithRecentClient()
+                            + " | stops w/o recent packet " + id.stopsWithoutRecentClient());
+                    lines.add("State " + id.state() + " | " + id.lastStatus()
+                            + " | " + id.lastBlock()
+                            + " | motion " + value(id.lastBlocksPer50ms()));
                 }
             }
             case NETWORK -> {
