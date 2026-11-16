@@ -440,6 +440,62 @@ punishments, ML labels or evidence journaling.
 
 **Status:** committed as research-only, subject to CI and runtime testing.
 
+## Live packet transition and residual-grouping retest: passed (2026-11-16)
+
+The tester provided four screenshots of the same Survival session, with
+two walk/sprint/switch-back sequences (first two screenshots, then a
+repeat). The screenshots show:
+
+| Observation | Reading 1 | Reading 2 | Reading 3 | Reading 4 |
+|---|---:|---:|---:|---:|
+| Walk residual retained/total | 128/165 | 128/337 | 128/515 | 128/679 |
+| Walk r50/r95/max | .098/.098/.098 | .098/.098/.098 | .098/.098/.098 | .098/.098/.098 |
+| Sprint residual retained/total | 0/0 | 128/159 | 128/159 | 128/324 |
+| Sprint r50/r95/max | n/a | .127/.127/.127 | .127/.127/.127 | .127/.127/.127 |
+| Walk→sprint observed switches | 1 | 1 | 2 | 2 |
+| Sprint→walk observed switches | 1 | 1 | 2 | 2 |
+| Post-switch tagged packets | 9 | 9 | 18 | 18 |
+| After sprint→walk retained/session total | 4/4 | 4/4 | 8/8 | 8/8 |
+| After sprint→walk p95/max | 0.000/0.000 | 0.000/0.000 | 0.000/0.000 | 0.000/0.000 |
+| After walk→sprint retained/session total | 5/5 | 5/5 | 10/10 | 10/10 |
+| After walk→sprint p95/max | .127/.127 | .127/.127 | .127/.127 | .127/.127 |
+| Accelerating/slow/turn/steady | 2/4/0/328 | 3/7/0/495 | 4/11/0/842 | 5/14/0/1014 |
+| Outside research envelope W/S | 0/0 | 0/0 | 0/0 | 0/0 |
+
+**Result:** first real-server packet transition grouping regression
+**passed**. The number of observed sprint switches and tagged windows
+doubled on repetition, and the steady walking residual maximum stayed
+at **0.098** rather than rising to the earlier **0.127**; sprinting
+steady residual stayed at 0.127. The new bounded post-switch rings
+recorded 4 then 8 walking-tail samples and 5 then 10 sprinting-tail
+samples. This validates the observed *separation* of the research
+populations on this one test server, not the accuracy of the assumed
+physics constants.
+
+**Important: a 0.000 residual is not synonymous with no movement.**
+The model defines residual as
+`|v_current - 0.546 * v_previous|`. A packet sequence following the
+assumed drag with little input, including decaying motion, may produce
+near-zero residual while the player is moving. Stationarity could also
+produce zero. These screenshots do not distinguish them. They are not
+proof of key release, genuine friction, or a perfect prediction.
+They do show a systematic contrast between the two switch directions.
+
+The phase counters increased as the session progressed; turning
+remained zero. A separate controlled turning test is needed before
+the turn classifier can be called runtime-validated. These phases
+measure changes in **decoded client packet displacement**, with the
+sprint-mode label separately sampled via Bukkit; they are not decoded
+client input commands.
+
+Suggested next instrumentation: in each post-switch window, report
+**the distribution of actual packet horizontal displacement** alongside
+the residual. That would distinguish stationary packets from
+friction-like coasting without claiming to know the keyboard state.
+Then test sprint-key release while deliberately holding forward versus
+releasing both forward and sprint, including controlled 90-degree
+turns. Never use either outcome for moderation.
+
 ## Next actual physics work
 
 Capture trustworthy per-player packet order and *validated tick equivalence*,
