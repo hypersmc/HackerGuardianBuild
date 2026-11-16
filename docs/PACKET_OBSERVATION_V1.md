@@ -240,6 +240,51 @@ smoke test. Outgoing self-velocity delivery/decoding, multiple-version
 compatibility and stress behavior remain untested. This is not validation of
 cheat detection or enforcement.
 
+## Zombie knockback discrepancy: missing outgoing self-velocity (2026-11-16)
+
+In the initial single-account zombie-hit test, Bukkit server-intent events
+increased from 1 to 3, ending with `VELOCITY`, but
+`Self-velocity packets observed` stayed at 0 and
+`Unknown payload` stayed at 0. This does **not** prove that no velocity
+packet was actually sent to the client: the packet listener may not have
+received a callback, the entity-ID field may be incompatible with the
+decoder, the packet might have targeted another entity, or a plugin/server
+may have handled velocity through a different network path.
+
+We added **read-only** transport diagnostics which count *all*
+outbound `ENTITY_VELOCITY` callbacks associated with this player's session
+**before** target-ID filtering:
+
+- `Velocity wire`: observed callbacks of that packet type
+- `self`: callbacks matching the cached player entity ID
+- `other`: callbacks whose readable ID targets another entity
+- `ID?`: callbacks where target entity ID could not be decoded
+- `Self entity ID` and `last wire ID`: help diagnose an entity-ID mismatch
+- `payload?`: self-directed packets with an unreadable velocity vector
+
+The view remains at six lines and does not expose entity IDs beyond the
+operator's existing `hg.admin.detection` permission.
+
+### Follow-up solo test
+
+Rebuild the same branch, restart, join and check
+`/hg detection packets <player> net`. Get hit by a zombie in Survival mode
+and rerun the command.
+
+- `Velocity wire = 0` despite new Bukkit velocity intents: investigate
+  listener registration, protocol packet type and whether the server sent
+  such packets at all.
+- `Velocity wire > 0`, `other > 0`: investigate target entity ID vs
+  cached self entity ID and respawn/rejoin behavior.
+- `Velocity wire > 0`, `ID? > 0`: investigate ProtocolLib field layout
+  for the exact Minecraft/ProtocolLib versions; **do not guess IDs**.
+- `self > 0`, `payload? > 0`: the self entity was recognized but
+  the velocity payload layout needs version-specific support.
+- `self > 0`, `payload? = 0`: mark the outbound self-velocity observation
+  smoke test passed for this setup. No client delivery guarantee exists.
+
+The diagnostic counters are **never** a Speed, Fly, or AntiKnockback verdict.
+
 ## Next increment
 
 Validate outgoing self-velocity observation on the tested server and examine
