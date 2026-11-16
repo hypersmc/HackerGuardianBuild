@@ -442,6 +442,35 @@ mode/block context changed consistently with the tester's actions. This does
 NOT validate client physics prediction, lag/teleport/knockback boundary
 handling, multi-version compatibility, or detection accuracy.
 
+## Single-account teleport and zombie-hit follow-up (2026-11-16)
+
+The tester supplied two post-action `/hg detection packets HypersMC tick`
+screenshots:
+
+- **After /tp:** Minecraft printed destination approximately
+  `-24.385, 71.000, 160.690`. The later snapshot (server tick 15383)
+  recorded XYZ `-24.70 69.00 159.69`, velocity `0.00 -0.08 0.00`,
+  `ground=true`, `flying=false`, below not passable, and
+  `Last pair delta 0.000` at a 35.8 ms sample gap. This is a
+  *subsequent* position, not evidence of an immediate teleport failure;
+  movement/falling may have occurred between actions and the sample.
+- **After zombie hit / Survival:** the later snapshot (server tick 15790)
+  recorded XYZ `-22.65 67.00 161.58`, velocity
+  `0.01 -0.08 0.01`, `ground=true`, `flying=false`, below not
+  passable, and `Last pair delta 0.000` at a 37.5 ms gap.
+  The screenshot does not show the actual knockback or a wire velocity
+  event; it only confirms that sampling continued afterward.
+- In both screenshots a recent completed client/server comparison was
+  available and no instantaneous invalidation state was displayed.
+
+**Result:** pass for continuing normal tick sampling *after* the teleport
+and reported zombie hit. This does **not** validate the short-lived
+`CORRECTION_WINDOW` / `DIFFERENT_CONTEXT` / `PENDING_TELEPORT`
+suppression in vivo: the `tick` view can easily be executed only after
+the transient period has ended. Unit tests cover those transitions.
+The next useful improvement is event-driven or latched correction
+diagnostics, so staff do not need to time a chat command to a few ticks.
+
 ## Next increment
 
 Test correction states during `/tp` and zombie knockback, world changes
