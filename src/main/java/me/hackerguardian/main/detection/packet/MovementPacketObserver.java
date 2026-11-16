@@ -157,7 +157,8 @@ public final class MovementPacketObserver implements Listener {
         for (Map.Entry<Player, Session> entry : sessions.entrySet()) {
             Player player = entry.getKey();
             if (!player.isOnline()) continue;
-            MovementTickTimeline.TickInput input = MovementTickSampler.sample(player);
+            MovementTickTimeline.TickInput input =
+                    MovementTickSampler.sample(player, groundProbeEnabled);
             if (input != null) entry.getValue().sampleServerTick(tick, input);
         }
     }
