@@ -265,6 +265,54 @@ class PacketGroundReachabilityTest {
     }
 
     @Test
+    void packetDistanceDisambiguatesZeroResidualCoastingFromStationaryInterval() {
+        var model = new PacketGroundReachability(version("1.20.2"));
+        var walk = flatGround();
+        var sprint = new MovementTickTimeline.TickInput(walk.worldKey(),
+                walk.position(), walk.velocity(), walk.flags(), walk.environment(),
+                new MovementTickTimeline.ProbeContext(true, true, true, true,
+                        "", true, "STONE"));
+        double x = 0;
+        for (int t = 1; t <= 10; t++) {
+            x += t <= 3 ? .216 : .281;
+            model.observe(at(x, 64, 0, true),
+                    new PacketGroundReachability.Context(t, 0, true, false,
+                            t <= 3 ? walk : sprint));
+        }
+
+        // Synthetic zero-input decay, with strictly positive packet
+        // displacement despite a model residual close to zero.
+        double decay = .281;
+        for (int t = 11; t <= 15; t++) {
+            decay *= .546;
+            x += decay;
+            model.observe(at(x, 64, 0, true),
+                    new PacketGroundReachability.Context(t, 0, true, false, walk));
+        }
+        var coasting = model.snapshot().transitions();
+        assertEquals(1, coasting.sprintToWalk());
+        assertTrue(coasting.switchDisplacements().enteringWalk().total() >= 2);
+        assertTrue(coasting.switchDisplacements().enteringWalk().dragLike() >= 2,
+                "Nonzero packet motion can have nearly zero input residual");
+        assertEquals(0, coasting.switchDisplacements().enteringWalk().nearZero(),
+                "The initial decay steps are not stationary");
+        assertTrue(coasting.switchDisplacements().enteringWalk().p95() > .01);
+        assertEquals(0.0, coasting.switchResiduals().walking().p95(), 1e-9);
+
+        // A motionless packet interval is different from coasting.
+        // Reset to a separate post-switch window so both groups can
+        // be compared without changing existing reachability rules.
+        var stopped = new PacketMotionTransitions();
+        stopped.sprintChange(20, 0, true, false);
+        stopped.observe(22, 0, false, 0, 0, 0, 0, 0, 0);
+        stopped.observe(23, 0, false, 0, 0, 0, 0, 0, 0);
+        var still = stopped.snapshot().switchDisplacements().enteringWalk();
+        assertEquals(2, still.nearZero());
+        assertEquals(0, still.dragLike());
+        assertEquals(0.0, still.p95(), 0.0);
+    }
+
+    @Test
     void syntheticResearchOutsideIsRecordedButNotTreatedAsARealCheatVerdict() {
         var model = new PacketGroundReachability(version("1.21.11"));
         model.observe(at(0, 64, 0, true), context(1));
