@@ -15,7 +15,7 @@ public final class MovementPacketDiagnostics {
 
     public enum View {
         SUMMARY, MOVEMENT, NETWORK, TICK, GUARDS, PROBE, PROFILE, DYNAMICS, IDLE,
-        PREDICT, RESIDUALS;
+        PREDICT, RESIDUALS, SWITCHES;
 
         public static View parse(String name) {
             if (name == null || name.isBlank()) return SUMMARY;
@@ -31,6 +31,7 @@ public final class MovementPacketDiagnostics {
                 case "idle", "startstop", "resume" -> IDLE;
                 case "predict", "reachability", "pktphysics" -> PREDICT;
                 case "residuals", "res", "predstats", "predictstats" -> RESIDUALS;
+                case "switch", "switches", "trans", "transitions" -> SWITCHES;
                 default -> null;
             };
         }
@@ -89,7 +90,7 @@ public final class MovementPacketDiagnostics {
                 }
                 // Print the command suffixes rather than the long full
                 // command: avoid wrapping the five-line default in chat.
-                lines.add("Views: move|net|tick|guards|probe|profile|dyn|idle|predict|res");
+                lines.add("Views: move|net|tick|guards|probe|profile|dyn|idle|predict|res|trans");
             }
             case MOVEMENT -> {
                 lines.add("Received " + packet.totalReceived() + " | Retained " + packet.retained()
@@ -274,14 +275,35 @@ public final class MovementPacketDiagnostics {
                     lines.add("Packet residual research OFF (opt-in)");
                 } else {
                     var stats = prediction.residuals();
-                    lines.add("Client packet input residual | research ONLY");
+                    lines.add("STEADY packet input residual | research ONLY");
                     lines.add(packetResidualLine("Walk", stats.walking()));
                     lines.add(packetResidualLine("Sprint", stats.sprinting()));
                     lines.add("Outside W " + stats.walking().outside()
                             + " S " + stats.sprinting().outside()
                             + " | peak excess W " + value(stats.walking().maxExcess())
                             + " S " + value(stats.sprinting().maxExcess()));
-                    lines.add("Only modeled triples | no-decision " + prediction.noDecision());
+                    lines.add("Switch tails excluded W "
+                            + prediction.transitions().taggedWalk()
+                            + " S " + prediction.transitions().taggedSprint()
+                            + " | no-decision " + prediction.noDecision());
+                }
+            }
+            case SWITCHES -> {
+                if (prediction == null) {
+                    lines.add("Packet transition research OFF (opt-in)");
+                } else {
+                    var trans = prediction.transitions();
+                    var tail = trans.switchResiduals();
+                    lines.add("Packet deltas | Bukkit sprint label | RESEARCH");
+                    lines.add("Walk>sprint " + trans.walkToSprint()
+                            + " | Sprint>walk " + trans.sprintToWalk()
+                            + " | tagged " + (trans.taggedWalk() + trans.taggedSprint()));
+                    lines.add("Accel " + trans.accelerating()
+                            + " Slow " + trans.decelerating()
+                            + " Turn " + trans.turning()
+                            + " Steady " + trans.steady());
+                    lines.add(transitionTailLine("After sprint>walk", tail.walking()));
+                    lines.add(transitionTailLine("After walk>sprint", tail.sprinting()));
                 }
             }
             case NETWORK -> {
@@ -317,6 +339,12 @@ public final class MovementPacketDiagnostics {
 
     private static String value(Double number) {
         return number == null ? "n/a" : String.format(Locale.ROOT, "%.3f", number);
+    }
+
+    private static String transitionTailLine(String mode,
+                                             PacketReachabilityResiduals.ModeStats stats) {
+        return mode + " n=" + stats.total()
+                + " p95 " + value(stats.p95()) + " max " + value(stats.max());
     }
 
     private static String packetResidualLine(String mode,
