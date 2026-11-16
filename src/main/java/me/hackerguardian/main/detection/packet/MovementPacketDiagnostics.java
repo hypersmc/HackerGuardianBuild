@@ -14,7 +14,7 @@ import java.util.concurrent.TimeUnit;
 public final class MovementPacketDiagnostics {
 
     public enum View {
-        SUMMARY, MOVEMENT, NETWORK, TICK, GUARDS, PROBE, PROFILE;
+        SUMMARY, MOVEMENT, NETWORK, TICK, GUARDS, PROBE, PROFILE, DYNAMICS;
 
         public static View parse(String name) {
             if (name == null || name.isBlank()) return SUMMARY;
@@ -26,6 +26,7 @@ public final class MovementPacketDiagnostics {
                 case "guards", "guard", "safety" -> GUARDS;
                 case "probe", "plausibility" -> PROBE;
                 case "profile", "dist", "distribution" -> PROFILE;
+                case "dynamics", "dyn", "motion" -> DYNAMICS;
                 default -> null;
             };
         }
@@ -73,7 +74,9 @@ public final class MovementPacketDiagnostics {
                             + transport.matchedConfirms() + " | pending " + transport.pendingTeleports()
                             + " | unmatched " + transport.unmatchedConfirms());
                 }
-                lines.add("Details: /hg detection packets " + player + " move|net|tick|guards|probe|profile");
+                // Print the command suffixes rather than the long full
+                // command: avoid wrapping the five-line default in chat.
+                lines.add("Views: move|net|tick|guards|probe|profile|dyn");
             }
             case MOVEMENT -> {
                 lines.add("Received " + packet.totalReceived() + " | Retained " + packet.retained()
@@ -194,6 +197,23 @@ public final class MovementPacketDiagnostics {
                             + probe.sprintTransitions() + " | no-decision " + probe.noDecision());
                 }
             }
+            case DYNAMICS -> {
+                if (probe == null) {
+                    lines.add("Ground dynamics OFF (enable ground probe first)");
+                } else {
+                    var d = probe.dynamics();
+                    lines.add("Ground motion research ONLY, no cheat verdicts");
+                    lines.add("Start " + d.starts() + " Stop " + d.stops()
+                            + " | Accel " + d.accelerations() + " Slow " + d.decelerations());
+                    lines.add("Turn " + d.turns() + " Steady " + d.steady()
+                            + " | paired " + d.comparedTransitions()
+                            + " | breaks " + d.discontinuities());
+                    lines.add("Speed change p50 " + value(d.absoluteSpeedChange().p50())
+                            + " p95 " + value(d.absoluteSpeedChange().p95()) + " b/50ms");
+                    lines.add("Slowdown ratio p50 " + value(d.slowingRetention().p50())
+                            + " | NOT friction | " + d.lastSurface());
+                }
+            }
             case NETWORK -> {
                 if (transport == null) {
                     lines.add("Transport tracking unavailable");
@@ -223,6 +243,10 @@ public final class MovementPacketDiagnostics {
             }
         }
         return List.copyOf(lines);
+    }
+
+    private static String value(Double number) {
+        return number == null ? "n/a" : String.format(Locale.ROOT, "%.3f", number);
     }
 
     private static String profileLine(String mode, GroundMotionDistributions.Stats stats) {
