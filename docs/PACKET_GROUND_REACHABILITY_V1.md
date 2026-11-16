@@ -496,6 +496,86 @@ Then test sprint-key release while deliberately holding forward versus
 releasing both forward and sprint, including controlled 90-degree
 turns. Never use either outcome for moderation.
 
+## Post-switch packet displacement: separating idle from drag-like motion (2026-11-17)
+
+The first repeated live walk/sprint tests showed **zero residual** (at
+three-decimal precision) in the post-sprint-to-walk window, but this
+cannot distinguish true stationary movement from motion that follows
+the provisional drag equation. This increment adds **actual horizontal
+displacement from the same accepted client packet triples**, grouped
+with the existing residuals (no new Bukkit movement-position source).
+
+The existing compact admin command remains:
+
+```text
+/hg detection packets HypersMC trans
+```
+
+The final two lines are now shortened into paired stats for the
+post-switch-to-walk (`S>W`) and post-switch-to-sprint (`W>S`) windows:
+
+```text
+S>W n8 r95 0.000 d95 0.032 near0 2 drag~ 6
+W>S n10 r95 0.127 d95 0.281 near0 0 drag~ 0
+```
+
+*Illustrative numbers above, not the test server's measurements.*
+
+- **`n`**: cumulative accepted modeled packet triples tagged within
+  that switch direction. The retained distributions contain at most
+  the latest **128** per direction. Statistics are read-time only.
+- **`r95`**: 95th-percentile required *unknown-input residual*
+  `|v_current - 0.546 * v_previous|` among the retained triples.
+- **`d95`**: 95th-percentile **actual decoded client-packet XZ
+  displacement magnitude** `|v_current|` among those same retained
+  triples, in **blocks per accepted packet interval**, not blocks/50ms.
+- **`near0`**: number of retained intervals with actual displacement
+  at most **0.002 blocks**. This is a measured near-zero packet delta,
+  *not* a guaranteed client key-release or real-world rest state.
+- **`drag~`**: number of retained *non-near-zero* intervals where
+  the provisional residual is at most **0.005 blocks**. This identifies
+  observed movement approximately following `0.546*v_previous`,
+  *not* a verified friction event or a key-up declaration.
+
+The `near0` and `drag~` thresholds are purely **research labeling
+conventions**, not Minecraft physics guarantees or Speed/Fly thresholds.
+Residual and displacement are collected together only from eligible,
+same-ground, same-epoch, same-sprint-state, correctly ordered incoming
+client-position packet triples inside the existing six
+**server-tick-hint** post-switch window. No change to that window or
+the original prediction/no-decision/correction behavior.
+
+A fully stationary player might stop sending position packets: that
+absence never becomes a fabricated zero-displacement packet sample.
+Conversely, a true packet delta of zero with near-zero residual is
+different from a positive packet delta with near-zero residual, even
+though both display `r95 0.000`.
+
+### Controlled follow-up
+
+1. In Survival on a long level STONE platform, sprint steadily,
+   **release sprint but continue holding forward** for several seconds;
+   read `trans` and `res` and note the changes to `S>W`.
+2. In the same session, sprint again, then **release both sprint and
+   forward**, without jumping, and compare the new `S>W` samples.
+   Contrast `d95`, `near0`, and `drag~`. Avoid declaring either
+   behavior a verified client key state.
+3. Walk/sprint in a straight line, then make distinct **90-degree turns**
+   while continuing to move on the same uniform ground. The turn
+   counter should begin recording eligible abrupt direction changes,
+   but zero can still result from gradual turning or missed packets.
+4. Jump, teleport, switch to Creative, take knockback, or cross unsupported
+   materials; verify the existing packet predictor exclusions are
+   unchanged and no new post-switch displacement samples cross
+   those boundaries.
+5. Quit/rejoin to verify that all bounded session counters restart.
+
+**Validation status:** Java regression fixtures distinguish genuinely
+near-stationary packet deltas from positive, drag-like displacement
+despite nearly identical residuals. A new live Paper test is still
+required to establish how often either occurs in real gameplay.
+All observations remain opt-in, in-memory and non-enforcing.
+
 ## Next actual physics work
 
 Capture trustworthy per-player packet order and *validated tick equivalence*,
