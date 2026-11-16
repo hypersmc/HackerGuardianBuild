@@ -311,6 +311,37 @@ class MovementPacketDiagnosticsTest {
     }
 
     @Test
+    void idleViewShowsServerOriginAndPacketFreshnessWithoutSuggestingKeyRelease() {
+        var probe = new MovementGroundProbe();
+        for (int tick = 1; tick <= 7; tick++) {
+            double x = tick <= 3 ? 0 : tick <= 5 ? (tick - 3) * .2 : .4;
+            boolean hasClientPacket = tick == 4 || tick == 5;
+            probe.sample(tick, tick * 50_000_000L, 0,
+                    dynamicFrame(x), true, hasClientPacket);
+        }
+        var packets = new MovementPacketBuffer(8);
+        var lines = MovementPacketDiagnostics.render("HypersMC",
+                packets.snapshot(UUID.randomUUID()), null, null, probe.snapshot(),
+                MovementPacketDiagnostics.View.IDLE, System.nanoTime());
+        assertEquals(6, lines.size());
+        assertTrue(lines.stream().anyMatch(line -> line.contains("SERVER samples")
+                && line.contains("NOT client key presses")));
+        assertTrue(lines.stream().anyMatch(line -> line.contains("Observed starts 1")
+                && line.contains("stops 1")));
+        assertTrue(lines.stream().anyMatch(line -> line.contains("stops w/o recent packet 1")));
+        assertTrue(lines.stream().anyMatch(line -> line.contains("State IDLE")
+                && line.contains("STONE")));
+        assertEquals(MovementPacketDiagnostics.View.IDLE,
+                MovementPacketDiagnostics.View.parse("startstop"));
+
+        var disabled = MovementPacketDiagnostics.render("HypersMC",
+                packets.snapshot(UUID.randomUUID()), null, null, null,
+                MovementPacketDiagnostics.View.IDLE, System.nanoTime());
+        assertEquals(2, disabled.size());
+        assertTrue(disabled.get(1).contains("OFF"));
+    }
+
+    @Test
     void missingTransportIsReportedWithoutInventingNetworkSuccess() {
         UUID id = UUID.randomUUID();
         var buffer = new MovementPacketBuffer(2);
