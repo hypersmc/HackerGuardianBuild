@@ -475,9 +475,13 @@ class MovementPacketDiagnosticsTest {
                 && line.contains("RESEARCH")));
         assertTrue(lines.stream().anyMatch(line -> line.contains("Walk>sprint 1")
                 && line.contains("Sprint>walk 0")));
-        assertTrue(lines.stream().anyMatch(line -> line.contains("After walk>sprint n=2")
-                && line.contains("p95") && line.contains("max")));
-        assertTrue(lines.stream().anyMatch(line -> line.contains("After sprint>walk n=0")));
+        assertTrue(lines.stream().anyMatch(line -> line.contains("W>S n2")
+                && line.contains("r95 0.127")
+                && line.contains("d95 0.281")
+                && line.contains("near0 0")
+                && line.contains("drag~ 0")));
+        assertTrue(lines.stream().anyMatch(line -> line.contains("S>W n0")
+                && line.contains("r95 n/a") && line.contains("d95 n/a")));
         assertEquals(MovementPacketDiagnostics.View.SWITCHES,
                 MovementPacketDiagnostics.View.parse("trans"));
 
