@@ -256,6 +256,8 @@ class MovementGroundProbeTest {
         // Two individually safe ordinary blocks, but not a uniform surface.
         probe.sample(7, 7 * STEP, 0, materialFrame(1.4, "GRASS_BLOCK"), true, true);
         assertEquals(2, probe.snapshot().dynamics().comparedTransitions());
+        assertEquals(1, probe.snapshot().dynamicsGate().changedMaterialPairs());
+        assertEquals("CHANGED_MATERIAL", probe.snapshot().dynamicsGate().lastReason());
         probe.sample(8, 8 * STEP, 0, materialFrame(1.6, "GRASS_BLOCK"), true, true);
         probe.sample(9, 9 * STEP, 0, materialFrame(1.8, "GRASS_BLOCK"), true, true);
         assertEquals(3, probe.snapshot().dynamics().comparedTransitions());
