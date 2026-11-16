@@ -137,7 +137,9 @@ public final class MovementTickTimeline {
     }
 
     public synchronized Snapshot snapshot() {
-        long now = monotonicTime();
+        // Reading diagnostics must NOT advance the serialized timeline clock.
+        // Only actual packet/server events get a distinct observation stamp.
+        long now = Math.max(lastNanos, clock.getAsLong());
         List<ServerTick> history = List.copyOf(new ArrayList<>(ticks));
         return new Snapshot(sampledTicks, droppedTicks, history,
                 clientPacketsObserved, lastClient, correctionEpoch,
