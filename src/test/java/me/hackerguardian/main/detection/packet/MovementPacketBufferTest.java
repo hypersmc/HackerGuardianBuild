@@ -67,6 +67,57 @@ class MovementPacketBufferTest {
     }
 
     @Test
+    void recentFiveSecondBreakdownUsesMonotonicReceiveTimes() {
+        AtomicLong now = new AtomicLong(0);
+        MovementPacketBuffer buffer = new MovementPacketBuffer(8, now::get);
+        UUID player = UUID.randomUUID();
+
+        now.set(1_000_000_000L);
+        buffer.record(player, MovementPacketBuffer.Kind.GROUND);
+        now.set(2_000_000_000L);
+        buffer.record(player, MovementPacketBuffer.Kind.POSITION);
+        now.set(6_000_000_000L);
+        buffer.record(player, MovementPacketBuffer.Kind.LOOK);
+        now.set(7_000_000_000L);
+        buffer.record(player, MovementPacketBuffer.Kind.POSITION_LOOK);
+
+        MovementPacketBuffer.WindowStats stats =
+                buffer.snapshot(player).recentWindow(7_000_000_000L, 5_000_000_000L);
+        assertEquals(3, stats.count());
+        assertEquals(0, stats.ground());
+        assertEquals(1, stats.position());
+        assertEquals(1, stats.look());
+        assertEquals(1, stats.positionLook());
+        assertEquals(0.6, stats.ratePerSecond(), 1e-12);
+        assertEquals(false, stats.truncated());
+    }
+
+    @Test
+    void truncatedWindowIsVisibleButOlderDropsDoNotFalselyWarn() {
+        AtomicLong now = new AtomicLong(0);
+        MovementPacketBuffer buffer = new MovementPacketBuffer(2, now::get);
+        UUID player = UUID.randomUUID();
+        now.set(1_000_000_000L);
+        buffer.record(player, MovementPacketBuffer.Kind.GROUND);
+        now.set(2_000_000_000L);
+        buffer.record(player, MovementPacketBuffer.Kind.POSITION);
+        now.set(3_000_000_000L);
+        buffer.record(player, MovementPacketBuffer.Kind.LOOK);
+
+        MovementPacketBuffer.Snapshot snapshot = buffer.snapshot(player);
+        assertEquals(1, snapshot.dropped());
+        MovementPacketBuffer.WindowStats partial =
+                snapshot.recentWindow(3_000_000_000L, 5_000_000_000L);
+        assertEquals(2, partial.count());
+        assertTrue(partial.truncated());
+
+        MovementPacketBuffer.WindowStats complete =
+                snapshot.recentWindow(10_000_000_000L, 5_000_000_000L);
+        assertEquals(0, complete.count());
+        assertEquals(false, complete.truncated());
+    }
+
+    @Test
     void concurrentProducersPreserveStrictSequence() throws Exception {
         MovementPacketBuffer buffer = new MovementPacketBuffer(32);
         UUID player = UUID.randomUUID();
