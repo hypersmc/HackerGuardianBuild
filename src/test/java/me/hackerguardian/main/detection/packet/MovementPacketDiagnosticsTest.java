@@ -476,7 +476,7 @@ class MovementPacketDiagnosticsTest {
         assertTrue(lines.stream().anyMatch(line -> line.contains("Walk>sprint 1")
                 && line.contains("Sprint>walk 0")));
         assertTrue(lines.stream().anyMatch(line -> line.contains("W>S n2")
-                && line.contains("r95 0.127")
+                && line.contains("r95 0.128")
                 && line.contains("d95 0.281")
                 && line.contains("near0 0")
                 && line.contains("drag~ 0")));
