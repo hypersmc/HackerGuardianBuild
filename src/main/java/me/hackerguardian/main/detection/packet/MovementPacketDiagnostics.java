@@ -113,13 +113,20 @@ public final class MovementPacketDiagnostics {
                     if (comparison.status() == MovementTickTimeline.Status.READY_DIAGNOSTIC
                             && comparison.positionDifference() != null) {
                         lines.add(String.format(Locale.ROOT,
-                                "Raw delta %.3f blocks | gap %.1fms (not a verdict)",
+                                "Last pair delta %.3f | gap %.1fms (not verdict)",
                                 comparison.positionDifference(),
                                 comparison.tickLagNanos() / 1_000_000.0));
-                    } else {
+                    } else if (comparison.status() == MovementTickTimeline.Status.CORRECTION_WINDOW
+                            || comparison.status() == MovementTickTimeline.Status.DIFFERENT_CONTEXT
+                            || comparison.status() == MovementTickTimeline.Status.PENDING_TELEPORT) {
                         lines.add("Comparison " + comparison.status()
-                                + " | correction " + (ticks.lastCorrection() == null
+                                + " | boundary " + (ticks.lastCorrection() == null
                                 ? "none" : ticks.lastCorrection()));
+                    } else {
+                        // Last correction could be hours old; do not present
+                        // it as the cause of waiting for the next tick.
+                        lines.add("Comparison " + comparison.status()
+                                + " | no completed recent pair");
                     }
                 }
             }
