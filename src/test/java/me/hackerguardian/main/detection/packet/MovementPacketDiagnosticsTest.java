@@ -633,7 +633,7 @@ class MovementPacketDiagnosticsTest {
         assertTrue(lines.stream().anyMatch(l -> l.contains("Gap clusters n 1")
                 && l.contains("p95 2") && l.contains("live 0")));
         assertTrue(lines.stream().anyMatch(l -> l.contains("Gap singles 0 multi 1")
-                && l.contains("timing reject 2") && l.contains("warmups between 2")));
+                && l.contains("timing reject 2") && l.contains("warmups in 2")));
         assertEquals(MovementPacketDiagnostics.View.RUNS, MovementPacketDiagnostics.View.parse("runs"));
         assertEquals(MovementPacketDiagnostics.View.RUNS, MovementPacketDiagnostics.View.parse("clusters"));
 
