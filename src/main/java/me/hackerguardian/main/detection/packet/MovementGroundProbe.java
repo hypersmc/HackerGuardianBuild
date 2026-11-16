@@ -28,7 +28,9 @@ public final class MovementGroundProbe {
                            long researchOutliers, long consecutiveOutlierSamples,
                            Result lastResult, long lastTick,
                            Double horizontalDistance, Double envelope,
-                           long lastResearchOutlierTick) {}
+                           long lastResearchOutlierTick, long unsafeTerrainSamples,
+                           long noClientDataSamples, long specialMovementSamples,
+                           String lastSurfaceReason) {}
 
     private record Previous(long tick, long nanos, long epoch,
                             MovementTickTimeline.TickInput input) {}
@@ -38,6 +40,8 @@ public final class MovementGroundProbe {
     private Result lastResult = Result.WARMUP;
     private long lastTick = -1, lastOutlierTick = -1;
     private Double lastDistance, lastEnvelope;
+    private long unsafeTerrainSamples, noClientDataSamples, specialMovementSamples;
+    private String lastSurfaceReason = "not observed";
 
     /**
      * Called under a session lock, once per server tick when enabled.
@@ -114,8 +118,33 @@ public final class MovementGroundProbe {
             consecutive = 0;
             noDecision++;
         }
+        if (next == Result.UNSAFE_TERRAIN) {
+            unsafeTerrainSamples++;
+            lastSurfaceReason = !eligibleSurface(previous.input())
+                    ? surfaceReason(previous.input())
+                    : surfaceReason(input);
+        } else if (next == Result.NO_CLIENT_DATA) {
+            noClientDataSamples++;
+        } else if (next == Result.SPECIAL_MOVEMENT) {
+            specialMovementSamples++;
+        }
         lastResult = next;
         previous = new Previous(tick, nanos, epoch, input);
+    }
+
+    private static String surfaceReason(MovementTickTimeline.TickInput input) {
+        var e = input.environment();
+        var p = input.probeContext();
+        if (!p.verified()) return "profile unverified";
+        if (!e.feetPassable()) return "feet blocked";
+        if (!e.headPassable()) return "head blocked";
+        if (!p.ordinaryFlatSurface()) {
+            return p.surfaceReason().isBlank() ? "ordinary surface not verified"
+                    : p.surfaceReason();
+        }
+        if (e.belowPassable()) return "below passable";
+        if (e.feetLiquid() || e.belowLiquid()) return "liquid nearby";
+        return "terrain unknown";
     }
 
     private static boolean eligibleModes(MovementTickTimeline.TickInput input) {
@@ -139,6 +168,8 @@ public final class MovementGroundProbe {
 
     public synchronized Snapshot snapshot() {
         return new Snapshot(samples, evaluated, noDecision, outliers, consecutive,
-                lastResult, lastTick, lastDistance, lastEnvelope, lastOutlierTick);
+                lastResult, lastTick, lastDistance, lastEnvelope, lastOutlierTick,
+                unsafeTerrainSamples, noClientDataSamples, specialMovementSamples,
+                lastSurfaceReason);
     }
 }
