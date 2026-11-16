@@ -20,7 +20,7 @@ public final class MovementGroundProbe {
 
     public enum Result {
         WARMUP, NO_CLIENT_DATA, CORRECTION, UNKNOWN_PHYSICS,
-        SPECIAL_MOVEMENT, UNSAFE_TERRAIN, TICK_GAP, UNSTABLE_TICK,
+        SPECIAL_MOVEMENT, SPRINT_TRANSITION, UNSAFE_TERRAIN, TICK_GAP, UNSTABLE_TICK,
         WITHIN_RESEARCH_ENVELOPE, RESEARCH_OUTLIER
     }
 
@@ -30,7 +30,8 @@ public final class MovementGroundProbe {
                            Double horizontalDistance, Double envelope,
                            long lastResearchOutlierTick, long unsafeTerrainSamples,
                            long noClientDataSamples, long specialMovementSamples,
-                           String lastSurfaceReason) {}
+                           String lastSurfaceReason,
+                           GroundMotionDistributions.Snapshot distributions) {}
 
     private record Previous(long tick, long nanos, long epoch,
                             MovementTickTimeline.TickInput input) {}
@@ -42,6 +43,7 @@ public final class MovementGroundProbe {
     private Double lastDistance, lastEnvelope;
     private long unsafeTerrainSamples, noClientDataSamples, specialMovementSamples;
     private String lastSurfaceReason = "not observed";
+    private final GroundMotionDistributions distributions = new GroundMotionDistributions();
 
     /**
      * Called under a session lock, once per server tick when enabled.
@@ -76,6 +78,11 @@ public final class MovementGroundProbe {
                 next = Result.UNSAFE_TERRAIN;
             } else if (!eligiblePhysics(previous.input()) || !eligiblePhysics(input)) {
                 next = Result.UNKNOWN_PHYSICS;
+            } else if (previous.input().probeContext().sprinting()
+                    != input.probeContext().sprinting()) {
+                // A server sprint toggle does not instantly change momentum.
+                // Exclude the crossing tick from both descriptive groups.
+                next = Result.SPRINT_TRANSITION;
             } else {
                 var a = previous.input().position();
                 var b = input.position();
@@ -93,6 +100,13 @@ public final class MovementGroundProbe {
                 } else if (!Double.isFinite(horizontal)) {
                     next = Result.UNKNOWN_PHYSICS;
                 } else {
+                    double normalized = horizontal * (50_000_000.0 / elapsed);
+                    if (!Double.isFinite(normalized)) {
+                        next = Result.UNKNOWN_PHYSICS;
+                    } else {
+                    // Distribution is descriptive: no heuristic threshold
+                    // decides whether to retain a supported measurement.
+                    distributions.observe(input.probeContext().sprinting(), normalized);
                     double envelope = RESEARCH_ENVELOPE_BLOCKS_PER_50MS
                             * (elapsed / 50_000_000.0);
                     lastDistance = horizontal;
@@ -108,6 +122,7 @@ public final class MovementGroundProbe {
                     } else {
                         consecutive = 0;
                         next = Result.WITHIN_RESEARCH_ENVELOPE;
+                    }
                     }
                 }
             }
@@ -170,6 +185,6 @@ public final class MovementGroundProbe {
         return new Snapshot(samples, evaluated, noDecision, outliers, consecutive,
                 lastResult, lastTick, lastDistance, lastEnvelope, lastOutlierTick,
                 unsafeTerrainSamples, noClientDataSamples, specialMovementSamples,
-                lastSurfaceReason);
+                lastSurfaceReason, distributions.snapshot());
     }
 }
