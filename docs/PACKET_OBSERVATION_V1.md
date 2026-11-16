@@ -1,7 +1,7 @@
 # HackerGuardian packet observation v1
 
-This is the **first narrow, read-only step** toward packet-aware movement validation.
-It does not yet implement a movement physics model or a cheat check.
+This is the **read-only observation foundation** for future packet-aware movement validation.
+It does not implement a movement physics model, a cheat check, or any enforcement.
 
 ## Scope
 
@@ -14,7 +14,17 @@ When explicitly enabled, ProtocolLib observes these inbound play packets:
 
 The observer stores **packet kind, receive-order sequence, and a monotonic arrival timestamp** in a bounded per-player in-memory ring buffer. Each player's retained history is capped. Overwritten events are counted and exposed to operators.
 
-The observer does **not** store the packet's position, rotation, on-ground flag or tick state yet. This is intentional: raw packet field normalization must be verified separately for each supported protocol family rather than assuming layout compatibility. It also does not persist raw packet history to the database.
+The next increment also stores **nullable, immutable, client-reported**:
+- X/Y/Z coordinates from POSITION and POSITION_LOOK
+- yaw/pitch from LOOK and POSITION_LOOK
+- on-ground state where the boolean field is available
+- horizontal collision only when present; otherwise UNKNOWN
+
+The decoder includes inherited packet fields via a cached ProtocolLib `StructureModifier` template because movement packet subclasses on some post-1.17 versions expose no direct fields. A packet with missing required coordinates/rotation, or non-finite data, still increments the packet counter but increments `decodeFailures` and **never substitutes a fabricated position**. These are *client claims*, not accepted Bukkit player locations. See the ProtocolLib superclass-field discussion: https://www.spigotmc.org/threads/solution-protocollib-movement-packets-empty-on-1-17-position_look-etc.716161/
+
+In a **separate bounded context ring**, Bukkit's non-cancelled `PlayerTeleportEvent` and `PlayerVelocityEvent` record server-intent target coordinates, rotation, velocity, world UUID and teleport cause. These are **not** decoded outgoing protocol packets and do not prove the client received or acknowledged a teleport/velocity. There is no teleport-ID reconciliation or velocity-ACK implementation yet.
+
+The observer does not store an authoritative client tick, per-tick physics/collision state or raw packet payloads. Observations and server intents are memory-only, cleared at disconnect. No persistent database copies are created.
 
 This is reception timing, **not** a guaranteed client tick clock. Network/proxy batching, packet delays, unusual scheduling and ProtocolLib listener order can change the arrival distribution.
 
@@ -25,10 +35,11 @@ The callback only:
 
 1. obtains the already-associated player reference;
 2. retrieves an immutable UUID captured on the Bukkit thread;
-3. classifies the packet kind;
-4. appends a tiny immutable observation through a synchronized per-player buffer.
+3. classifies and decodes the packet into immutable, nullable primitives;
+4. appends an immutable observation through a synchronized per-player buffer.
 
-It does not inspect world, inventory, player location, game mode or Bukkit state.
+It does not inspect world, inventory, player location, game mode or Bukkit state on a packet thread.
+Server-intent context is copied on the Bukkit main thread, where teleport and velocity events occur.
 Join/quit are handled on the Bukkit event thread, and the player's session is invalidated at quit so late callbacks cannot resurrect the buffer.
 
 ## Enable for controlled testing
@@ -57,7 +68,7 @@ retained history length, overwritten count, latest movement packet kind, and
 sequence. It also displays a **recent five-second breakdown** of POSITION,
 POSITION_LOOK, LOOK and GROUND packets, plus their receive rate.
 
-The recent breakdown is calculated from the **bounded retained observations**,
+The command also shows the latest raw client position/look/ground/collision fields, their packet sequence provenance, `decodeFailures`, and the latest Bukkit server intent where available. The recent breakdown is calculated from the **bounded retained observations**,
 not from an independent unbounded event log. If old observations were overwritten
 inside that five-second interval, the command flags the window as truncated;
 the displayed rate and per-kind counts are then lower bounds. A high packet rate
@@ -69,6 +80,8 @@ Disable the switch and restart to turn off the observer.
 
 - Confirm startup and shutdown on Paper with the supported ProtocolLib version.
 - Join as a legitimate player; inspect packet counts while idle, moving, looking and sprinting.
+- Confirm X/Y/Z and yaw/pitch change independently during POSITION/LOOK, and ground state is plausibly reported; check `decodeFailures` stays at zero for supported layouts.
+- Confirm a non-cancelled `/tp` produces server-intent context; test a plugin/knockback velocity separately. No context should be mistaken for client confirmation.
 - Confirm non-player packets do not appear in movement observations.
 - Quit/rejoin, and verify old history is cleared.
 - Test across actual Minecraft versions (not only the API compilation matrix).
@@ -90,8 +103,4 @@ this initial test and still require an in-game check.
 
 ## Next increment
 
-Define a versioned packet-normalization contract for coordinates, rotation,
-on-ground and sequence/timing context, plus server teleport and velocity
-acknowledgments. Only then should we attempt client physics simulation and
-a Timer/Speed/Fly detection policy. All detectors remain evidence-only until
-false-positive handling is independently validated.
+Validate this normalized raw-state capture against actual supported Minecraft/ProtocolLib combinations. Next add explicit outbound teleport IDs, client teleport confirmations, delivered velocity context, server collision/physics snapshots and protocol-version-specific fixtures. **Do not use raw coordinates or arrival rates for speed/fly verdicts** until the server/client state timeline is sufficiently accurate. All detectors remain evidence-only until false-positive handling is independently validated.
