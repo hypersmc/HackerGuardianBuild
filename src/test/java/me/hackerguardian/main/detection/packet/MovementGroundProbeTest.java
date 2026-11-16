@@ -272,6 +272,45 @@ class MovementGroundProbeTest {
     }
 
     @Test
+    void explainsWhyProfileCanBeEligibleWhileDynamicsReceivesNoVectors() {
+        var probe = new MovementGroundProbe();
+        var first = materialFrame(0, "UNKNOWN");
+        var second = materialFrame(.2, "UNKNOWN");
+        probe.sample(1, STEP, 0, first, true, true);
+        probe.sample(2, 2 * STEP, 0, second, true, true);
+
+        var snapshot = probe.snapshot();
+        assertEquals(1, snapshot.evaluated(), "The general profile pair remains eligible");
+        assertEquals(0, snapshot.dynamics().eligibleVectors());
+        assertEquals(1, snapshot.dynamicsGate().unknownMaterialPairs());
+        assertEquals(0, snapshot.dynamicsGate().changedMaterialPairs());
+        assertEquals("UNKNOWN", snapshot.dynamicsGate().lastMaterial());
+        assertEquals("UNKNOWN_MATERIAL", snapshot.dynamicsGate().lastReason());
+
+        probe.sample(3, 3 * STEP, 0, materialFrame(.4, "STONE"), true, true);
+        assertEquals(1, probe.snapshot().dynamicsGate().unknownMaterialPairs() + 
+                probe.snapshot().dynamicsGate().changedMaterialPairs() - 1);
+        assertEquals(2, probe.snapshot().evaluated());
+        assertEquals(0, probe.snapshot().dynamics().eligibleVectors());
+        probe.sample(4, 4 * STEP, 0, materialFrame(.6, "STONE"), true, true);
+        assertEquals(1, probe.snapshot().dynamics().eligibleVectors());
+        assertEquals("ACCEPTED", probe.snapshot().dynamicsGate().lastReason());
+    }
+
+    @Test
+    void latestNoClientExclusionCanBeDiagnosedEvenAfterAnEligibleVector() {
+        var probe = new MovementGroundProbe();
+        probe.sample(1, STEP, 0, materialFrame(0, "STONE"), true, true);
+        probe.sample(2, 2 * STEP, 0, materialFrame(.2, "STONE"), true, true);
+        assertEquals(1, probe.snapshot().dynamics().eligibleVectors());
+        probe.sample(3, 3 * STEP, 0, materialFrame(.4, "STONE"), true, false);
+        assertEquals("NO_CLIENT_DATA", probe.snapshot().dynamicsGate().lastReason());
+        assertEquals("STONE", probe.snapshot().dynamicsGate().lastMaterial());
+        assertEquals(1, probe.snapshot().dynamics().eligibleVectors());
+        assertEquals(1, probe.snapshot().dynamics().discontinuities());
+    }
+
+    @Test
     void staleSnapshotNeverChangesCounters() {
         var probe = new MovementGroundProbe();
         probe.sample(1, STEP, 0, frame(0), true, true);
