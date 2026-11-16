@@ -105,7 +105,8 @@ public final class MovementTickSampler {
 
             var probeContext = new MovementTickTimeline.ProbeContext(
                     true, ordinary, player.getActivePotionEffects().isEmpty(),
-                    Math.abs(player.getWalkSpeed() - 0.2F) < 0.0001F, reason);
+                    Math.abs(player.getWalkSpeed() - 0.2F) < 0.0001F,
+                    reason, player.isSprinting());
             return new MovementTickTimeline.TickInput(
                     world.getUID().toString(), position, velocity, flags, env, probeContext);
         } catch (IllegalArgumentException ex) {
