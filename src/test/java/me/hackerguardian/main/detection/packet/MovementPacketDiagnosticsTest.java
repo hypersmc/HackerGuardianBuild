@@ -494,6 +494,65 @@ class MovementPacketDiagnosticsTest {
     }
 
     @Test
+    void packetHeadingViewExplainsTruePositionAnglesAndNoDecisionReasons() {
+        var model = new PacketGroundReachability(
+                PacketGroundReachability.Profile.forMinecraft(
+                        me.hackerguardian.compat.MinecraftVersion.parse("1.20.2")));
+        var serverState = new MovementTickTimeline.TickInput("world",
+                new MovementPacketBuffer.Position(0, 64, 0),
+                new MovementPacketBuffer.Velocity(0, 0, 0),
+                new MovementTickTimeline.PlayerFlags(true, false, false, false, false, false),
+                new MovementTickTimeline.Environment(true, false, true, false, false),
+                new MovementTickTimeline.ProbeContext(true, true, true, true,
+                        "", false, "STONE"));
+        model.observe(new MovementPacketBuffer.PacketState(
+                new MovementPacketBuffer.Position(0, 64, 0),
+                null, true, false, true),
+                new PacketGroundReachability.Context(1, 0, true, false, serverState));
+        model.observe(new MovementPacketBuffer.PacketState(
+                new MovementPacketBuffer.Position(.2, 64, 0),
+                null, true, false, true),
+                new PacketGroundReachability.Context(2, 0, true, false, serverState));
+        model.observe(new MovementPacketBuffer.PacketState(
+                new MovementPacketBuffer.Position(.2, 64, .2),
+                null, true, false, true),
+                new PacketGroundReachability.Context(3, 0, true, false, serverState));
+
+        var packetBuffer = new MovementPacketBuffer(8);
+        var lines = MovementPacketDiagnostics.render("HypersMC",
+                packetBuffer.snapshot(UUID.randomUUID()), null, null, null,
+                model.snapshot(), MovementPacketDiagnostics.View.HEADING, System.nanoTime());
+        assertEquals(6, lines.size());
+        assertTrue(lines.stream().anyMatch(line -> line.contains("Real client packet XZ headings")
+                && line.contains("NOT camera yaw")));
+        assertTrue(lines.stream().anyMatch(line -> line.contains("Angles 1/1")
+                && line.contains("p95 90.000") && line.contains("max 90.000")));
+        assertTrue(lines.stream().anyMatch(line -> line.contains(">=35deg 1")
+                && line.contains("too-slow 0")));
+        assertTrue(lines.stream().anyMatch(line -> line.contains("Modeled 1")
+                && line.contains("no-decision 2") && line.contains("timing 0")));
+        assertTrue(lines.stream().anyMatch(line -> line.contains("warmup 2")
+                && line.contains("unavailable 0")));
+        assertEquals(MovementPacketDiagnostics.View.HEADING,
+                MovementPacketDiagnostics.View.parse("heading"));
+        assertEquals(MovementPacketDiagnostics.View.HEADING,
+                MovementPacketDiagnostics.View.parse("angles"));
+
+        var disabled = MovementPacketDiagnostics.render("HypersMC",
+                packetBuffer.snapshot(UUID.randomUUID()), null, null, null,
+                null, MovementPacketDiagnostics.View.HEADING, System.nanoTime());
+        assertEquals(2, disabled.size());
+        assertTrue(disabled.get(1).contains("OFF"));
+
+        var unsupported = MovementPacketDiagnostics.render("HypersMC",
+                packetBuffer.snapshot(UUID.randomUUID()), null, null, null,
+                new PacketGroundReachability(null).snapshot(),
+                MovementPacketDiagnostics.View.HEADING, System.nanoTime());
+        assertEquals(2, unsupported.size());
+        assertTrue(unsupported.get(1).contains("unavailable"));
+    }
+
+    @Test
     void missingTransportIsReportedWithoutInventingNetworkSuccess() {
         UUID id = UUID.randomUUID();
         var buffer = new MovementPacketBuffer(2);
