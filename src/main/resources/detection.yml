@@ -34,6 +34,16 @@ DetectionV2:
     ground_probe:
       enabled: false
 
+      # Packet-coordinate reachability research. Requires both parent
+      # packet_observation.enabled=true and ground_probe.enabled=true.
+      # Uses REAL incoming client POSITION/POSITION_LOOK packet coordinates.
+      # Server tick/Bukkit state only gates safe comparison contexts.
+      # Restricted to explicitly profiled 1.20.x / 1.21.x; 26.x and
+      # unknown versions stay diagnostic-only / model-unavailable.
+      # Pure research: NO reports, alerts, ML labels or punishments.
+      packet_reachability:
+        enabled: false
+
   detectors:
     reach:
       enabled: true
