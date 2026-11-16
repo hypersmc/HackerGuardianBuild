@@ -16,6 +16,9 @@ import java.util.function.LongSupplier;
  */
 public final class MovementTickTimeline {
     private static final long MAX_SAMPLE_LAG_NANOS = 250_000_000L;
+    // A previously completed diagnostic is useful during continuous packet
+    // traffic, but must not masquerade as a current position indefinitely.
+    private static final long MAX_COMPLETED_AGE_NANOS = 750_000_000L;
     private static final int MAX_TICKS = 64;
     private static final long MIN_STABLE_SAMPLES_AFTER_CORRECTION = 2L;
 
@@ -82,6 +85,9 @@ public final class MovementTickTimeline {
     private long correctionSampleCount = Long.MIN_VALUE;
     private Correction lastCorrection;
     private ClientPosition lastClient;
+    private ClientPosition pendingClient;
+    private Diagnostic lastCompletedComparison;
+    private long lastCompletedAtNanos = Long.MIN_VALUE;
 
     public MovementTickTimeline() {
         this(System::nanoTime);
@@ -106,13 +112,28 @@ public final class MovementTickTimeline {
             correctionTick = sampledTicks;
             correctionSampleCount = sampledCount;
             lastCorrection = Correction.WORLD_CHANGE;
+            pendingClient = null;
+            lastCompletedComparison = null;
         }
         sampledTicks = serverTick;
         if (ticks.size() == MAX_TICKS) {
             ticks.removeFirst();
             droppedTicks++;
         }
-        ticks.addLast(new ServerTick(serverTick, ++sampledCount, at, correctionEpoch, input));
+        ServerTick captured = new ServerTick(serverTick, ++sampledCount, at, correctionEpoch, input);
+        ticks.addLast(captured);
+        // Commit at most one pending client claim per server sample. It is the
+        // newest claim observed before this sample, not necessarily the packet
+        // that Minecraft used to calculate the server's position.
+        if (pendingClient != null) {
+            Diagnostic paired = compare(List.of(captured), pendingClient,
+                    correctionEpoch, correctionSampleCount, sampledCount, at);
+            if (paired.status() == Status.READY_DIAGNOSTIC) {
+                lastCompletedComparison = paired;
+                lastCompletedAtNanos = at;
+            }
+            pendingClient = null;
+        }
     }
 
     /**
@@ -125,6 +146,7 @@ public final class MovementTickTimeline {
         long at = monotonicTime();
         lastClient = new ClientPosition(++clientPacketsObserved, at,
                 sampledTicks, correctionEpoch, position);
+        pendingClient = lastClient;
     }
 
     /**
@@ -138,6 +160,10 @@ public final class MovementTickTimeline {
         correctionTick = sampledTicks;
         correctionSampleCount = sampledCount;
         lastCorrection = reason;
+        // A previous matched pair cannot be reused after any teleport,
+        // velocity change, respawn or world transition.
+        pendingClient = null;
+        lastCompletedComparison = null;
     }
 
     public synchronized Snapshot snapshot() {
@@ -153,12 +179,23 @@ public final class MovementTickTimeline {
         // Only actual packet/server events get a distinct observation stamp.
         long now = Math.max(lastNanos, clock.getAsLong());
         List<ServerTick> history = List.copyOf(new ArrayList<>(ticks));
+        Diagnostic comparison;
+        if (hasPendingTeleport && lastClient != null) {
+            comparison = result(Status.PENDING_TELEPORT, lastClient, null, null);
+        } else if (lastClient != null && lastCompletedComparison != null
+                && lastCompletedComparison.correctionEpoch() == correctionEpoch
+                && now >= lastCompletedAtNanos
+                && now - lastCompletedAtNanos <= MAX_COMPLETED_AGE_NANOS) {
+            // Show a recent COMPLETED pair, even if a newer packet arrived
+            // after the last server tick. Never call it the latest position.
+            comparison = lastCompletedComparison;
+        } else {
+            comparison = compare(history, lastClient,
+                    correctionEpoch, correctionSampleCount, sampledCount, now);
+        }
         return new Snapshot(sampledTicks, droppedTicks, history,
                 clientPacketsObserved, lastClient, correctionEpoch,
-                lastCorrection, correctionTick, hasPendingTeleport && lastClient != null
-                        ? result(Status.PENDING_TELEPORT, lastClient, null, null)
-                        : compare(history, lastClient,
-                                correctionEpoch, correctionSampleCount, sampledCount, now));
+                lastCorrection, correctionTick, comparison);
     }
 
     private static Diagnostic compare(List<ServerTick> history, ClientPosition client,
