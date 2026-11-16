@@ -89,13 +89,14 @@ public final class MovementPacketDiagnostics {
                     lines.add("Pending " + transport.pendingTeleports() + " | unmatched "
                             + transport.unmatchedConfirms() + " | resends " + transport.resends()
                             + " | expired " + transport.expiredOrEvicted());
-                    lines.add("Last matched ID " + (transport.lastMatchedId() == null
-                            ? "none" : transport.lastMatchedId())
-                            + " | moves before ACK " + (transport.lastMatchedId() == null
-                            ? "n/a" : transport.lastMatchMovementCount()));
-                    lines.add("Self velocity " + transport.outboundSelfVelocities()
-                            + " | unknown payload " + transport.unknownVelocityPayloads()
-                            + " | ID decode errors " + transport.unreadableIds());
+                    lines.add("Velocity wire " + transport.velocityCallbacks()
+                            + " | self " + transport.outboundSelfVelocities()
+                            + " | other " + transport.velocityOtherEntity()
+                            + " | ID? " + transport.velocityEntityIdUnreadable());
+                    lines.add("Self entity ID " + transport.expectedSelfEntityId()
+                            + " | last wire ID " + (transport.lastVelocityPacketEntityId() == null
+                            ? "none" : transport.lastVelocityPacketEntityId())
+                            + " | payload? " + transport.unknownVelocityPayloads());
                 }
                 String intent = "none";
                 if (!packet.contexts().isEmpty()) {
