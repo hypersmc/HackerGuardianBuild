@@ -415,14 +415,16 @@ class MovementPacketDiagnosticsTest {
                 buffer.snapshot(UUID.randomUUID()), null, null, null,
                 model.snapshot(), MovementPacketDiagnostics.View.RESIDUALS, System.nanoTime());
         assertEquals(6, lines.size(), "Residuals should not flood Minecraft chat");
-        assertTrue(lines.stream().anyMatch(l -> l.contains("Client packet input residual")
+        assertTrue(lines.stream().anyMatch(l -> l.contains("STEADY packet input residual")
                 && l.contains("research ONLY")));
         assertTrue(lines.stream().anyMatch(l -> l.contains("Walk n=2/2")
                 && l.contains("r50") && l.contains("r95") && l.contains("max")));
-        assertTrue(lines.stream().anyMatch(l -> l.contains("Sprint n=2/2")
-                && l.contains("r50") && l.contains("r95")));
+        assertTrue(lines.stream().anyMatch(l -> l.contains("Sprint n=0")
+                && l.contains("no modeled triples")),
+                "Initial post-switch samples must be separated from steady sprinting");
         assertTrue(lines.stream().anyMatch(l -> l.contains("Outside W 0 S 0")));
-        assertTrue(lines.stream().anyMatch(l -> l.contains("no-decision 4")));
+        assertTrue(lines.stream().anyMatch(l -> l.contains("Switch tails excluded W 0 S 2")
+                && l.contains("no-decision 4")));
         assertEquals(MovementPacketDiagnostics.View.RESIDUALS,
                 MovementPacketDiagnostics.View.parse("res"));
         assertEquals(MovementPacketDiagnostics.View.RESIDUALS,
@@ -433,6 +435,58 @@ class MovementPacketDiagnosticsTest {
                 null, MovementPacketDiagnostics.View.RESIDUALS, System.nanoTime());
         assertEquals(2, off.size());
         assertTrue(off.get(1).contains("OFF"));
+    }
+
+    @Test
+    void packetSprintTransitionViewIsCompactAndLabelsSourceOfSprintState() {
+        var model = new PacketGroundReachability(
+                PacketGroundReachability.Profile.forMinecraft(
+                        me.hackerguardian.compat.MinecraftVersion.parse("1.20.2")));
+        var first = new MovementTickTimeline.TickInput("world",
+                new MovementPacketBuffer.Position(0, 64, 0),
+                new MovementPacketBuffer.Velocity(0, 0, 0),
+                new MovementTickTimeline.PlayerFlags(true, false, false, false, false, false),
+                new MovementTickTimeline.Environment(true, false, true, false, false, false),
+                new MovementTickTimeline.ProbeContext(true, true, true, true,
+                        "", false, "STONE"));
+        var sprint = new MovementTickTimeline.TickInput("world",
+                first.position(), first.velocity(), first.flags(), first.environment(),
+                new MovementTickTimeline.ProbeContext(true, true, true, true,
+                        "", true, "STONE"));
+        for (int i = 1; i <= 4; i++) {
+            model.observe(new MovementPacketBuffer.PacketState(
+                    new MovementPacketBuffer.Position(.216 * i, 64, 0),
+                    null, true, false, true),
+                    new PacketGroundReachability.Context(i, 0, true, false, first));
+        }
+        for (int i = 5; i <= 8; i++) {
+            model.observe(new MovementPacketBuffer.PacketState(
+                    new MovementPacketBuffer.Position(.864 + .281 * (i - 4), 64, 0),
+                    null, true, false, true),
+                    new PacketGroundReachability.Context(i, 0, true, false, sprint));
+        }
+        var buffer = new MovementPacketBuffer(16);
+        var lines = MovementPacketDiagnostics.render("HypersMC",
+                buffer.snapshot(UUID.randomUUID()), null, null, null,
+                model.snapshot(), MovementPacketDiagnostics.View.SWITCHES,
+                System.nanoTime());
+        assertEquals(6, lines.size());
+        assertTrue(lines.stream().anyMatch(line -> line.contains("Bukkit sprint label")
+                && line.contains("RESEARCH")));
+        assertTrue(lines.stream().anyMatch(line -> line.contains("Walk>sprint 1")
+                && line.contains("Sprint>walk 0")));
+        assertTrue(lines.stream().anyMatch(line -> line.contains("After walk>sprint n=2")
+                && line.contains("p95") && line.contains("max")));
+        assertTrue(lines.stream().anyMatch(line -> line.contains("After sprint>walk n=0")));
+        assertEquals(MovementPacketDiagnostics.View.SWITCHES,
+                MovementPacketDiagnostics.View.parse("trans"));
+
+        var disabled = MovementPacketDiagnostics.render("HypersMC",
+                buffer.snapshot(UUID.randomUUID()), null, null, null,
+                null, MovementPacketDiagnostics.View.SWITCHES,
+                System.nanoTime());
+        assertEquals(2, disabled.size());
+        assertTrue(disabled.get(1).contains("OFF"));
     }
 
     @Test
