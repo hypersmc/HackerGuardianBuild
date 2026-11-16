@@ -281,11 +281,15 @@ public final class MovementPacketObserver implements Listener {
             if (active) {
                 selfEntityId = entityId;
                 timeline.markCorrection(MovementTickTimeline.Correction.RESPAWN);
+                if (packetPrediction != null) packetPrediction.correction();
             }
         }
 
         private synchronized void markCorrection(MovementTickTimeline.Correction reason) {
-            if (active) timeline.markCorrection(reason);
+            if (active) {
+                timeline.markCorrection(reason);
+                if (packetPrediction != null) packetPrediction.correction();
+            }
         }
 
         private synchronized MovementPacketTransport.Snapshot transportSnapshot() {
@@ -307,7 +311,14 @@ public final class MovementPacketObserver implements Listener {
         private synchronized void sampleServerTick(long tick, MovementTickTimeline.TickInput input) {
             if (!active) return;
             boolean pendingTeleport = transport.hasPendingTeleport();
+            long oldEpoch = timeline.currentCorrectionEpoch();
             timeline.sampleServerTick(tick, input, pendingTeleport);
+            if (packetPrediction != null
+                    && timeline.currentCorrectionEpoch() != oldEpoch) {
+                // Fallback for world transitions that produced no Bukkit
+                // event but were observed in consecutive server samples.
+                packetPrediction.correction();
+            }
             if (groundProbe != null) {
                 groundProbe.sample(tick, System.nanoTime(),
                         timeline.currentCorrectionEpoch(), input,
