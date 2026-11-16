@@ -116,6 +116,35 @@ class MovementPacketTransportTest {
     }
 
     @Test
+    void bukkitVelocityIntentAloneDoesNotImplyOutgoingPacketWasObserved() {
+        var transport = new MovementPacketTransport();
+        transport.serverVelocityIntent(new MovementPacketBuffer.Velocity(0.4, 0.1, 0));
+        var snapshot = transport.snapshot();
+        assertEquals(0, snapshot.velocityCallbacks());
+        assertEquals(0, snapshot.outboundSelfVelocities());
+        assertEquals(0, snapshot.velocityEntityIdUnreadable());
+    }
+
+    @Test
+    void distinguishesRawCallbacksFromSelfOtherAndUnreadableEntityIds() {
+        var transport = new MovementPacketTransport();
+        transport.observedOutboundVelocity(31, 31, new MovementPacketBuffer.Velocity(0.5, 0.2, 0));
+        transport.observedOutboundVelocity(15, 31, null);
+        transport.observedOutboundVelocity(null, 31, null);
+        transport.observedOutboundVelocity(31, 31, null);
+
+        var snapshot = transport.snapshot();
+        assertEquals(4, snapshot.velocityCallbacks());
+        assertEquals(2, snapshot.outboundSelfVelocities());
+        assertEquals(1, snapshot.velocityOtherEntity());
+        assertEquals(1, snapshot.velocityEntityIdUnreadable());
+        assertEquals(1, snapshot.unknownVelocityPayloads());
+        assertEquals(31, snapshot.lastVelocityPacketEntityId());
+        assertEquals(31, snapshot.expectedSelfEntityId());
+        assertEquals(0, snapshot.receivedConfirms());
+    }
+
+    @Test
     void transportHistoryIsBoundedAndSnapshotCannotBeMutated() {
         var transport = new MovementPacketTransport();
         for (int i = 0; i < 90; i++) transport.outboundTeleport(i);
