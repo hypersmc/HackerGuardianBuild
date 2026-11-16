@@ -36,7 +36,7 @@ class PacketResearchRunsTest {
         var snap = study.snapshot();
         assertEquals(5, snap.totalModeled());
         assertEquals(3, snap.totalTimingRejects());
-        assertEquals(2, snap.warmupsBetweenTimingRejects());
+        assertEquals(2, snap.warmupsInsideTimingClusters());
         assertEquals(0, snap.activeAcceptedRun());
         assertEquals(0, snap.activeTimingCluster());
         assertEquals(2, snap.acceptedRuns().completed());
@@ -90,7 +90,7 @@ class PacketResearchRunsTest {
         assertEquals(0, snap.multiTimingClusters());
         assertEquals(0, snap.acceptedRuns().completed());
         assertEquals(2, snap.totalTimingRejects());
-        assertEquals(1, snap.warmupsBetweenTimingRejects());
+        assertEquals(1, snap.warmupsInsideTimingClusters());
     }
 
     @Test
