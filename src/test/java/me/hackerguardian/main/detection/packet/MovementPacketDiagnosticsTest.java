@@ -160,7 +160,7 @@ class MovementPacketDiagnosticsTest {
         assertTrue(lines.stream().anyMatch(line -> line.contains("eligible 1")
                 && line.contains("no-decision 1")));
         assertTrue(lines.stream().anyMatch(line -> line.contains("RESEARCH_ENVELOPE")));
-        assertTrue(lines.stream().anyMatch(line -> line.contains("Research outliers 0")));
+        assertTrue(lines.stream().anyMatch(line -> line.contains("research outliers 0")));
 
         var disabled = MovementPacketDiagnostics.render("HypersMC",
                 buffer.snapshot(UUID.randomUUID()), null, null, null,
@@ -169,6 +169,28 @@ class MovementPacketDiagnosticsTest {
         assertTrue(disabled.get(1).contains("OFF"));
         assertEquals(MovementPacketDiagnostics.View.PROBE,
                 MovementPacketDiagnostics.View.parse("plausibility"));
+    }
+
+    @Test
+    void probeViewExplainsWhySurvivalOnAPathHasNoEligibleSamples() {
+        AtomicLong clock = new AtomicLong(2_000_000_000L);
+        var buffer = new MovementPacketBuffer(16, clock::get);
+        var probe = new MovementGroundProbe();
+        var path = new MovementTickTimeline.TickInput("world",
+                new MovementPacketBuffer.Position(1, 64.9375, 2),
+                new MovementPacketBuffer.Velocity(0, 0, 0),
+                new MovementTickTimeline.PlayerFlags(true, false, false, false, false, false),
+                new MovementTickTimeline.Environment(false, false, true, false, false),
+                new MovementTickTimeline.ProbeContext(true, false, true, true, "feet=DIRT_PATH"));
+        probe.sample(1, 2_000_000_000L, 0, path, true, true);
+        probe.sample(2, 2_050_000_000L, 0, path, true, true);
+        var lines = MovementPacketDiagnostics.render("HypersMC",
+                buffer.snapshot(UUID.randomUUID()), null, null, probe.snapshot(),
+                MovementPacketDiagnostics.View.PROBE, clock.get());
+        assertEquals(6, lines.size());
+        assertTrue(lines.stream().anyMatch(line -> line.contains("terrain skips 1")));
+        assertTrue(lines.stream().anyMatch(line -> line.contains("Surface clue: feet=DIRT_PATH")));
+        assertTrue(lines.stream().anyMatch(line -> line.contains("No-client 0")));
     }
 
     @Test
