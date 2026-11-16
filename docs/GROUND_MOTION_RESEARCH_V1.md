@@ -124,6 +124,39 @@ player still has an altered movement capability in Survival.
 was changed.** CI and a fresh Paper runtime retest are needed to confirm
 the updated explanations and eligibility.
 
+## Survival eligibility regression retest: passed (2026-11-16)
+
+After the terrain-reason and modest ordinary-full-block allowlist changes,
+the tester provided three in-game `probe` screenshots:
+
+| Tick samples | Eligible | No-decision | Terrain skips | No-client | Special | Research outliers |
+|---:|---:|---:|---:|---:|---:|---:|
+| 389 | 4 | 385 | 23 | 154 | 181 | 0 |
+| 471 | 43 | 428 | 29 | 187 | 205 | 0 |
+| 534 | 72 | 462 | 29 | 219 | 217 | 0 |
+
+The first screenshot showed a retained `Surface clue: below=GRAVEL`;
+the later screenshots showed `Surface clue: below=SAND`. Both remain
+outside the narrow allowlist. These are *historical exclusion clues*, not
+proof of which block the tester was standing on when each command ran.
+
+**Result: pass for the single-server Survival eligibility regression.**
+The previous test had 0 eligible out of 1,037 samples; this test showed
+eligible measurements increasing from 4 to 43 to 72. The probe can now
+produce eligible grounded samples while still returning no-decision on
+unsupported terrain or missing input.
+
+Zero research outliers is expected to be common with the very permissive
+envelope. It does **not** validate detection effectiveness, rule out
+false positives on other scenarios, or prove any client is legitimate.
+The screenshot does not independently identify the exact evaluated
+block materials or establish per-version physics accuracy.
+
+Next: inspect actual eligible displacement distributions under
+walking/sprinting, improve observational coverage carefully, and add
+controlled abnormal-motion fixtures **without** linking the probe to
+punishments, reports, or ML labels.
+
 ## Solo test
 
 1. Verify `/hg detection packets HypersMC probe` reports **OFF**
