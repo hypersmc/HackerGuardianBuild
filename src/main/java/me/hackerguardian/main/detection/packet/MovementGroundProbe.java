@@ -31,7 +31,8 @@ public final class MovementGroundProbe {
                            long lastResearchOutlierTick, long unsafeTerrainSamples,
                            long noClientDataSamples, long specialMovementSamples,
                            String lastSurfaceReason,
-                           GroundMotionDistributions.Snapshot distributions) {}
+                           GroundMotionDistributions.Snapshot distributions,
+                           long sprintTransitions) {}
 
     private record Previous(long tick, long nanos, long epoch,
                             MovementTickTimeline.TickInput input) {}
@@ -42,6 +43,7 @@ public final class MovementGroundProbe {
     private long lastTick = -1, lastOutlierTick = -1;
     private Double lastDistance, lastEnvelope;
     private long unsafeTerrainSamples, noClientDataSamples, specialMovementSamples;
+    private long sprintTransitions;
     private String lastSurfaceReason = "not observed";
     private final GroundMotionDistributions distributions = new GroundMotionDistributions();
 
@@ -104,25 +106,24 @@ public final class MovementGroundProbe {
                     if (!Double.isFinite(normalized)) {
                         next = Result.UNKNOWN_PHYSICS;
                     } else {
-                    // Distribution is descriptive: no heuristic threshold
-                    // decides whether to retain a supported measurement.
-                    distributions.observe(input.probeContext().sprinting(), normalized);
-                    double envelope = RESEARCH_ENVELOPE_BLOCKS_PER_50MS
-                            * (elapsed / 50_000_000.0);
-                    lastDistance = horizontal;
-                    lastEnvelope = envelope;
-                    evaluated++;
-                    if (horizontal > envelope) {
-                        // Counting an outlier never creates a finding. Requiring
-                        // consecutive outliers is a hint, not a guilt threshold.
-                        consecutive++;
-                        outliers++;
-                        lastOutlierTick = tick;
-                        next = Result.RESEARCH_OUTLIER;
-                    } else {
-                        consecutive = 0;
-                        next = Result.WITHIN_RESEARCH_ENVELOPE;
-                    }
+                        // These measurements are descriptive, independent
+                        // of the legacy research-envelope threshold.
+                        distributions.observe(input.probeContext().sprinting(), normalized);
+                        double envelope = RESEARCH_ENVELOPE_BLOCKS_PER_50MS
+                                * (elapsed / 50_000_000.0);
+                        lastDistance = horizontal;
+                        lastEnvelope = envelope;
+                        evaluated++;
+                        if (horizontal > envelope) {
+                            // Retained as research telemetry, NEVER a finding.
+                            consecutive++;
+                            outliers++;
+                            lastOutlierTick = tick;
+                            next = Result.RESEARCH_OUTLIER;
+                        } else {
+                            consecutive = 0;
+                            next = Result.WITHIN_RESEARCH_ENVELOPE;
+                        }
                     }
                 }
             }
@@ -142,6 +143,8 @@ public final class MovementGroundProbe {
             noClientDataSamples++;
         } else if (next == Result.SPECIAL_MOVEMENT) {
             specialMovementSamples++;
+        } else if (next == Result.SPRINT_TRANSITION) {
+            sprintTransitions++;
         }
         lastResult = next;
         previous = new Previous(tick, nanos, epoch, input);
@@ -185,6 +188,6 @@ public final class MovementGroundProbe {
         return new Snapshot(samples, evaluated, noDecision, outliers, consecutive,
                 lastResult, lastTick, lastDistance, lastEnvelope, lastOutlierTick,
                 unsafeTerrainSamples, noClientDataSamples, specialMovementSamples,
-                lastSurfaceReason, distributions.snapshot());
+                lastSurfaceReason, distributions.snapshot(), sprintTransitions);
     }
 }
