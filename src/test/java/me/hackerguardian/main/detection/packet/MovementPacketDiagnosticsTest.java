@@ -602,6 +602,56 @@ class MovementPacketDiagnosticsTest {
     }
 
     @Test
+    void packetRunsViewUsesCompletedLengthsAndLeavesLiveRunsSeparate() {
+        var model = new PacketGroundReachability(
+                PacketGroundReachability.Profile.forMinecraft(
+                        me.hackerguardian.compat.MinecraftVersion.parse("1.20.2")));
+        var input = new MovementTickTimeline.TickInput("world",
+                new MovementPacketBuffer.Position(0, 64, 0),
+                new MovementPacketBuffer.Velocity(0, 0, 0),
+                new MovementTickTimeline.PlayerFlags(true, false, false, false, false, false),
+                new MovementTickTimeline.Environment(true, false, true, false, false),
+                new MovementTickTimeline.ProbeContext(true, true, true, true, "", false, "STONE"));
+
+        for (int tick : new int[]{1, 2, 3, 4, 7, 8, 10, 11, 12, 13}) {
+            model.observe(new MovementPacketBuffer.PacketState(
+                    new MovementPacketBuffer.Position(.2 * tick, 64, 0),
+                    null, true, false, true),
+                    new PacketGroundReachability.Context(tick, 0, true, false, input));
+        }
+        var buffer = new MovementPacketBuffer(8);
+        var lines = MovementPacketDiagnostics.render("HypersMC",
+                buffer.snapshot(UUID.randomUUID()), null, null, null,
+                model.snapshot(), MovementPacketDiagnostics.View.RUNS, System.nanoTime());
+
+        assertEquals(6, lines.size(), "Keep runs readable in Minecraft chat");
+        assertTrue(lines.stream().anyMatch(l -> l.contains("NOT client ticks")));
+        assertTrue(lines.stream().anyMatch(l -> l.contains("Accepted runs n 1")
+                && l.contains("p50 2") && l.contains("live 2")));
+        assertTrue(lines.stream().anyMatch(l -> l.contains("Runs len1 0")
+                && l.contains("len2-4 1")));
+        assertTrue(lines.stream().anyMatch(l -> l.contains("Gap clusters n 1")
+                && l.contains("p95 2") && l.contains("live 0")));
+        assertTrue(lines.stream().anyMatch(l -> l.contains("Gap singles 0 multi 1")
+                && l.contains("timing reject 2") && l.contains("warmups between 2")));
+        assertEquals(MovementPacketDiagnostics.View.RUNS, MovementPacketDiagnostics.View.parse("runs"));
+        assertEquals(MovementPacketDiagnostics.View.RUNS, MovementPacketDiagnostics.View.parse("clusters"));
+
+        var off = MovementPacketDiagnostics.render("HypersMC",
+                buffer.snapshot(UUID.randomUUID()), null, null, null, null,
+                MovementPacketDiagnostics.View.RUNS, System.nanoTime());
+        assertEquals(2, off.size());
+        assertTrue(off.get(1).contains("OFF"));
+
+        var unavailable = MovementPacketDiagnostics.render("HypersMC",
+                buffer.snapshot(UUID.randomUUID()), null, null, null,
+                new PacketGroundReachability(null).snapshot(),
+                MovementPacketDiagnostics.View.RUNS, System.nanoTime());
+        assertEquals(2, unavailable.size());
+        assertTrue(unavailable.get(1).contains("unavailable"));
+    }
+
+    @Test
     void missingTransportIsReportedWithoutInventingNetworkSuccess() {
         UUID id = UUID.randomUUID();
         var buffer = new MovementPacketBuffer(2);
