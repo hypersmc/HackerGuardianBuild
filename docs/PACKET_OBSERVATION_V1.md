@@ -471,6 +471,62 @@ the transient period has ended. Unit tests cover those transitions.
 The next useful improvement is event-driven or latched correction
 diagnostics, so staff do not need to time a chat command to a few ticks.
 
+## Latched correction and comparison-guard diagnostics (2026-11-16)
+
+During the teleport and zombie-hit smoke tests, the player could usually
+inspect the `tick` view only *after* the short correction window had ended.
+This increment adds **per-session counters** that retain what the observer
+saw until the player disconnects or packet observation is stopped:
+
+```text
+/hg detection packets <player> guards
+```
+
+The new view fits in six Minecraft chat lines and shows:
+- **Boundaries TP / Velocity / Other:** correction callbacks observed.
+  One real teleport may cause several boundaries (Bukkit intent, packet send,
+  client confirmation). These are *not* counts of unique teleports.
+- **Invalidated pending / completed:** a client position waiting for a
+  server sample or a recent completed diagnostic pair was explicitly discarded
+  at a correction boundary. These are not server-tick suppressions.
+- **Suppressed recovery:** an actual client position and following server
+  sample were compared for eligibility but deliberately withheld during the
+  two-successful-sample correction window.
+- **Suppressed pending TP:** an actual pending client position reached a
+  server sample while a teleport ID was still outstanding.
+- **Suppressed context:** a real pair was rejected for crossing a
+  correction epoch (normally prevented earlier by invalidation).
+- **Paired and Last guard:** how many diagnostic pairs were completed, plus
+  the most recent suppressed-pair status and sampled tick.
+
+Counters update on actual packet/correction/server-sample events, **not**
+when an administrator runs `... guards`. The transport has a cheap
+`hasPendingTeleport()` check to avoid allocating a full history snapshot
+for every sampled player on every tick. Reads do not add guard counts.
+
+### Solo runtime checklist
+
+1. Run `/hg detection packets HypersMC guards` and note the starting values.
+2. Perform `/tp ~ ~10 ~`, wait a few seconds, and run `... guards` again.
+   **TP boundaries** should increase. Invalidated or suppressed counters
+   may or may not increase depending on whether a client position arrived
+   during the short unsafe window.
+3. In Survival, take a legitimate zombie hit, wait, then rerun the command.
+   **Velocity boundaries** should increase if Bukkit and/or packet callbacks
+   are observed. One knockback can produce multiple boundary callbacks.
+4. Execute the same `guards` command repeatedly **without moving**;
+   boundary and suppression counters must not increase due to reading it.
+   Normal ongoing movement can still legitimately increase paired totals.
+5. Disconnect and reconnect: counts should reset for the new session.
+6. Compare the `tick` and `net` views if unusual results occur. No
+   counter in this view is cheat evidence or a punishment trigger.
+
+**Scope:** Opt-in, read-only, session-memory diagnostics. No new detection
+checks, punishment policies or website dependency. Unit tests cover
+dropped claims, suppressed recovery/pending pairs, invalidated completed
+pairs, world changes, repeated diagnostic reads and bounded output.
+A live-server retest is still required to validate real event ordering.
+
 ## Next increment
 
 Test correction states during `/tp` and zombie knockback, world changes
