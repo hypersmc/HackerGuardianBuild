@@ -72,7 +72,9 @@ public final class DetectionRuntime {
                 && compatibility.isProtocolLibEnabled()) {
             packetObserver = new MovementPacketObserver(plugin,
                     config.getInt("DetectionV2.packet_observation.max_packets_per_player", 256),
-                    config.getBoolean("DetectionV2.packet_observation.ground_probe.enabled", false));
+                    config.getBoolean("DetectionV2.packet_observation.ground_probe.enabled", false),
+                    config.getBoolean("DetectionV2.packet_observation.ground_probe.packet_reachability.enabled", false),
+                    compatibility.minecraftVersion());
         } else {
             packetObserver = null;
             if (packetEnabled) {
