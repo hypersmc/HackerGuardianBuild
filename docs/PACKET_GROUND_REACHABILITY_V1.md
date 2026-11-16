@@ -634,6 +634,103 @@ This is an observe-only, single-server research smoke test. No
 false-positive assessment, production physics validation or
 enforcement-ready cheat check is implied.
 
+## Heading-change distributions and eligibility diagnostics (2026-11-17)
+
+After two successful sprint-switch residual/displacement tests, the
+packet-derived phase counter still reported **Turn 0**. This alone cannot
+tell whether there were no qualifying direction changes, whether
+server-tick/context restrictions skipped the changes, or whether the
+movement vectors each turned by less than the provisional **35-degree**
+phase-classification cutoff. We added observation rather than relaxing
+the cutoff.
+
+### Admin command
+
+```text
+/hg detection packets HypersMC heading
+```
+
+Aliases: `headings`, `angles`, `turns`. The six-line output is
+read-only, uses the existing opt-in packet-reachability feature,
+and shows:
+
+- **Angle p50, p95, maximum:** nearest-rank statistics for the latest
+  **128 accepted client-packet horizontal heading changes**. `n`
+  shows retained / total accepted angles. Units are **degrees**.
+- **>=5, >=15, >=35 degrees:** lifetime counts of heading changes
+  falling into progressively larger bands. The original provisional
+  35-degree `Turn` research phase threshold is **unchanged**.
+  A large camera/yaw rotation without a change in the displacement
+  vector does **not** count as a movement heading change.
+- **Too-slow:** number of otherwise modeled packet triples whose
+  *previous or current* XZ displacement magnitude was **below 0.075
+  blocks per accepted packet interval**. They have no reliable
+  movement direction for this study and are excluded from angle
+  statistics, while remaining in the existing packet speed-change
+  and reachability research.
+- **Modeled and no-decision:** existing packet predictor counters,
+  now with cumulative, **mutually exclusive** upstream no-decision
+  reasons: timing (stale, repeated, skipped tick hints), context
+  (unsupported motion, sprint/world/material changes), invalid
+  client claim (undecoded or airborne-ground claim), correction
+  (teleport/velocity recovery), warmup (insufficient prior packets),
+  and unavailable server/version context. Their sum equals the
+  model's packet no-decision count. Explicit correction *events*
+  without an incoming position packet remain separate from these
+  per-packet skip totals.
+
+The angle is computed **only from two consecutive accepted client
+packet XZ displacement vectors**, not from Bukkit `PlayerMoveEvent`,
+server position deltas, or packet yaw. For normalized vectors
+`u = v_prev/|v_prev|` and `v = v_now/|v_now|`, the angle is:
+
+```text
+angleDeg = degrees(atan2(abs(u.x*v.z-u.z*v.x), u.x*v.x+u.z*v.z))
+```
+
+This gives 0–180 degrees regardless of whether the player turns left
+or right. All comparisons still require the same correction epoch,
+same supported material, same sprint state, valid grounded context,
+and consecutive server tick hints. The server hint does **not** prove
+the client simulated exactly one tick per accepted packet.
+
+**Important denominator distinction:** `measured + too-slow = modeled`
+for a session using this version of the recorder. `no-decision`
+describes packet claims that never reached this modeled-triple stage.
+A turn can fail to register because of either an upstream
+no-decision or an accepted triple with too little movement. Different
+no-decision causes should not be summed with slow vectors as if they
+were separate received packets.
+
+### Controlled live test
+
+1. Rebuild/restart the current PR branch and keep
+   `packet_observation.ground_probe.packet_reachability.enabled=true`.
+2. In Survival on a large flat `STONE` platform, **walk straight**
+   without jumping for ~10 seconds; inspect `... heading`. The
+   measured count should increase, with most angles close to zero.
+3. Continue moving and make several **abrupt 90-degree changes to the
+   movement direction**, preferably by switching directional keys
+   rather than merely rotating the camera. Inspect p95/max and the
+   >=5/15/35 counters. An actual client may turn more gradually across
+   several small packet deltas, so a sequence totaling 90 degrees is
+   not guaranteed to produce any single >=35-degree event.
+4. Rotate the camera/yaw while moving in a straight line; the
+   packet-displacement heading should remain small. This separates
+   movement direction from aim direction.
+5. Release movement inputs, jump, teleport, take knockback, switch
+   to Creative and cross unsupported ground. Check `too-slow`
+   and no-decision reasons rather than turning rejected motion into
+   predicted physics. A stationary client may emit no position packets
+   at all; we do not fabricate an angle for a missing packet.
+6. Repeat on other supported versions and under network jitter.
+   Keep all outcomes as research and do not tune the 35-degree
+   label threshold to manufacture counts.
+
+**Status:** bounded heading-angle ring and skip counters plus Java
+regression tests committed; CI and live validation pending. No
+violation/report/ML/punishment paths are added.
+
 ## Next actual physics work
 
 Capture trustworthy per-player packet order and *validated tick equivalence*,
