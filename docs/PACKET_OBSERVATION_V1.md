@@ -527,6 +527,35 @@ dropped claims, suppressed recovery/pending pairs, invalidated completed
 pairs, world changes, repeated diagnostic reads and bounded output.
 A live-server retest is still required to validate real event ordering.
 
+### Teleport guard runtime retest (2026-11-16)
+
+The tester captured two `/hg detection packets HypersMC guards` views,
+before and after a legitimate command teleport:
+
+| Counter | Before | After | Change |
+|---|---:|---:|---:|
+| Teleport correction boundaries | 4 | 7 | +3 |
+| Velocity boundaries | 0 | 0 | 0 |
+| Pending client claims invalidated | 0 | 0 | 0 |
+| Previously completed pairs invalidated | 1 | 2 | +1 |
+| Recovery-window sampled comparisons suppressed | 3 | 4 | +1 |
+| Pending teleport sampled comparisons suppressed | 0 | 0 | 0 |
+| Context suppressions | 0 | 0 | 0 |
+| Completed diagnostic pairs | 166 | 169 | +3 |
+
+The latest latched guard changed from `CORRECTION_WINDOW @tick 831`
+to `CORRECTION_WINDOW @tick 1112`. This is a **passing single-server
+teleport guard smoke test**: a correction boundary occurred, an older
+completed pair was invalidated, and a real recovery-window comparison was
+suppressed. Paired diagnostics continued afterward.
+
+Three boundaries are not three independent teleports; a single command
+teleport can produce Bukkit, outbound packet, and client-confirmation events.
+Zero pending-teleport suppressions means that no evaluable position pair
+arrived while the teleport ID remained pending. It does not imply a bug.
+This test does not cover high-latency delivery, out-of-order or missing
+confirmations, all Minecraft versions, or knockback correction.
+
 ## Next increment
 
 Test correction states during `/tp` and zombie knockback, world changes
