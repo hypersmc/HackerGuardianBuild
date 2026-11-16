@@ -881,6 +881,101 @@ packets from a server tick-hint difference. No model thresholds,
 guard rails, alerts or punishments changed in this documentation
 update.
 
+## Modeled-run and timing-rejection cluster lengths (2026-11-17)
+
+The first timing-hint runtime test showed **164 modeled** out of **187**
+incoming position observations, **18 actual `TICK_GAP` rejections**
+and only **two warmups attributed to timing**. This established that
+the observer works under some normal movement conditions, but the
+cumulative counts could not determine whether timing problems were
+clustered or scattered between successful modeled observations.
+
+A new **read-only** admin view records bounded sequence lengths:
+
+```text
+/hg detection packets HypersMC runs
+```
+
+Aliases: `clusters`, `runlengths`. Requires the existing opt-in
+packet reachability experiment. The view uses its existing
+**client-POSITION-packet outcome statuses**, not Bukkit
+`PlayerMoveEvent` deltas, and never reclassifies an accepted packet.
+
+**Definitions:**
+
+- **Accepted modeled run:** the number of consecutive incoming position
+  observations already classified `CONSERVATIVE_REACHABLE` or
+  `OUTSIDE_RESEARCH_ENVELOPE`. Any no-decision status closes the run.
+  The length counts accepted *packet observations*, **not validated
+  client simulation ticks**. A long run is useful research coverage,
+  not evidence that timing is correctly synchronized.
+- **Timing-rejection cluster:** one or more consecutive model
+  `TICK_GAP`, `AMBIGUOUS_TICK` or `STALE_SERVER_SAMPLE` rejections.
+  `WARMUP` can occur *within* a cluster and does not split it.
+  A newly modeled packet closes the cluster, as do context changes,
+  invalid claims, unavailable version, and correction boundaries.
+  Cluster length counts only actual timing-rejected packet outcomes,
+  not the intervening warmups or skipped server tick indices.
+- **Completed length distribution:** `n` counts lifetime completed
+  runs/clusters. `p50`, `p95`, and `max` use only the **latest 128
+  completed** lengths; they use nearest-rank percentiles. When nothing
+  has closed yet, percentiles display `n/a`, not fabricated zeros.
+- **Live:** current run or cluster still open at time of the command.
+  Active lengths are **excluded** from the completed distributions.
+  The command never modifies the counters.
+- **Run buckets:** lifetime counts of completed accepted runs of length
+  1, 2–4, 5–19, and 20 or more. **Gap singles/multi** are completed
+  clusters of length 1 versus 2 or more timing rejections.
+- **Warmups in clusters:** lifetime `WARMUP` outcomes observed while a
+  timing cluster is open. This includes recovery after a final gap; it
+  does **not** claim the warmup must be *between* two rejected packets.
+
+The output remains six Minecraft-chat lines:
+
+```text
+Packets: HypersMC [runs]
+Model runs | SERVER tick hints, NOT client ticks
+Accepted runs n 3 p50 12 p95 36 max 36 live 8
+Runs len1 1 len2-4 0 len5-19 1 len20+ 1
+Gap clusters n 5 p50 1 p95 3 max 3 live 0
+Gap singles 4 multi 1 | timing reject 7 | warmups in 4
+```
+
+*Example only — not measurements from the user's server.*
+
+The tracking stores just **two 128-element primitive rings** for
+completed lengths and fixed-size counters. Sorting occurs on staff
+request, not per packet. Explicit server teleport/velocity/respawn
+corrections close any open run/cluster without inventing an incoming
+client packet. All existing predictor ground, version, correction,
+timing, sprint, collision and no-decision gates remain untouched.
+Nothing is connected to player reports, alerts, scoring, ML labels,
+replays, kicks, bans, or automated setbacks.
+
+### Controlled run-length test
+
+1. In Survival on uniform STONE, inspect `timing`, `runs` and
+   `heading` **before** moving.
+2. Walk straight for 10–15 seconds; capture `runs` and `timing`
+   again. Check whether accepted run `n` and completed lengths
+   increase, and whether a long run remains active.
+3. Make repeated sharp **movement-direction** turns without jumping,
+   then capture the same views. If timing remains stable, long runs
+   should continue and more angles can be measured; if timing
+   repeatedly breaks, compare *new* cluster singles/multi and the
+   `warmups in` counter against `timing` model gaps.
+4. Stop for several seconds, then sprint or change game mode; these
+   naturally create boundaries. Do not mistake a zero active length
+   for zero historical valid motion.
+5. Teleport and receive knockback. Open runs/clusters should close
+   without a modeled cross-correction packet, while no enforcement
+   or evidence decisions occur.
+
+**Validation:** Java regression tests cover run/cluster boundaries,
+WARMUP bridging, timing vs context exceptions, explicit corrections,
+retained-window percentiles, session totals, and six-line chat
+diagnostics. Independent CI and live Paper validation still needed.
+
 ## Next actual physics work
 
 Capture trustworthy per-player packet order and *validated tick equivalence*,
