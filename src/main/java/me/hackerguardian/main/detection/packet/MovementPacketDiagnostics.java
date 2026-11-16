@@ -14,7 +14,7 @@ import java.util.concurrent.TimeUnit;
 public final class MovementPacketDiagnostics {
 
     public enum View {
-        SUMMARY, MOVEMENT, NETWORK, TICK, GUARDS, PROBE, PROFILE, DYNAMICS, IDLE;
+        SUMMARY, MOVEMENT, NETWORK, TICK, GUARDS, PROBE, PROFILE, DYNAMICS, IDLE, PREDICT;
 
         public static View parse(String name) {
             if (name == null || name.isBlank()) return SUMMARY;
@@ -28,6 +28,7 @@ public final class MovementPacketDiagnostics {
                 case "profile", "dist", "distribution" -> PROFILE;
                 case "dynamics", "dyn", "motion" -> DYNAMICS;
                 case "idle", "startstop", "resume" -> IDLE;
+                case "predict", "reachability", "pktphysics" -> PREDICT;
                 default -> null;
             };
         }
@@ -53,6 +54,15 @@ public final class MovementPacketDiagnostics {
                                       MovementTickTimeline.Snapshot ticks,
                                       MovementGroundProbe.Snapshot probe,
                                       View view, long nowNanos) {
+        return render(name, packet, transport, ticks, probe, null, view, nowNanos);
+    }
+
+    public static List<String> render(String name, MovementPacketBuffer.Snapshot packet,
+                                      MovementPacketTransport.Snapshot transport,
+                                      MovementTickTimeline.Snapshot ticks,
+                                      MovementGroundProbe.Snapshot probe,
+                                      PacketGroundReachability.Snapshot prediction,
+                                      View view, long nowNanos) {
         if (packet == null || view == null) throw new IllegalArgumentException("snapshot and view required");
         List<String> lines = new ArrayList<>();
         String player = name == null ? "unknown" : name;
@@ -77,7 +87,7 @@ public final class MovementPacketDiagnostics {
                 }
                 // Print the command suffixes rather than the long full
                 // command: avoid wrapping the five-line default in chat.
-                lines.add("Views: move|net|tick|guards|probe|profile|dyn|idle");
+                lines.add("Views: move|net|tick|guards|probe|profile|dyn|idle|predict");
             }
             case MOVEMENT -> {
                 lines.add("Received " + packet.totalReceived() + " | Retained " + packet.retained()
@@ -237,6 +247,24 @@ public final class MovementPacketDiagnostics {
                     lines.add("State " + id.state() + " | " + id.lastStatus()
                             + " | " + id.lastBlock()
                             + " | motion " + value(id.lastBlocksPer50ms()));
+                }
+            }
+            case PREDICT -> {
+                if (prediction == null) {
+                    lines.add("Packet reachability research OFF (opt-in)");
+                } else {
+                    lines.add("Real client POSITION packets | research ONLY");
+                    lines.add("Profile " + prediction.model() + " | pos packets "
+                            + prediction.positionPackets() + " | modeled "
+                            + prediction.modeledTriples());
+                    lines.add("No-decision " + prediction.noDecision()
+                            + " | ambiguous " + prediction.ambiguousTicks()
+                            + " | corrections " + prediction.corrections());
+                    lines.add("Last " + prediction.lastStatus() + " | outside research "
+                            + prediction.researchedOutside());
+                    lines.add("Observed " + value(prediction.lastActual())
+                            + " | radius+drift " + value(prediction.lastReachable())
+                            + " | excess " + value(prediction.lastExcess()));
                 }
             }
             case NETWORK -> {
