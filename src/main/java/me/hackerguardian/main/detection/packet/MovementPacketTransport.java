@@ -184,6 +184,12 @@ public final class MovementPacketTransport {
                 Result.OBSERVED, null, velocity);
     }
 
+    /** Check pending IDs without allocating the diagnostic event list. */
+    public synchronized boolean hasPendingTeleport() {
+        tick(); // expire outstanding IDs on the same monotonic clock
+        return !pending.isEmpty();
+    }
+
     public synchronized Snapshot snapshot() {
         tick();
         return new Snapshot(movementPackets, movementWhilePending,
