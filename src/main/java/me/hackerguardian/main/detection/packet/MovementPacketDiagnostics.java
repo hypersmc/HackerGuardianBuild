@@ -15,7 +15,7 @@ public final class MovementPacketDiagnostics {
 
     public enum View {
         SUMMARY, MOVEMENT, NETWORK, TICK, GUARDS, PROBE, PROFILE, DYNAMICS, IDLE,
-        PREDICT, RESIDUALS, SWITCHES;
+        PREDICT, RESIDUALS, SWITCHES, HEADING;
 
         public static View parse(String name) {
             if (name == null || name.isBlank()) return SUMMARY;
@@ -32,6 +32,7 @@ public final class MovementPacketDiagnostics {
                 case "predict", "reachability", "pktphysics" -> PREDICT;
                 case "residuals", "res", "predstats", "predictstats" -> RESIDUALS;
                 case "switch", "switches", "trans", "transitions" -> SWITCHES;
+                case "heading", "headings", "angles", "turns" -> HEADING;
                 default -> null;
             };
         }
@@ -90,7 +91,7 @@ public final class MovementPacketDiagnostics {
                 }
                 // Print the command suffixes rather than the long full
                 // command: avoid wrapping the five-line default in chat.
-                lines.add("Views: move|net|tick|guards|probe|profile|dyn|idle|predict|res|trans");
+                lines.add("Views: move|net|tick|guards|probe|profile|dyn|idle|predict|res|trans|heading");
             }
             case MOVEMENT -> {
                 lines.add("Received " + packet.totalReceived() + " | Retained " + packet.retained()
@@ -305,6 +306,31 @@ public final class MovementPacketDiagnostics {
                             + " Steady " + trans.steady());
                     lines.add(transitionTailLine("S>W", tail.walking(), move.enteringWalk()));
                     lines.add(transitionTailLine("W>S", tail.sprinting(), move.enteringSprint()));
+                }
+            }
+            case HEADING -> {
+                if (prediction == null) {
+                    lines.add("Packet heading research OFF (opt-in)");
+                } else {
+                    var angles = prediction.transitions().headings();
+                    var skips = prediction.headingSkips();
+                    lines.add("Real client packet XZ headings | NOT camera yaw");
+                    lines.add("Angles " + angles.retained() + "/" + angles.measured()
+                            + " | p50 " + value(angles.p50())
+                            + " p95 " + value(angles.p95())
+                            + " max " + value(angles.max()) + " deg");
+                    lines.add(">=5deg " + angles.over5()
+                            + " >=15deg " + angles.over15()
+                            + " >=35deg " + angles.over35()
+                            + " | too-slow " + angles.lowMotion());
+                    lines.add("Modeled " + prediction.modeledTriples()
+                            + " | no-decision " + prediction.noDecision()
+                            + " | timing " + skips.timing()
+                            + " | context " + skips.context());
+                    lines.add("Invalid " + skips.invalidPacket()
+                            + " | warmup " + skips.warmup()
+                            + " | correction " + skips.correction()
+                            + " | unavailable " + skips.unavailable());
                 }
             }
             case NETWORK -> {
