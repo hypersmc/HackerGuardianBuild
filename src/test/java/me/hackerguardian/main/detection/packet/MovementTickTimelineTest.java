@@ -59,6 +59,76 @@ class MovementTickTimelineTest {
     }
 
     @Test
+    void continuousMovementUsesLatestCompletedPairInsteadOfWaitingEveryTime() {
+        AtomicLong time = new AtomicLong(1_000_000_000L);
+        var timeline = new MovementTickTimeline(time::get);
+        timeline.sampleServerTick(1, tick("world", 0));
+
+        // Client position arrives after server tick 1. No following sample yet.
+        time.addAndGet(5_000_000L);
+        timeline.observeClientPosition(new MovementPacketBuffer.Position(1, 64, 10));
+        assertEquals(MovementTickTimeline.Status.AWAITING_NEXT_TICK,
+                timeline.snapshot().comparison().status());
+
+        // Server tick 2 completes the first client/server pair.
+        time.addAndGet(40_000_000L);
+        timeline.sampleServerTick(2, tick("world", 1.1));
+        assertEquals(MovementTickTimeline.Status.READY_DIAGNOSTIC,
+                timeline.snapshot().comparison().status());
+        assertEquals(1L, timeline.snapshot().comparison().clientOrder());
+        assertEquals(2L, timeline.snapshot().comparison().followingServerTick());
+
+        // Player keeps flying: another movement packet arrives just after tick.
+        // Old logic reported AWAITING_NEXT_TICK constantly. New logic displays
+        // the completed pair, correctly labeled by its older packet order.
+        time.addAndGet(5_000_000L);
+        timeline.observeClientPosition(new MovementPacketBuffer.Position(2, 64, 10));
+        var whileMoving = timeline.snapshot().comparison();
+        assertEquals(MovementTickTimeline.Status.READY_DIAGNOSTIC, whileMoving.status());
+        assertEquals(1L, whileMoving.clientOrder());
+        assertEquals(2L, whileMoving.followingServerTick());
+
+        time.addAndGet(40_000_000L);
+        timeline.sampleServerTick(3, tick("world", 2.1));
+        var nextPair = timeline.snapshot().comparison();
+        assertEquals(MovementTickTimeline.Status.READY_DIAGNOSTIC, nextPair.status());
+        assertEquals(2L, nextPair.clientOrder());
+        assertEquals(3L, nextPair.followingServerTick());
+        assertEquals(0.1, nextPair.positionDifference(), 1e-8);
+    }
+
+    @Test
+    void completedPairExpiresAndCannotOutliveTeleportOrVelocityBoundary() {
+        AtomicLong time = new AtomicLong(1_000_000_000L);
+        var timeline = new MovementTickTimeline(time::get);
+        timeline.sampleServerTick(1, tick("world", 0));
+        time.addAndGet(5_000_000L);
+        timeline.observeClientPosition(new MovementPacketBuffer.Position(1, 64, 10));
+        time.addAndGet(40_000_000L);
+        timeline.sampleServerTick(2, tick("world", 1.1));
+        assertEquals(MovementTickTimeline.Status.READY_DIAGNOSTIC,
+                timeline.snapshot().comparison().status());
+
+        time.addAndGet(800_000_000L);
+        assertEquals(MovementTickTimeline.Status.TOO_OLD,
+                timeline.snapshot().comparison().status(),
+                "Do not reuse a completed pair as current evidence indefinitely");
+
+        timeline.markCorrection(MovementTickTimeline.Correction.OUTBOUND_SELF_VELOCITY);
+        assertEquals(MovementTickTimeline.Status.DIFFERENT_CONTEXT,
+                timeline.snapshot().comparison().status(),
+                "A velocity boundary invalidates even a previously successful pair");
+
+        time.addAndGet(1_000_000L);
+        timeline.observeClientPosition(new MovementPacketBuffer.Position(2, 64, 10));
+        assertEquals(MovementTickTimeline.Status.CORRECTION_WINDOW,
+                timeline.snapshot().comparison().status());
+        assertEquals(MovementTickTimeline.Status.PENDING_TELEPORT,
+                timeline.snapshot(true).comparison().status());
+        assertNull(timeline.snapshot(true).comparison().positionDifference());
+    }
+
+    @Test
     void teleportAndVelocityBoundariesBlockCrossEpochComparisons() {
         AtomicLong time = new AtomicLong(1);
         var timeline = new MovementTickTimeline(time::get);
