@@ -91,6 +91,6 @@ public final class MovementPacketBuffer {
         private final Deque<Observation> entries = new ArrayDeque<>();
         private long received;
         private long dropped;
-        private long lastNanos;
+        private long lastNanos = Long.MIN_VALUE;
     }
 }
