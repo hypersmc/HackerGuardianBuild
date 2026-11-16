@@ -18,7 +18,7 @@ The next increment also stores **nullable, immutable, client-reported**:
 - X/Y/Z coordinates from POSITION and POSITION_LOOK
 - yaw/pitch from LOOK and POSITION_LOOK
 - on-ground state where the boolean field is available
-- horizontal collision only when present; otherwise UNKNOWN
+- horizontal collision **only when the layout contains a distinct collision field**; otherwise UNKNOWN. Minecraft 1.20.x–1.21.1 has three booleans (onGround, hasPosition, hasRotation), while 1.21.2+ adds horizontalCollision before the position/rotation presence flags. The decoder verifies the expected trailing presence flags for each packet kind before trusting the on-ground/collision slots.
 
 The decoder includes inherited packet fields via a cached ProtocolLib `StructureModifier` template because movement packet subclasses on some post-1.17 versions expose no direct fields. A packet with missing required coordinates/rotation, or non-finite data, still increments the packet counter but increments `decodeFailures` and **never substitutes a fabricated position**. These are *client claims*, not accepted Bukkit player locations. See the ProtocolLib superclass-field discussion: https://www.spigotmc.org/threads/solution-protocollib-movement-packets-empty-on-1-17-position_look-etc.716161/
 
@@ -100,6 +100,27 @@ and correct bounded-buffer accounting (289 total, 256 retained, 33 overwritten).
 It is not evidence of cheat-detection accuracy, all-client compatibility, proxy
 behavior, or scalability. The 5-second per-kind diagnostics were added *after*
 this initial test and still require an in-game check.
+
+## Boolean flag mapping regression (2026-11-16)
+
+Initial solo testing found that `Horizontal collision` appeared true all the time,
+including in mid-air. The earlier decoder unconditionally interpreted boolean
+index 1 as collision. That is **incorrect on legacy movement packets**:
+index 1 is the `hasPosition` flag, usually true for POSITION updates.
+We now detect the exact three-vs-four boolean field shape and verify packet
+kind sentinels before interpreting flags. Legacy sessions should show
+`Horizontal collision: UNKNOWN` (not false or true), even during flight.
+
+Sources for protocol field layouts:
+- [Minecraft 1.20.2 movement packet fields](https://mappings.dev/1.20.2/net/minecraft/network/protocol/game/ServerboundMovePlayerPacket.html)
+- [Minecraft 1.21.1 movement packet fields](https://mappings.dev/1.21.1/net/minecraft/network/protocol/game/ServerboundMovePlayerPacket.html)
+- [Minecraft 1.21.11 movement packet fields](https://mappings.dev/1.21.11/net/minecraft/network/protocol/game/ServerboundMovePlayerPacket.html)
+
+**Follow-up checks:** rebuild the same PR branch, restart, and test ground vs
+mid-air movement. On 1.20.x–1.21.1, collision must be UNKNOWN. On later
+versions, compare collision near a wall vs in free flight. If either on-ground
+or collision values remain implausible, mark this runtime mapping unverified
+for that server version rather than interpreting it as physics evidence.
 
 ## Next increment
 
