@@ -67,11 +67,25 @@ public final class MovementTickTimeline {
                              Long followingServerTick, Long tickLagNanos,
                              Double positionDifference, long correctionEpoch) {}
 
+    /**
+     * Session-scoped event and actual comparison-guard counters. Only source
+     * events and server tick evaluations change these totals; snapshots do not.
+     *
+     * Corrections count callback events (one teleport can produce several),
+     * not unique physical teleports or cheating incidents.
+     */
+    public record GuardStats(long teleportBoundaries, long velocityBoundaries,
+                             long otherBoundaries, long pendingClaimsInvalidated,
+                             long completedPairsInvalidated, long recoverySuppressions,
+                             long pendingTeleportSuppressions, long contextSuppressions,
+                             long completedPairs, Status lastSuppression,
+                             long lastSuppressionTick) {}
+
     public record Snapshot(long sampledTicks, long droppedTicks,
                            List<ServerTick> ticks, long clientPacketsObserved,
                            ClientPosition lastClient, long correctionEpoch,
                            Correction lastCorrection, long correctionTick,
-                           Diagnostic comparison) {
+                           Diagnostic comparison, GuardStats guards) {
         public ServerTick latestTick() {
             return ticks.isEmpty() ? null : ticks.get(ticks.size() - 1);
         }
@@ -88,6 +102,12 @@ public final class MovementTickTimeline {
     private ClientPosition pendingClient;
     private Diagnostic lastCompletedComparison;
     private long lastCompletedAtNanos = Long.MIN_VALUE;
+    private long teleportBoundaries, velocityBoundaries, otherBoundaries;
+    private long pendingClaimsInvalidated, completedPairsInvalidated;
+    private long recoverySuppressions, pendingTeleportSuppressions, contextSuppressions;
+    private long completedPairs;
+    private Status lastSuppression;
+    private long lastSuppressionTick = -1;
 
     public MovementTickTimeline() {
         this(System::nanoTime);
@@ -100,6 +120,16 @@ public final class MovementTickTimeline {
 
     /** Call on the Bukkit main thread, once per scheduled server tick. */
     public synchronized void sampleServerTick(long serverTick, TickInput input) {
+        sampleServerTick(serverTick, input, false);
+    }
+
+    /**
+     * Pending teleport truth comes from the per-player network transport.
+     * Only actual incoming position claims paired with a server sample can
+     * increment suppression counters.
+     */
+    public synchronized void sampleServerTick(long serverTick, TickInput input,
+                                              boolean hasPendingTeleport) {
         if (input == null || serverTick < 0 || serverTick <= sampledTicks) {
             throw new IllegalArgumentException("Tick numbers must increase and input must be valid");
         }
@@ -108,12 +138,7 @@ public final class MovementTickTimeline {
         if (previous != null && !previous.state().worldKey().equals(input.worldKey())) {
             // Even if a plugin changes a world without a Bukkit teleport
             // callback, never compare positions across world boundaries.
-            correctionEpoch++;
-            correctionTick = sampledTicks;
-            correctionSampleCount = sampledCount;
-            lastCorrection = Correction.WORLD_CHANGE;
-            pendingClient = null;
-            lastCompletedComparison = null;
+            applyCorrection(Correction.WORLD_CHANGE);
         }
         sampledTicks = serverTick;
         if (ticks.size() == MAX_TICKS) {
@@ -126,11 +151,16 @@ public final class MovementTickTimeline {
         // newest claim observed before this sample, not necessarily the packet
         // that Minecraft used to calculate the server's position.
         if (pendingClient != null) {
-            Diagnostic paired = compare(List.of(captured), pendingClient,
-                    correctionEpoch, correctionSampleCount, sampledCount, at);
+            Diagnostic paired = hasPendingTeleport
+                    ? result(Status.PENDING_TELEPORT, pendingClient, null, null)
+                    : compare(List.of(captured), pendingClient,
+                            correctionEpoch, correctionSampleCount, sampledCount, at);
             if (paired.status() == Status.READY_DIAGNOSTIC) {
                 lastCompletedComparison = paired;
                 lastCompletedAtNanos = at;
+                completedPairs++;
+            } else {
+                countSuppression(paired.status(), serverTick);
             }
             pendingClient = null;
         }
@@ -156,14 +186,44 @@ public final class MovementTickTimeline {
     public synchronized void markCorrection(Correction reason) {
         if (reason == null) return;
         monotonicTime();
+        applyCorrection(reason);
+    }
+
+    private void applyCorrection(Correction reason) {
         correctionEpoch++;
         correctionTick = sampledTicks;
         correctionSampleCount = sampledCount;
         lastCorrection = reason;
-        // A previous matched pair cannot be reused after any teleport,
-        // velocity change, respawn or world transition.
+        switch (reason) {
+            case BUKKIT_TELEPORT, OUTBOUND_TELEPORT, TELEPORT_CONFIRM -> teleportBoundaries++;
+            case BUKKIT_VELOCITY, OUTBOUND_SELF_VELOCITY -> velocityBoundaries++;
+            case RESPAWN, WORLD_CHANGE -> otherBoundaries++;
+        }
+        // Dropped pending observations are counted as invalidated claims,
+        // not as a completed server-tick comparison.
+        if (pendingClient != null) pendingClaimsInvalidated++;
+        if (lastCompletedComparison != null) completedPairsInvalidated++;
         pendingClient = null;
         lastCompletedComparison = null;
+    }
+
+    private void countSuppression(Status status, long serverTick) {
+        switch (status) {
+            case CORRECTION_WINDOW -> recoverySuppressions++;
+            case PENDING_TELEPORT -> pendingTeleportSuppressions++;
+            case DIFFERENT_CONTEXT -> contextSuppressions++;
+            default -> { return; }
+        }
+        lastSuppression = status;
+        lastSuppressionTick = serverTick;
+    }
+
+    private GuardStats guardStats() {
+        return new GuardStats(teleportBoundaries, velocityBoundaries,
+                otherBoundaries, pendingClaimsInvalidated, completedPairsInvalidated,
+                recoverySuppressions, pendingTeleportSuppressions,
+                contextSuppressions, completedPairs, lastSuppression,
+                lastSuppressionTick);
     }
 
     public synchronized Snapshot snapshot() {
@@ -203,7 +263,7 @@ public final class MovementTickTimeline {
         }
         return new Snapshot(sampledTicks, droppedTicks, history,
                 clientPacketsObserved, lastClient, correctionEpoch,
-                lastCorrection, correctionTick, comparison);
+                lastCorrection, correctionTick, comparison, guardStats());
     }
 
     private static Diagnostic compare(List<ServerTick> history, ClientPosition client,
