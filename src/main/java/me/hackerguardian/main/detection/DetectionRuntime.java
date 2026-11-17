@@ -11,6 +11,7 @@ import me.hackerguardian.main.detection.ml.MlBehaviorDetector;
 import me.hackerguardian.main.detection.ml.MlDatasetRecorder;
 import me.hackerguardian.main.detection.normality.NormalityDetector;
 import me.hackerguardian.main.detection.packet.MovementPacketObserver;
+import me.hackerguardian.main.detection.packet.PacketResearchCourse;
 import me.hackerguardian.main.detection.telemetry.BehaviorSnapshot;
 import me.hackerguardian.main.detection.telemetry.BehaviorTelemetryCollector;
 import org.bukkit.Bukkit;
@@ -34,6 +35,7 @@ public final class DetectionRuntime {
     private final LearningRuntime learningRuntime;
     private final DeterministicCheckRuntime deterministicRuntime;
     private final MovementPacketObserver packetObserver;
+    private final PacketResearchCourse packetCourse;
 
     private MlBehaviorDetector mlDetector;
     private NormalityDetector normalityDetector;
@@ -81,6 +83,8 @@ public final class DetectionRuntime {
                 plugin.getLogger().warning("Movement packet observation disabled: unverified Minecraft version or ProtocolLib unavailable.");
             }
         }
+
+        packetCourse = packetObserver == null ? null : new PacketResearchCourse(plugin, packetObserver);
 
         initializeDatasetRecorder(config);
         registerConfiguredDetectors(config);
@@ -263,6 +267,7 @@ public final class DetectionRuntime {
             assessmentTask.cancel();
             assessmentTask = null;
         }
+        if (packetCourse != null) packetCourse.shutdown();
         deterministicRuntime.stop();
         learningRuntime.stop();
         if (packetObserver != null) packetObserver.stop();
@@ -283,6 +288,7 @@ public final class DetectionRuntime {
     public DetectionEngine getEngine() { return engine; }
     public DeterministicCheckRuntime getDeterministicRuntime() { return deterministicRuntime; }
     public MovementPacketObserver getPacketObserver() { return packetObserver; }
+    public PacketResearchCourse getPacketCourse() { return packetCourse; }
     public MlBehaviorDetector getMlDetector() { return mlDetector; }
     public NormalityDetector getNormalityDetector() { return normalityDetector; }
     public MlDatasetRecorder getDatasetRecorder() { return datasetRecorder; }
