@@ -89,7 +89,8 @@ public final class PacketGroundReachability {
                            PacketMotionTransitions.Snapshot transitions,
                            HeadingSkipReasons headingSkips,
                            PacketTickHintDiagnostics.Snapshot tickHints,
-                           PacketResearchRuns.Snapshot runs) {}
+                           PacketResearchRuns.Snapshot runs,
+                           PacketPassiveMovementContext.Snapshot activity) {}
 
     private record Claim(long tick, long epoch, String world,
                          MovementPacketBuffer.Position position, String material,
@@ -103,6 +104,7 @@ public final class PacketGroundReachability {
     private final PacketTickHintDiagnostics tickHints = new PacketTickHintDiagnostics();
     // Model-outcome-only study, never part of deciding whether a triple is valid.
     private final PacketResearchRuns runs = new PacketResearchRuns();
+    private final PacketPassiveMovementContext passiveActivity = new PacketPassiveMovementContext();
     private PacketCourseCapture courseCapture;
     private Claim older, newest;
     private long positionPackets, modeled, noDecision, outside, ambiguous, corrections;
@@ -275,6 +277,7 @@ public final class PacketGroundReachability {
         }
         tickHints.observeOutcome(status);
         runs.observe(status);
+        passiveActivity.observePacket(packet, context, status);
         if (courseCapture != null) courseCapture.observe(status, packet, context);
         lastStatus = status;
     }
@@ -282,6 +285,12 @@ public final class PacketGroundReachability {
     /** Attach or detach an observe-only, bounded staff course capture. */
     public synchronized void setCourseCapture(PacketCourseCapture capture) {
         this.courseCapture = capture;
+    }
+
+    /** Main-thread immutable server position hint for passive interval research. */
+    public synchronized void observeServerTick(long tick, long epoch,
+                                               MovementTickTimeline.TickInput input) {
+        passiveActivity.sampleServerTick(tick, epoch, input);
     }
 
     /** Called after teleport/velocity/respawn/world epoch changes. */
@@ -294,6 +303,7 @@ public final class PacketGroundReachability {
         transitions.interruption();
         tickHints.correction();
         runs.correction();
+        passiveActivity.correction();
         if (courseCapture != null) courseCapture.correction();
     }
 
@@ -326,6 +336,6 @@ public final class PacketGroundReachability {
                 new HeadingSkipReasons(headingWarmupSkips, headingTimingSkips,
                         headingContextSkips, headingInvalidPacketSkips,
                         headingCorrectionSkips, headingUnavailableSkips),
-                tickHints.snapshot(), runs.snapshot());
+                tickHints.snapshot(), runs.snapshot(), passiveActivity.snapshot());
     }
 }
