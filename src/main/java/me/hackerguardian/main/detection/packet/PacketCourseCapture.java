@@ -1,5 +1,6 @@
 package me.hackerguardian.main.detection.packet;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -11,6 +12,8 @@ import java.util.List;
  * SERVER-OBSERVED sprint state and scheduler tick hints are not authenticated
  * client input or simulation ticks. The local heading distribution intentionally
  * excludes the first two modeled positions of each uninterrupted local chain.
+ * Turn direction is separately estimated from bounded raw decoded positions
+ * across checkpoints; no decision is inferred from client camera yaw.
  */
 public final class PacketCourseCapture {
     public enum Phase {
@@ -41,10 +44,17 @@ public final class PacketCourseCapture {
                               long adjacentHints, long repeatedHints,
                               long twoTickGaps, long largerTickGaps,
                               PacketHeadingAngles.Snapshot headings,
-                              PacketResearchRuns.Snapshot runs) {}
+                              PacketResearchRuns.Snapshot runs,
+                              long routeSamples, long outsideCorridor,
+                              long backwardSteps, PacketCourseTurnStudy.Result turn) {}
 
     private static final class Bucket {
         private final Phase phase;
+        private final PacketCourseGeometry.Leg leg;
+        private final PacketCourseTurnStudy turn;
+        private long routeSamples, outsideCorridor, backwardSteps;
+        private MovementPacketBuffer.Position previousRoute;
+        private long previousRouteEpoch;
         private final PacketHeadingAngles headingAngles = new PacketHeadingAngles();
         private final PacketResearchRuns runs = new PacketResearchRuns();
         private long packets, modeled, outside, timing, gaps, ambiguous, stale;
@@ -54,7 +64,38 @@ public final class PacketCourseCapture {
         private long previousEpoch;
         private MovementPacketBuffer.Position older, newest;
 
-        Bucket(Phase phase) { this.phase = phase; }
+        Bucket(Phase phase, PacketCourseGeometry.Leg leg, PacketCourseTurnStudy turn) {
+            this.phase = phase;
+            this.leg = leg;
+            this.turn = turn;
+        }
+
+        void rawPosition(MovementPacketBuffer.Position p, long epoch) {
+            if (leg != null) {
+                routeSamples++;
+                if (PacketCourseGeometry.distanceToLeg(p.x(), p.z(), leg) > 2.3) {
+                    outsideCorridor++;
+                }
+                if (previousRoute != null && previousRouteEpoch == epoch) {
+                    double dx = p.x() - previousRoute.x();
+                    double dz = p.z() - previousRoute.z();
+                    double length = Math.hypot(dx, dz);
+                    if (length >= .075 && length <= .9) {
+                        double forward = ((leg.to().x() - leg.from().x()) * dx
+                                + (leg.to().z() - leg.from().z()) * dz) / leg.length();
+                        if (forward < -.075) backwardSteps++;
+                    }
+                }
+            }
+            previousRoute = p;
+            previousRouteEpoch = epoch;
+            if (turn != null) turn.observeAfter(p);
+        }
+
+        void correction() {
+            previousRoute = null;
+            if (turn != null) turn.correction();
+        }
 
         void add(PacketGroundReachability.Status status,
                  MovementPacketBuffer.PacketState packet,
@@ -117,13 +158,26 @@ public final class PacketCourseCapture {
             return new PhaseResult(phase, packets, modeled, outside, timing,
                     gaps, ambiguous, stale, warmups, context, correction, other,
                     matching, mismatching, unknown, adjacent, repeated, gapTwo,
-                    gapLarger, headingAngles.snapshot(), runs.snapshot());
+                    gapLarger, headingAngles.snapshot(), runs.snapshot(),
+                    routeSamples, outsideCorridor, backwardSteps,
+                    turn == null ? null : turn.snapshot());
         }
         void end() { runs.correction(); }
     }
 
     private final ArrayList<Bucket> buckets = new ArrayList<>(Phase.values().length);
+    private final List<PacketCourseGeometry.Leg> legs;
+    private final ArrayDeque<MovementPacketBuffer.Position> recent = new ArrayDeque<>(64);
     private Bucket active;
+
+    public PacketCourseCapture() { this(List.of()); }
+
+    public PacketCourseCapture(List<PacketCourseGeometry.Leg> legs) {
+        this.legs = List.copyOf(legs);
+        if (!this.legs.isEmpty() && this.legs.size() != Phase.values().length) {
+            throw new IllegalArgumentException("Course requires six route legs");
+        }
+    }
     private boolean finished;
 
     public synchronized void enter(Phase phase) {
@@ -132,7 +186,11 @@ public final class PacketCourseCapture {
             throw new IllegalStateException("Invalid packet course phase");
         }
         if (active != null) active.end();
-        active = new Bucket(phase);
+        int i = buckets.size();
+        PacketCourseGeometry.Leg leg = legs.isEmpty() ? null : legs.get(i);
+        PacketCourseTurnStudy turn = i == 0 || legs.isEmpty() ? null
+                : new PacketCourseTurnStudy(legs.get(i - 1), leg, new ArrayList<>(recent));
+        active = new Bucket(phase, leg, turn);
         buckets.add(active);
     }
 
@@ -140,7 +198,22 @@ public final class PacketCourseCapture {
     public synchronized void observe(PacketGroundReachability.Status outcome,
                                      MovementPacketBuffer.PacketState packet,
                                      PacketGroundReachability.Context context) {
-        if (!finished && active != null) active.add(outcome, packet, context);
+        if (finished || active == null) return;
+        active.add(outcome, packet, context);
+        if (packet == null || !packet.decoded() || packet.position() == null
+                || !Boolean.TRUE.equals(packet.onGround()) || context == null
+                || context.serverState() == null || !context.settled()
+                || context.pendingTeleport()) return;
+        var position = packet.position();
+        active.rawPosition(position, context.correctionEpoch());
+        recent.addLast(position);
+        if (recent.size() > 64) recent.removeFirst();
+    }
+
+    /** Explicit teleport/velocity/world correction: never join two positions across it. */
+    public synchronized void correction() {
+        recent.clear();
+        if (active != null) active.correction();
     }
 
     public synchronized List<PhaseResult> finish() {
