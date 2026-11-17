@@ -252,12 +252,15 @@ public final class PacketResearchCourse {
                     + " modeled " + r.modeled() + " timing " + r.timingRejects());
             lines.add(" §7mode mismatch " + r.mismatchedSprint() + " | off-route "
                     + r.outsideCorridor() + " reverse " + r.backwardSteps()
-                    + " | heading p95 " + decimal(r.headings().p95()));
+                    + " | p95 " + decimal(r.headings().p95())
+                    + " runMax " + length(r.runs().acceptedRuns().max()));
             if (r.turn() != null && r.turn().hasTurn()) {
                 var turn = r.turn();
                 lines.add(" §7corner " + turn.expectedDirection() + " -> "
                         + turn.observedDirection() + " " + decimal(turn.signedAngle())
-                        + "deg [" + turn.quality() + "] opposite steps " + turn.oppositeSteps());
+                        + "deg [" + turn.quality() + "] opposite "
+                        + ("LEFT".equals(turn.expectedDirection()) ? "RIGHT" : "LEFT")
+                        + " steps " + turn.oppositeSteps());
             }
         }
         lines.add("§6Quality §a" + clean + " clean §e" + mixed + " mixed §c"
