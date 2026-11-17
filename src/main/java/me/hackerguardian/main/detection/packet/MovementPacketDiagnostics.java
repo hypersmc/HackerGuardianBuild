@@ -15,7 +15,7 @@ public final class MovementPacketDiagnostics {
 
     public enum View {
         SUMMARY, MOVEMENT, NETWORK, TICK, GUARDS, PROBE, PROFILE, DYNAMICS, IDLE,
-        PREDICT, RESIDUALS, SWITCHES, HEADING, TIMING, RUNS;
+        PREDICT, RESIDUALS, SWITCHES, HEADING, TIMING, RUNS, ACTIVITY;
 
         public static View parse(String name) {
             if (name == null || name.isBlank()) return SUMMARY;
@@ -35,6 +35,7 @@ public final class MovementPacketDiagnostics {
                 case "heading", "headings", "angles", "turns" -> HEADING;
                 case "timing", "tickhints", "sync" -> TIMING;
                 case "runs", "clusters", "runlengths" -> RUNS;
+                case "activity", "passive", "context" -> ACTIVITY;
                 default -> null;
             };
         }
@@ -360,6 +361,31 @@ public final class MovementPacketDiagnostics {
                             + " context " + t.warmupAfterContext()
                             + " correction " + t.warmupAfterCorrection()
                             + " other " + t.warmupAfterOther());
+                }
+            }
+            case ACTIVITY -> {
+                if (prediction == null) {
+                    lines.add("Passive movement context OFF (opt-in)");
+                } else if (!prediction.enabled()) {
+                    lines.add("Passive movement research unavailable for this version");
+                } else {
+                    var a = prediction.activity();
+                    lines.add("SERVER intervals w/o POSITION (not client ticks or loss)");
+                    lines.add("No-pos " + a.noPositionIntervals() + "/" + a.serverIntervals()
+                            + " quiet " + a.noPositionQuiet()
+                            + " move " + a.noPositionMoving()
+                            + " ? " + a.noPositionUnknown()
+                            + " | streak max " + a.maxNoPositionRun()
+                            + " live " + a.liveNoPositionRun());
+                    lines.add("Client XZ pairs " + a.packetPairs()
+                            + " quiet " + a.quietPacketPairs()
+                            + " walk " + a.walkingPacketPairs()
+                            + " sprint " + a.sprintingPacketPairs()
+                            + " switch " + a.sprintChangePacketPairs());
+                    lines.add("Hint gaps Q/M/? " + a.quietHintGaps() + "/"
+                            + a.movingHintGaps() + "/" + a.unknownHintGaps()
+                            + " | model gaps Q/M/? " + a.quietModelGaps() + "/"
+                            + a.movingModelGaps() + "/" + a.unknownModelGaps());
                 }
             }
             case RUNS -> {
