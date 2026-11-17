@@ -6,11 +6,17 @@ The guided course replaces repeated, manual `timing`, `runs`, and `heading` comm
 
 - `/hg detection course start` — Survival player starts a six-leg particle-only course on an available flat, loaded platform.
 - `/hg detection course stop` — Abort while keeping a partial in-memory report.
-- `/hg detection course report` — Show the most recent report for this online player.
+- `/hg detection course report` — Show a four-line overview and the server-side export path (not the verbose report in player chat).
 
 The course has three walking legs (straight, 90-degree turn, 90-degree turn) and three sprinting legs (straight, 90-degree turn, 90-degree turn). The third-to-fourth leg remains straight to observe walk-to-sprint transition. Geometry uses the player's approximate cardinal facing direction and picks whichever of the two mirrored routes passes flat-surface and loaded-chunk checks. It **never writes world blocks**; the particles are shown only to the player running the test.
 
 Start/end are checkpoint-driven, bounded to three minutes. A few small navigation errors do not prevent completing the course. Large deviations may stop the course with a partial report, without punishment.
+
+## Player chat and full reports
+
+Both automatic completion and `/hg detection course report` emit **four concise summary lines plus one file-path line**: overall modeled/timing counts; separate walk vs sprint totals; phase-quality counts; sprint-state mismatches; saved file location. The old six-phase wall of chat is removed.
+
+The full six-phase breakdown is saved once per course under `plugins/HackerGuardian/research/courses/course-<timestamp>-<uuid>.txt` on the server. This contains the per-phase packet totals, modeled/rejected/timing distributions, run maxima, sprint-state mismatches, route deviation counts and signed corner analysis. It contains aggregate diagnostics, not raw packet positions. Staff can retrieve/share the text file for research; access to the server filesystem is required. A failed write is reported in chat and server logs instead of implying the file was saved.
 
 ## Packet evidence and geometry
 
