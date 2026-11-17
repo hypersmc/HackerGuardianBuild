@@ -151,6 +151,26 @@ public final class MovementPacketObserver implements Listener {
         return running;
     }
 
+    /** Attach capture to the already-serialized player packet session. Bukkit thread only. */
+    public boolean beginCourse(Player player, PacketCourseCapture capture) {
+        Session session = player == null ? null : sessions.get(player);
+        return session != null && session.setCourseCapture(capture);
+    }
+
+    public boolean advanceCourse(Player player, PacketCourseCapture capture, PacketCourseCapture.Phase phase) {
+        Session session = player == null ? null : sessions.get(player);
+        return session != null && session.advanceCourse(capture, phase);
+    }
+
+    public void endCourse(UUID playerId, PacketCourseCapture capture) {
+        for (Session session : sessions.values()) {
+            if (session.playerId.equals(playerId)) {
+                session.clearCourseCapture(capture);
+                return;
+            }
+        }
+    }
+
     /** Packet-coordinate research, not a detector or a Bukkit-speed profile. */
     public PacketGroundReachability.Snapshot packetPredictionSnapshot(Player player) {
         Session session = player == null ? null : sessions.get(player);
@@ -269,12 +289,32 @@ public final class MovementPacketObserver implements Listener {
                 ? new MovementGroundProbe() : null;
         private final PacketGroundReachability packetPrediction = packetPredictorEnabled
                 ? new PacketGroundReachability(packetModel) : null;
+        private PacketCourseCapture attachedCourse;
         private int selfEntityId;
         private boolean active = true;
 
         private Session(UUID playerId, int selfEntityId) {
             this.playerId = playerId;
             this.selfEntityId = selfEntityId;
+        }
+
+        private synchronized boolean setCourseCapture(PacketCourseCapture capture) {
+            if (!active || packetPrediction == null || attachedCourse != null) return false;
+            attachedCourse = capture;
+            packetPrediction.setCourseCapture(capture);
+            return true;
+        }
+
+        private synchronized boolean advanceCourse(PacketCourseCapture capture, PacketCourseCapture.Phase phase) {
+            if (!active || attachedCourse != capture) return false;
+            capture.enter(phase);
+            return true;
+        }
+
+        private synchronized void clearCourseCapture(PacketCourseCapture capture) {
+            if (attachedCourse != capture) return;
+            if (packetPrediction != null) packetPrediction.setCourseCapture(null);
+            attachedCourse = null;
         }
 
         private synchronized void updateEntityId(int entityId) {
@@ -399,6 +439,8 @@ public final class MovementPacketObserver implements Listener {
         }
 
         private synchronized void close() {
+            if (packetPrediction != null) packetPrediction.setCourseCapture(null);
+            attachedCourse = null;
             active = false;
             buffer.clearPlayer(playerId);
         }
