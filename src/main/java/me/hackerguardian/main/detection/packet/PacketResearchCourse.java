@@ -39,7 +39,7 @@ public final class PacketResearchCourse {
         final World world;
         final int y;
         final List<PacketCourseGeometry.Leg> legs;
-        final PacketCourseCapture capture = new PacketCourseCapture();
+        final PacketCourseCapture capture;
         final long started = System.currentTimeMillis();
         int leg;
         int offCourseTicks;
@@ -50,6 +50,7 @@ public final class PacketResearchCourse {
             this.world = player.getWorld();
             this.y = player.getLocation().getBlockY();
             this.legs = legs;
+            this.capture = new PacketCourseCapture(legs);
         }
     }
 
@@ -141,7 +142,7 @@ public final class PacketResearchCourse {
                 continue;
             }
             PacketCourseGeometry.Leg leg = s.legs.get(s.leg);
-            double dist = distanceToLine(current.getX(), current.getZ(), leg);
+            double dist = PacketCourseGeometry.distanceToLeg(current.getX(), current.getZ(), leg);
             if (dist > MAX_OFF_COURSE) {
                 if (++s.offCourseTicks >= 8) {
                     finish(s.id, false, "Left course corridor");
@@ -202,15 +203,6 @@ public final class PacketResearchCourse {
         }
     }
 
-    private static double distanceToLine(double x, double z, PacketCourseGeometry.Leg leg) {
-        double ax = leg.from().x() + 0.5, az = leg.from().z() + 0.5;
-        double bx = leg.to().x() + 0.5, bz = leg.to().z() + 0.5;
-        double dx = bx - ax, dz = bz - az;
-        double t = ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz);
-        t = Math.max(0, Math.min(1, t));
-        return Math.hypot(x - ax - t * dx, z - az - t * dz);
-    }
-
     private static boolean safeCourse(World world, int y, List<PacketCourseGeometry.Leg> legs) {
         if (world == null || y <= world.getMinHeight() || y + 1 >= world.getMaxHeight()) return false;
         for (var leg : legs) {
@@ -241,21 +233,54 @@ public final class PacketResearchCourse {
                 6, 0.35, 0.3, 0.35, 0);
     }
 
+    /** Staff summary: reliable packets stay distinct from descriptive corner observations. */
     public static List<String> format(Report report) {
         ArrayList<String> lines = new ArrayList<>();
         lines.add("§6[HG Course] §f" + report.player() + " | "
                 + (report.complete() ? "COMPLETE" : "PARTIAL") + " | " + report.reason());
-        lines.add("§7Server tick hints are NOT client simulation ticks.");
+        lines.add("§7Packet XZ positions | SERVER tick hints, NOT client ticks/yaw");
+        int clean = 0, deviated = 0, mixed = 0, limited = 0;
         for (var r : report.phases()) {
-            lines.add("§e" + r.phase().label() + " §7packets " + r.packets()
-                    + " modeled " + r.modeled() + " timing " + r.timingRejects()
-                    + " gaps " + r.gapRejects());
-            lines.add(" §7sprint matched/mismatch " + r.matchedSprint() + "/"
-                    + r.mismatchedSprint() + " | angles " + r.headings().measured()
-                    + " p95 " + decimal(r.headings().p95())
-                    + " | max run " + length(r.runs().acceptedRuns().max()));
+            String quality = quality(r);
+            switch (quality) {
+                case "CLEAN" -> clean++;
+                case "DEVIATION" -> deviated++;
+                case "MIXED_MODE" -> mixed++;
+                default -> limited++;
+            }
+            lines.add("§e" + r.phase().label() + " §7[" + quality + "] pkt " + r.packets()
+                    + " modeled " + r.modeled() + " timing " + r.timingRejects());
+            lines.add(" §7mode mismatch " + r.mismatchedSprint() + " | off-route "
+                    + r.outsideCorridor() + " reverse " + r.backwardSteps()
+                    + " | heading p95 " + decimal(r.headings().p95()));
+            if (r.turn() != null && r.turn().hasTurn()) {
+                var turn = r.turn();
+                lines.add(" §7corner " + turn.expectedDirection() + " -> "
+                        + turn.observedDirection() + " " + decimal(turn.signedAngle())
+                        + "deg [" + turn.quality() + "] opposite steps " + turn.oppositeSteps());
+            }
         }
+        lines.add("§6Quality §a" + clean + " clean §e" + mixed + " mixed §c"
+                + deviated + " deviations §7" + limited + " limited");
+        lines.add("§8Quality flags describe route/data reliability, never cheating.");
         return lines;
+    }
+
+    /** Route quality is descriptive and never a cheating verdict. */
+    public static String quality(PacketCourseCapture.PhaseResult r) {
+        var turn = r.turn();
+        if (r.outsideCorridor() >= 2 || r.backwardSteps() >= 3
+                || (turn != null && ("DETOUR".equals(turn.quality())
+                    || "WRONG_DIRECTION".equals(turn.quality())
+                    || "SHALLOW_OR_WIDE".equals(turn.quality())))) {
+            return "DEVIATION";
+        }
+        if (r.packets() == 0 || r.modeled() < 5
+                || (turn != null && "UNMEASURED".equals(turn.quality()))) {
+            return "LIMITED";
+        }
+        if (r.mismatchedSprint() > 0 || r.unknownSprint() > 0) return "MIXED_MODE";
+        return "CLEAN";
     }
 
     private static String decimal(Double value) {
