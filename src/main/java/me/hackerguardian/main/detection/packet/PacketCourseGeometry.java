@@ -14,6 +14,16 @@ public final class PacketCourseGeometry {
         }
     }
 
+    /** Horizontal distance to the finite, directed leg; world coordinates. */
+    public static double distanceToLeg(double x, double z, Leg leg) {
+        double ax = leg.from().x() + .5, az = leg.from().z() + .5;
+        double dx = leg.to().x() - leg.from().x();
+        double dz = leg.to().z() - leg.from().z();
+        double t = ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz);
+        t = Math.max(0.0, Math.min(1.0, t));
+        return Math.hypot(x - ax - t * dx, z - az - t * dz);
+    }
+
     /**
      * First leg is forward, second lateral, third back, fourth continues back
      * (the sprint transition), fifth returns laterally and sixth goes forward.
