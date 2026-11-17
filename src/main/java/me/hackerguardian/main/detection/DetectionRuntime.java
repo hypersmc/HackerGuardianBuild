@@ -10,6 +10,8 @@ import me.hackerguardian.main.detection.learning.LearningRuntime;
 import me.hackerguardian.main.detection.ml.MlBehaviorDetector;
 import me.hackerguardian.main.detection.ml.MlDatasetRecorder;
 import me.hackerguardian.main.detection.normality.NormalityDetector;
+import me.hackerguardian.main.detection.packet.MovementPacketObserver;
+import me.hackerguardian.main.detection.packet.PacketResearchCourse;
 import me.hackerguardian.main.detection.telemetry.BehaviorSnapshot;
 import me.hackerguardian.main.detection.telemetry.BehaviorTelemetryCollector;
 import org.bukkit.Bukkit;
@@ -32,6 +34,8 @@ public final class DetectionRuntime {
     private final int defaultCaptureMinutes;
     private final LearningRuntime learningRuntime;
     private final DeterministicCheckRuntime deterministicRuntime;
+    private final MovementPacketObserver packetObserver;
+    private final PacketResearchCourse packetCourse;
 
     private MlBehaviorDetector mlDetector;
     private NormalityDetector normalityDetector;
@@ -64,6 +68,24 @@ public final class DetectionRuntime {
         this.deterministicRuntime = new DeterministicCheckRuntime(plugin, config, windowMs);
         this.learningRuntime = new LearningRuntime(plugin, config);
 
+        // Inbound packet timing is opt-in and never feeds risk/punishment decisions.
+        boolean packetEnabled = config.getBoolean("DetectionV2.packet_observation.enabled", false);
+        if (packetEnabled && compatibility.minecraftVersion().isVerifiedSupported()
+                && compatibility.isProtocolLibEnabled()) {
+            packetObserver = new MovementPacketObserver(plugin,
+                    config.getInt("DetectionV2.packet_observation.max_packets_per_player", 256),
+                    config.getBoolean("DetectionV2.packet_observation.ground_probe.enabled", false),
+                    config.getBoolean("DetectionV2.packet_observation.ground_probe.packet_reachability.enabled", false),
+                    compatibility.minecraftVersion());
+        } else {
+            packetObserver = null;
+            if (packetEnabled) {
+                plugin.getLogger().warning("Movement packet observation disabled: unverified Minecraft version or ProtocolLib unavailable.");
+            }
+        }
+
+        packetCourse = packetObserver == null ? null : new PacketResearchCourse(plugin, packetObserver);
+
         initializeDatasetRecorder(config);
         registerConfiguredDetectors(config);
         initializeEventJournal(config);
@@ -89,9 +111,10 @@ public final class DetectionRuntime {
     }
 
     private void initializeEventJournal(FileConfiguration config) {
-        boolean website = config.getBoolean("Settings.UseWebsiteFunction", false);
+        // Evidence storage must not depend on the optional website/API lifecycle.
+        // Keep the existing web_journal configuration key for upgraded servers.
         boolean enabled = config.getBoolean("DetectionV2.web_journal.enabled", true);
-        if (!website || !enabled || plugin.getDatabase() == null || plugin.getDatabase().getDataSource() == null) return;
+        if (!enabled || plugin.getDatabase() == null || plugin.getDatabase().getDataSource() == null) return;
         try {
             eventJournal = new DetectionEventJournal(
                     plugin.getDatabase().getDataSource(),
@@ -102,7 +125,7 @@ public final class DetectionRuntime {
                     config.getInt("DetectionV2.web_journal.queue_capacity", 4096),
                     config.getInt("DetectionV2.web_journal.retention_days", 30)
             );
-            plugin.getLogger().info("Detection web evidence journal enabled.");
+            plugin.getLogger().info("Persistent detection evidence journal enabled (independent of website/API).");
         } catch (Exception e) {
             eventJournal = null;
             plugin.getLogger().warning("Detection web evidence journal is unavailable: " + e.getMessage());
@@ -170,6 +193,13 @@ public final class DetectionRuntime {
         Bukkit.getPluginManager().registerEvents(new DetectionTelemetryListener(collector, engine), plugin);
         deterministicRuntime.start();
         learningRuntime.start();
+        if (packetObserver != null) {
+            try {
+                packetObserver.start();
+            } catch (RuntimeException e) {
+                plugin.getLogger().warning("Movement packet observation unavailable: " + e.getMessage());
+            }
+        }
         assessmentTask = Bukkit.getScheduler().runTaskTimer(
                 plugin,
                 this::assessOnlinePlayers,
@@ -190,6 +220,7 @@ public final class DetectionRuntime {
                 + ", population-normality=" + normalityState
                 + ", learning=" + (learningRuntime.isEnabled() ? "enabled" : "disabled")
                 + ", web-journal=" + (eventJournal == null ? "disabled" : "enabled")
+                + ", packet-observation=" + (packetObserver != null && packetObserver.isRunning() ? "enabled" : "disabled")
                 + ", mc-family=" + compatibility.familyId() + ".");
     }
 
@@ -236,8 +267,10 @@ public final class DetectionRuntime {
             assessmentTask.cancel();
             assessmentTask = null;
         }
+        if (packetCourse != null) packetCourse.shutdown();
         deterministicRuntime.stop();
         learningRuntime.stop();
+        if (packetObserver != null) packetObserver.stop();
         if (datasetRecorder != null) {
             datasetRecorder.shutdown();
             datasetRecorder = null;
@@ -254,6 +287,8 @@ public final class DetectionRuntime {
     public BehaviorTelemetryCollector getCollector() { return collector; }
     public DetectionEngine getEngine() { return engine; }
     public DeterministicCheckRuntime getDeterministicRuntime() { return deterministicRuntime; }
+    public MovementPacketObserver getPacketObserver() { return packetObserver; }
+    public PacketResearchCourse getPacketCourse() { return packetCourse; }
     public MlBehaviorDetector getMlDetector() { return mlDetector; }
     public NormalityDetector getNormalityDetector() { return normalityDetector; }
     public MlDatasetRecorder getDatasetRecorder() { return datasetRecorder; }

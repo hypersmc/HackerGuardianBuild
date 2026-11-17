@@ -7,6 +7,10 @@ import me.hackerguardian.main.detection.ml.MlCaptureLabel;
 import me.hackerguardian.main.detection.ml.MlDatasetRecorder;
 import me.hackerguardian.main.detection.normality.IsolationForestModel;
 import me.hackerguardian.main.detection.normality.NormalityDetector;
+import me.hackerguardian.main.detection.packet.MovementPacketBuffer;
+import me.hackerguardian.main.detection.packet.MovementPacketDiagnostics;
+import me.hackerguardian.main.detection.packet.MovementPacketObserver;
+import me.hackerguardian.main.detection.packet.PacketResearchCourse;
 import me.hackerguardian.main.detection.telemetry.BehaviorSnapshot;
 import me.hackerguardian.main.utils.CommandManager;
 import me.hackerguardian.main.utils.textHandling;
@@ -42,6 +46,8 @@ public final class DetectionCommands {
             if (params[0].equalsIgnoreCase("learning")) { handleLearning(sender, params); return; }
             if (params[0].equalsIgnoreCase("probe")) { handleProbe(sender, params); return; }
             if (params[0].equalsIgnoreCase("capture")) { handleCapture(sender, params); return; }
+            if (params[0].equalsIgnoreCase("packets")) { handlePackets(sender, params); return; }
+            if (params[0].equalsIgnoreCase("course")) { handleCourse(sender, params); return; }
 
             if (params.length != 1) {
                 sendUsage(sender);
@@ -55,6 +61,82 @@ public final class DetectionCommands {
             }
             showAssessment(sender, target);
         });
+    }
+
+    private void handleCourse(CommandSender sender, String[] params) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage("§cCourse commands must be run in game.");
+            return;
+        }
+        PacketResearchCourse course = runtime.getPacketCourse();
+        if (course == null) {
+            sender.sendMessage("§cPacket observation is unavailable.");
+            return;
+        }
+        String action = params.length == 1 ? "start" : params[1].toLowerCase(java.util.Locale.ROOT);
+        if (params.length > 2) {
+            sender.sendMessage("§7Usage: /hg detection course [start|stop|report]");
+            return;
+        }
+        switch (action) {
+            case "start" -> {
+                String error = course.start(player);
+                if (error != null) sender.sendMessage("§c[HG Course] " + error);
+            }
+            case "stop" -> {
+                if (!course.cancel(player)) sender.sendMessage("§7No active packet course.");
+            }
+            case "report" -> {
+                var report = course.lastReport(player.getUniqueId());
+                if (report == null) {
+                    sender.sendMessage("§7No finished packet course report yet.");
+                } else {
+                    for (String line : PacketResearchCourse.format(report)) sender.sendMessage(line);
+                    String exported = course.lastReportPath(player.getUniqueId());
+                    sender.sendMessage(exported == null
+                            ? "§cFull report not saved (see server log)."
+                            : "§7Saved: §f" + exported);
+                }
+            }
+            default -> sender.sendMessage("§7Usage: /hg detection course [start|stop|report]");
+        }
+    }
+
+    private void handlePackets(CommandSender sender, String[] params) {
+        if (params.length < 2 || params.length > 3) {
+            sender.sendMessage(tx.playerText(tx.prefix
+                    + "§cUsage: /hg detection packets <player> [summary|move|net|tick|guards|probe|profile|dyn|idle|predict|res|trans|heading|timing|runs|activity|physics]"));
+            return;
+        }
+        MovementPacketDiagnostics.View view =
+                MovementPacketDiagnostics.View.parse(params.length == 3 ? params[2] : null);
+        if (view == null) {
+            sender.sendMessage(tx.playerText(tx.prefix
+                    + "§cView must be summary, move, net, tick, guards, probe, profile, dyn, idle, predict, res, trans, heading, timing, runs, activity or physics."));
+            return;
+        }
+        MovementPacketObserver observer = runtime.getPacketObserver();
+        if (observer == null || !observer.isRunning()) {
+            sender.sendMessage(tx.playerText(tx.prefix + "§cPacket observation is disabled or unavailable."));
+            return;
+        }
+        Player target = Bukkit.getPlayerExact(params[1]);
+        if (target == null) {
+            sender.sendMessage(tx.playerText(tx.prefix + "§cPlayer not found: " + params[1]));
+            return;
+        }
+        MovementPacketBuffer.Snapshot snapshot = observer.snapshot(target.getUniqueId());
+        var transport = observer.transportSnapshot(target);
+        var ticks = observer.tickSnapshot(target);
+        var probe = observer.groundProbeSnapshot(target);
+        var prediction = observer.packetPredictionSnapshot(target);
+        List<String> lines = MovementPacketDiagnostics.render(target.getName(), snapshot,
+                transport, ticks, probe, prediction, view, System.nanoTime());
+
+        // One readable, compact header. Detailed views are explicitly requested.
+        for (int i = 0; i < lines.size(); i++) {
+            sender.sendMessage(tx.playerText((i == 0 ? tx.prefix + " §f" : " §7") + lines.get(i)));
+        }
     }
 
     private void showAssessment(CommandSender sender, Player target) {
@@ -97,6 +179,9 @@ public final class DetectionCommands {
         sender.sendMessage(tx.playerText(" §7Running: " + (runtime.isRunning() ? "§aYES" : "§cNO")));
         sender.sendMessage(tx.playerText(" §7Tracked players: §f" + runtime.getCollector().getTrackedPlayerCount()));
         sender.sendMessage(tx.playerText(" §7Window: §f" + runtime.getCollector().getWindowMs() + "ms"));
+        sender.sendMessage(tx.playerText(" §7Movement packet observation: "
+                + (runtime.getPacketObserver() != null && runtime.getPacketObserver().isRunning()
+                ? "§aenabled (read-only)" : "§8disabled")));
         sender.sendMessage(tx.playerText(" §7Detectors: §f" + String.join(", ", runtime.getEngine().getDetectorIds())));
 
         MlBehaviorDetector ml = runtime.getMlDetector();
@@ -351,6 +436,8 @@ public final class DetectionCommands {
         sender.sendMessage(tx.playerText(" §7/hg detection [player]"));
         sender.sendMessage(tx.playerText(" §7/hg detection learning [player]"));
         sender.sendMessage(tx.playerText(" §7/hg detection probe <player>"));
+        sender.sendMessage(tx.playerText(" §7/hg detection packets <player>"));
+        sender.sendMessage(tx.playerText(" §7/hg detection course [start|stop|report]"));
         sender.sendMessage(tx.playerText(" §7/hg detection normality [reload]"));
         sender.sendMessage(tx.playerText(" §7/hg detection ml [reload]"));
         sendCaptureUsage(sender);

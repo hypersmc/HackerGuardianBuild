@@ -1,0 +1,990 @@
+# Packet-driven horizontal ground reachability v1 — research only
+
+**Status:** implementation under PR #17, requires GitHub CI and real-server
+runtime validation. This is not a Speed/Fly detector and makes no cheating
+judgments. All counters are session-memory-only. It has no path into
+HackerGuardian reports, risk scores, ML training, learning datasets,
+notifications, automated setbacks, kicks or bans.
+
+## What is actually packet-derived?
+
+The observed X/Y/Z positions fed to `PacketGroundReachability` are decoded
+from genuine **incoming Minecraft Java Edition `POSITION` and
+`POSITION_LOOK` client packets**, received through ProtocolLib. The
+packet's client-claimed on-ground bit must also decode as `true`.
+
+This is **not** the older Bukkit walking/sprinting `profile` or `dyn`
+research: those measure differences between Bukkit-sampled server positions.
+Bukkit is still used here, but **only as separately sampled context**:
+server-scheduler tick hint, game mode, ordinary full-block support material,
+grounded/flying state, potion-effect absence, normal walk speed, no liquids,
+velocity/teleport correction boundaries, etc. A client ground bit by itself
+does not qualify movement for modeling.
+
+No player Bukkit APIs or world lookups occur on the ProtocolLib packet
+thread; immutable sample data is captured once per tick on the Bukkit
+scheduler thread and read behind per-session locks.
+
+## Enable separately
+
+Requires ProtocolLib, packet observation and the existing experimental
+ground probe enabled. Both nested features are **off by default**:
+
+```yaml
+DetectionV2:
+  packet_observation:
+    enabled: true
+    ground_probe:
+      enabled: true
+      packet_reachability:
+        enabled: true
+```
+
+After server restart, inspect:
+
+```text
+/hg detection packets HypersMC predict
+```
+
+The six-line staff view shows: version profile, incoming position packet
+count, successfully modeled triples, no-decision count, repeated-tick
+ambiguity, correction count, last outcome, and last measured movement
+and research-only envelope/excess.
+
+## Physics hypothesis — explicitly not validated
+
+For three distinct, contiguous, **server-scheduler tick-hinted** decoded
+position claims, let `v_prev = P[t-1] - P[t-2]` and let
+`v_now = P[t] - P[t-1]` (horizontal XZ vectors).
+
+Model a conservative unknown-input displacement disk:
+
+```text
+predicted_center = ordinary_ground_drag * v_prev
+reachable_radius = maximum_unknown_input_acceleration + uncertainty
+residual = length(v_now - predicted_center)
+research_outside_if residual > reachable_radius
+```
+
+The first registered research profiles use drag `0.546` and an unknown
+input acceleration bound `0.1274` blocks per tick, plus a deliberately
+generous `0.10` block uncertainty margin. The 0.546 and default
+walking/sprinting acceleration magnitudes are consistent with the broad
+vanilla description at
+https://minecraft.wiki/w/Player#Movement_speed
+
+**These are not separately validated against every client/server patch
+or physics modifier.** The input direction is unconstrained: the model
+does not assume forward movement or know keys, diagonal inputs or key-up
+events. The disk is an intentionally loose *research reachability
+hypothesis*, not an exact physics solver. In particular:
+
+- incoming packet observation order is **not** authenticated client
+  simulation order;
+- a local scheduler tick hint is **not** a client simulation tick;
+- network delay, client tick cadence, packet scheduling and server
+  processing can misalign the tick-hint mapping;
+- server-side state may have already incorporated that packet or may
+  reflect an older client input;
+- collision geometry, speed attributes, item-use slowdown, equipment,
+  jumping, sneak effects, local client motion integration, velocity
+  acknowledgments and many server plugins are not modeled.
+
+The profile registry is **explicit per version family**:
+`1.20.x` and `1.21.x` have preliminary research constants;
+`26.x`, future/unverified and legacy versions are **model-unavailable**.
+Successful compilation on a version is not physics verification.
+
+`CONSERVATIVE_REACHABLE` and `OUTSIDE_RESEARCH_ENVELOPE` are **both
+non-actionable research telemetry**, never positive/negative cheat verdicts.
+An outlier could easily be caused by a wrong timing assumption.
+
+## Strict no-decision cases
+
+Any of these withholds a physical comparison:
+
+- no following available Bukkit server tick sample;
+- the last two server samples were not consecutive scheduled ticks,
+  or their observation interval is outside 25–125 ms;
+- the newest Bukkit sample is older than 125 ms (or has invalid timing);
+- any unknown/undecodable position or on-ground bit, or client ground=false;
+- the player is in Creative/Spectator, flying, gliding, swimming, in a
+  vehicle, on nonstandard or unknown ground, near liquid, or has changed
+  speed/effects/permissions;
+- teleport pending/unconfirmed, correction recovery, knockback,
+  world change, respawn or a changed correction epoch;
+- client position packet arrives twice with the same scheduler tick hint,
+  or packet tick hints skip a scheduler tick;
+- world/ground material/sprint context changes across the three samples;
+- vertical displacement exceeds 0.03 blocks over a packet pair or the
+  previous horizontal displacement exceeds 0.8 blocks.
+
+The position history is only two previous immutable claims per session.
+No growing logs, raw packet retention outside the existing optional bounded
+movement buffer, time-sorting, or packet-thread Bukkit calls were added.
+
+## First real in-game smoke tests
+
+1. Enable the explicit `packet_reachability` toggle and restart. In
+   Survival, walk steadily on a large flat stone platform. Compare
+   `/hg detection packets HypersMC predict` with `... profile`.
+   The `predict` number is based on **client packets**, not the
+   server-position profile. The `modeled` counter may be much smaller
+   than the number of `position packets`.
+2. Sprint without jumping and repeat; expect many conservative
+   `CONSERVATIVE_REACHABLE` outcomes, but no enforcement. A lack of
+   modeled samples is diagnostic, not a failed physics verdict.
+3. Stop, start, turn, jump, fly in Creative, change block material and
+   run `/tp ~ ~10 ~`. Check last no-decision states; never assume that
+   correction/airborne jumps are legitimate physics samples.
+4. Take zombie knockback in Survival. Ensure no cross-knockback triplet
+   is modeled and no punitive action occurs.
+5. Check on a busy/lagged server and with unusual packet timing. Frequent
+   `AMBIGUOUS_TICK` or `TICK_GAP` is useful evidence that server tick
+   hints cannot safely serve as client simulation ticks; never solve that
+   by silently comparing multiple packets as separate physics ticks.
+6. Repeat on separately supported game versions before expanding profile
+   registry. Retest decoder boolean layout where ProtocolLib/NMS changes.
+
+## First in-game packet-predictor smoke test: airborne movement (2026-11-16)
+
+The tester ran `/hg detection packets HypersMC predict` while jumping
+in Survival. Three screenshots of the **same session** showed:
+
+| Position packets | Modeled triples | No-decision | Ambiguous tick | Research outside | Last status |
+|---:|---:|---:|---:|---:|---|
+| 5 | 0 | 5 | 0 | 0 | TICK_GAP |
+| 58 | 11 | 47 | 0 | 0 | TICK_GAP |
+| 116 | 16 | 100 | 0 | 0 | UNSUPPORTED_CONTEXT |
+
+The model identified the active profile as `1.20.x`. The correction
+counter remained 3 across the three readings, indicating previously
+recorded correction boundaries rather than new jump-caused teleports.
+
+**Observed:** the independently decoded client-position stream reached
+the predictor and at least 16 research triples qualified during the
+session. A mid-jump reading produced `UNSUPPORTED_CONTEXT` rather than
+applying the ground model to that observation. The final status describes
+*only the most recent packet*, not whether every earlier modeled triple
+was grounded; the screenshots cannot independently prove the model's
+safety on every airborne transition.
+
+**Important limitation:** only 16 of the first 116 received position
+packets formed modeled triples; 100 were no-decisions. Frequent
+`TICK_GAP` statuses suggest the server-scheduler-tick hint is a weak
+proxy for actual client simulation ticks in this test. No ambiguous-tick
+events were recorded, but that does not establish correct client tick
+synchronization. Research outliers stayed zero; this is **not** a
+detection-accuracy claim.
+
+**Next live test:** on a large flat `STONE` platform, walk steadily in
+Survival without jumping for 10–15 seconds and inspect `predict`
+several times; repeat sprinting, then compare with `profile`.
+Record modeled and no-decision count differences for uninterrupted
+ground movement separately from airborne movement. Do not weaken the
+tick-sequencing guard merely to increase modeled counts.
+
+## First continuous ground walk/sprint packet comparison (2026-11-16)
+
+The tester supplied two `predict` screenshots, labeled **walking**
+(first) and **after sprinting** (second), with cumulative same-session
+counters:
+
+| Research counter | After walking | After sprinting | Delta |
+|---|---:|---:|---:|
+| Incoming decoded-position observations | 414 | 589 | +175 |
+| Modeled consecutive client-position triples | 176 | 344 | +168 |
+| No-decision observations | 238 | 245 | +7 |
+| Ambiguous scheduler-tick hints | 0 | 0 | 0 |
+| Correction boundaries | 3 | 3 | 0 |
+| Outside research envelope | 0 | 0 | 0 |
+| Most recent status | CONSERVATIVE_REACHABLE | CONSERVATIVE_REACHABLE | — |
+| Last measured packet displacement | 0.003 blocks | 0.007 blocks | — |
+| Last printed drift-plus-radius | 0.231 blocks | 0.235 blocks | — |
+| Last research excess | 0.000 | 0.000 | — |
+
+**Result:** pass for a single-server, normal ground-movement packet
+*collection and reachability eligibility* smoke test. From the walking
+snapshot to the sprinting snapshot, **168 of the next 175** received
+position observations (96%) were modeled. This suggests the restrictive
+scheduler-tick alignment can be useful under steady ground movement,
+unlike the prior jumping test; it does **not** prove that scheduler tick
+hints equal client physics ticks.
+
+These are cumulative snapshots, not separate isolated walking and
+sprinting datasets; the **96% pertains only to the interval between
+screenshots** and may include transition or command-entry movement.
+The last displayed displacements of 0.003 and 0.007 blocks are the
+*latest modeled interval* and should not be compared with the steady
+walking/sprinting median measured by the independent Bukkit profile.
+A later command entry or slowing down may explain the small values,
+but the screenshots do not prove the exact cause.
+
+Neither `CONSERVATIVE_REACHABLE` nor zero research outliers validates
+the unknown-input disk constants or proves client legitimacy. The
+research uncertainty is deliberately generous. Next measure
+**distributions of packet-coordinate residuals**, separated by observed
+ground walk/sprint context and with explicit timing/no-decision
+breakdowns. Maintain all correction boundaries and keep outliers
+non-actionable until tick synchronization and physics accuracy are
+independently validated.
+
+## Packet residual distributions by ground movement mode (2026-11-16)
+
+The packet-driven research model now keeps **separate rolling
+distributions of the required unknown-input residual** for server-observed
+walking and sprinting, without using the older Bukkit displacement
+`profile`. The new optional view is:
+
+```text
+/hg detection packets HypersMC res
+```
+
+Equivalent suffixes: `residuals`, `predstats`, `predictstats`.
+
+Each accepted client packet triple contributes once to exactly one mode.
+Sprint state must be unchanged across the triple by the existing
+`sameContext` checks; mixed-state, correction-crossing, airborne,
+invalid-claim, unknown-terrain, stale server tick or ambiguous packet
+timing cases are **not sampled into either distribution**.
+
+The observed motion is calculated from decoded **incoming client position
+packets**, not the Bukkit server-position snapshots. For each accepted
+triple, using horizontal packet-to-packet displacement vectors:
+
+```text
+center = ground_drag * previous_packet_displacement
+residual = magnitude(current_packet_displacement - center)
+radius = max_unknown_input_acceleration + uncertainty
+outside_excess = max(0, residual - radius)
+```
+
+`residual` is the magnitude of the **player-input contribution that the
+provisional zero-input drag model needs to explain**. Calling it
+"prediction error" or treating it as cheating is misleading: authentic
+movement input is deliberately **unknown**. The `outside_excess`
+measurement represents only how far a sample falls outside the chosen
+research envelope (if any), not an authoritative Minecraft violation.
+
+- **Walk/Sprint `n=retained/session_total`:** number of eligible
+  client-packet triples in that mode, limited to the most recent **128**
+  per group. Each group is a constant-memory ring of primitive values.
+- **`r50`, `r95`, `max`:** nearest-rank median, 95th percentile,
+  and maximum residual in the *retained* window, measured in blocks per
+  accepted packet interval. Neither percentile nor maximum is a threshold.
+- **`Outside W/S`:** cumulative session counts of modeled triples
+  beyond the deliberately loose envelope for each observed mode.
+- **`peak excess`:** maximum excess **among retained values** in each
+  mode, not the lifetime maximum; a previous outlier can age out.
+- **`no-decision`:** cumulative packets whose context/timing was
+  unsuitable or which were needed only to warm up a triple. These are
+  not absent or discarded from transport diagnostics.
+
+No per-packet sorting, persistent storage, full coordinates in the
+distribution history, event journal writes, ML training or punishment
+paths are added. The statistics are generated on demand when staff request
+the view. A player disconnect clears the session profile.
+
+### Single-player runtime protocol
+
+1. Enable the existing opt-in `packet_reachability` research switch.
+   On a large, uniform **STONE** platform in Survival, walk steadily
+   without jumping for 10–15 seconds.
+2. Run `... predict` and `... res`. Walk `n` should increase,
+   while Sprint `n` stays zero unless earlier sprint data exists.
+3. Sprint steadily, no jumping; compare both views. Sprint `n` should
+   now increase separately while the walking retained profile remains
+   stable, apart from any intervening walking observations.
+4. Switch walk/sprint repeatedly, then jump, teleport, take knockback,
+   enter Creative and move onto slabs/other unsupported ground. The
+   underlying `predict` no-decision/guard checks must still apply, and
+   unsupported intervals must never add residual measurements.
+5. Reconnect to reset the session counters. Check that the retained
+   window stays at 128 while lifetime counts continue to grow.
+6. Later collect multiple legitimate gameplay sessions, jitter/TPS
+   conditions and Minecraft versions. The observed p95 may describe
+   selection bias from the strict eligibility filter rather than
+   general Minecraft movement physics.
+
+**Status:** code and unit tests committed; CI and live testing required.
+This is distribution instrumentation, **not** verification of the
+research model's acceleration constants or a detection accuracy claim.
+
+## First live walk/sprint client-packet residual profile (2026-11-16)
+
+The tester supplied two `/hg detection packets HypersMC res` screenshots,
+identifying the **top as the walking test** and the bottom as the reading
+**after sprinting** on the same session:
+
+| Counter | Walking snapshot | Later snapshot |
+|---|---:|---:|
+| Walk retained / total packet triples | 128 / 256 | 128 / 261 |
+| Walk residual r50, r95 | 0.098, 0.098 | 0.098, 0.098 |
+| Walk residual maximum | 0.098 | 0.127 |
+| Sprint retained / total packet triples | 0 / 0 | 128 / 261 |
+| Sprint residual r50, r95, maximum | n/a | 0.127, 0.127, 0.127 |
+| Cumulative research outside W / S | 0 / 0 | 0 / 0 |
+| Retained peak research excess W / S | 0 / n/a | 0 / 0 |
+
+The rolling rings correctly stopped at 128 entries while session totals
+continued increasing. Between screenshots the walk session total increased
+by only **5** while sprint gained **261** samples. This confirms the
+basic walk/sprint data split in a real client-packet collection test.
+The increase in the walking **maximum** from 0.098 to 0.127 warrants
+investigation around mode transitions and server sprint-state timing;
+it is not evidence of cheating or proof of a labeling bug.
+
+For **steady-state** packet displacement `v`, the experimental disk
+center implies `residual = (1 - 0.546) * v` when velocity direction and
+magnitude remain unchanged. Using earlier Bukkit-observed steady speeds
+as a rough reference gives `0.216 * 0.454 = 0.0981` for walking and
+`0.281 * 0.454 = 0.1276` for sprinting, close to these recorded
+client-packet residuals.
+
+**Result:** pass for the **packet-derived residual distribution collection**
+smoke test and bounded walk/sprint grouping. This agreement is mainly
+an internal consistency check: the residual is **defined using the
+assumed drag** and does not independently validate the drag coefficient,
+maximum acceleration, server/client tick correspondence or cheating
+detection accuracy. Research outside counts of zero are unsurprising
+under the permissive 0.2274-block input-plus-uncertainty radius.
+
+**Next:** explicitly study acceleration and deceleration transitions,
+turns, and the rare high walking residual after sprinting; capture
+no-decision timing explanations while still making no enforcement
+decisions. Do not treat any retained percentile as a violation threshold.
+
+## Client-packet acceleration and sprint-switch transition study (2026-11-16)
+
+The first real residual profile showed walking `r50/r95=0.098`, then
+sprinting `r50/r95=0.127`. After sprinting, the **rolling walking
+maximum** increased to `0.127` while its median stayed `0.098`.
+This is consistent with transient momentum still being observed after the
+server's sprint flag switches off, but the snapshots do not prove whether
+that was the exact cause. The sprint flag is **Bukkit-sampled server
+state**, not a decoded key-down/key-up event.
+
+The packet predictor now keeps **post-switch residuals separate** from
+the rolling steady walking/sprinting distribution. The new, read-only
+command:
+
+```text
+/hg detection packets HypersMC trans
+```
+
+Aliases: `transitions`, `switches`, `switch`.
+
+The six-line view shows:
+
+- Server-observed **walk→sprint** and **sprint→walk** flag changes
+  detected between consecutive genuine client position-packet claims,
+  on the same world, correction epoch and ground block material.
+- Count of modeled packet triples attributed to a **six server-tick-hint
+  window** following a sprint-state change. The window is a deliberate
+  *research convention*; tick hints are not authenticated client ticks.
+- Phase counts for **accelerating, slowing, turning and steady**,
+  classified from changes in two successive decoded client displacement
+  vectors. Thresholds (0.025 block speed change and 35-degree turning
+  angle) are provisional **research labels**, not vanilla movement
+  constraints or detection limits.
+- Separate bounded post-switch residual distributions for entering walk
+  versus entering sprint, with per-mode counts, rolling p95 and max.
+  Each tail retains no more than **128** values; lifetime counts continue.
+
+The existing `... res` view now reports **steady-mode residuals only**.
+The new excluded-tail counters on that view explain why adding its two
+mode sample counts may yield a lower total than `... predict modeled`.
+The underlying `modeled`, `outside research` and `no-decision`
+counters and the original conservative reachable disk are **unchanged**;
+only the grouping of research telemetry differs.
+
+### Critical provenance and no-decision rules
+
+A sprint-state flip breaks the active three-packet reachability chain.
+The new mode needs normal warmup before any triple is modeled. Invalid
+client ground claims, missing or stale server sample context, unsupported
+terrain/game mode, unusual vertical displacement, teleport/knockback,
+cross-world/material changes, duplicate or skipped server tick hints all
+preserve the existing **no-decision** behavior. Such uncertainty also
+**aborts** any unfinished post-switch attribution window.
+
+A server-observed sprint flag change is not proof that the player
+pressed or released a sprint key. A high walking residual immediately
+after such a change is not an anomaly by itself, and a low residual is
+not evidence of legitimacy. The model still lacks true client input
+state, packet-to-client-tick equivalence and full version-aware physics
+parameters. Neither tail nor phase statistics feed reports, alerts,
+punishments, ML labels or evidence journaling.
+
+### Retest protocol
+
+1. In Survival on uniform flat `STONE`, walk steadily and run
+   `/hg detection packets HypersMC res` (steady Walk population).
+2. Sprint steadily; run `... res` and `... trans`. Expect a
+   walk→sprint flag event, some post-switch sprint samples, and more
+   steady sprint observations after the initial window.
+3. Release sprint **while continuing to walk**, then check both views.
+   The new `sprint→walk` tail should collect residuals while steady
+   walking p95/max should no longer be inflated *by the attributed
+   post-switch packets*. Verify the distinction rather than assuming
+   all high values must disappear.
+4. Alternate start/stop, direction changes and several sharp turns.
+   `trans` should accumulate phase observations from real decoded
+   client position packets where three consecutive packet claims and
+   eligible server tick hints exist.
+5. Teleport, jump, enter Creative, change block material or take
+   zombie knockback. Inspect `predict`, `res` and `trans`:
+   uncertain packets must not contribute to new residual/phase samples.
+6. Reconnect to verify session reset. Test slow ticks/network jitter
+   separately. All measurements are observational and non-actionable.
+
+**Status:** committed as research-only, subject to CI and runtime testing.
+
+## Live packet transition and residual-grouping retest: passed (2026-11-16)
+
+The tester provided four screenshots of the same Survival session, with
+two walk/sprint/switch-back sequences (first two screenshots, then a
+repeat). The screenshots show:
+
+| Observation | Reading 1 | Reading 2 | Reading 3 | Reading 4 |
+|---|---:|---:|---:|---:|
+| Walk residual retained/total | 128/165 | 128/337 | 128/515 | 128/679 |
+| Walk r50/r95/max | .098/.098/.098 | .098/.098/.098 | .098/.098/.098 | .098/.098/.098 |
+| Sprint residual retained/total | 0/0 | 128/159 | 128/159 | 128/324 |
+| Sprint r50/r95/max | n/a | .127/.127/.127 | .127/.127/.127 | .127/.127/.127 |
+| Walk→sprint observed switches | 1 | 1 | 2 | 2 |
+| Sprint→walk observed switches | 1 | 1 | 2 | 2 |
+| Post-switch tagged packets | 9 | 9 | 18 | 18 |
+| After sprint→walk retained/session total | 4/4 | 4/4 | 8/8 | 8/8 |
+| After sprint→walk p95/max | 0.000/0.000 | 0.000/0.000 | 0.000/0.000 | 0.000/0.000 |
+| After walk→sprint retained/session total | 5/5 | 5/5 | 10/10 | 10/10 |
+| After walk→sprint p95/max | .127/.127 | .127/.127 | .127/.127 | .127/.127 |
+| Accelerating/slow/turn/steady | 2/4/0/328 | 3/7/0/495 | 4/11/0/842 | 5/14/0/1014 |
+| Outside research envelope W/S | 0/0 | 0/0 | 0/0 | 0/0 |
+
+**Result:** first real-server packet transition grouping regression
+**passed**. The number of observed sprint switches and tagged windows
+doubled on repetition, and the steady walking residual maximum stayed
+at **0.098** rather than rising to the earlier **0.127**; sprinting
+steady residual stayed at 0.127. The new bounded post-switch rings
+recorded 4 then 8 walking-tail samples and 5 then 10 sprinting-tail
+samples. This validates the observed *separation* of the research
+populations on this one test server, not the accuracy of the assumed
+physics constants.
+
+**Important: a 0.000 residual is not synonymous with no movement.**
+The model defines residual as
+`|v_current - 0.546 * v_previous|`. A packet sequence following the
+assumed drag with little input, including decaying motion, may produce
+near-zero residual while the player is moving. Stationarity could also
+produce zero. These screenshots do not distinguish them. They are not
+proof of key release, genuine friction, or a perfect prediction.
+They do show a systematic contrast between the two switch directions.
+
+The phase counters increased as the session progressed; turning
+remained zero. A separate controlled turning test is needed before
+the turn classifier can be called runtime-validated. These phases
+measure changes in **decoded client packet displacement**, with the
+sprint-mode label separately sampled via Bukkit; they are not decoded
+client input commands.
+
+Suggested next instrumentation: in each post-switch window, report
+**the distribution of actual packet horizontal displacement** alongside
+the residual. That would distinguish stationary packets from
+friction-like coasting without claiming to know the keyboard state.
+Then test sprint-key release while deliberately holding forward versus
+releasing both forward and sprint, including controlled 90-degree
+turns. Never use either outcome for moderation.
+
+## Post-switch packet displacement: separating idle from drag-like motion (2026-11-17)
+
+The first repeated live walk/sprint tests showed **zero residual** (at
+three-decimal precision) in the post-sprint-to-walk window, but this
+cannot distinguish true stationary movement from motion that follows
+the provisional drag equation. This increment adds **actual horizontal
+displacement from the same accepted client packet triples**, grouped
+with the existing residuals (no new Bukkit movement-position source).
+
+The existing compact admin command remains:
+
+```text
+/hg detection packets HypersMC trans
+```
+
+The final two lines are now shortened into paired stats for the
+post-switch-to-walk (`S>W`) and post-switch-to-sprint (`W>S`) windows:
+
+```text
+S>W n8 r95 0.000 d95 0.032 near0 2 drag~ 6
+W>S n10 r95 0.127 d95 0.281 near0 0 drag~ 0
+```
+
+*Illustrative numbers above, not the test server's measurements.*
+
+- **`n`**: cumulative accepted modeled packet triples tagged within
+  that switch direction. The retained distributions contain at most
+  the latest **128** per direction. Statistics are read-time only.
+- **`r95`**: 95th-percentile required *unknown-input residual*
+  `|v_current - 0.546 * v_previous|` among the retained triples.
+- **`d95`**: 95th-percentile **actual decoded client-packet XZ
+  displacement magnitude** `|v_current|` among those same retained
+  triples, in **blocks per accepted packet interval**, not blocks/50ms.
+- **`near0`**: number of retained intervals with actual displacement
+  at most **0.002 blocks**. This is a measured near-zero packet delta,
+  *not* a guaranteed client key-release or real-world rest state.
+- **`drag~`**: number of retained *non-near-zero* intervals where
+  the provisional residual is at most **0.005 blocks**. This identifies
+  observed movement approximately following `0.546*v_previous`,
+  *not* a verified friction event or a key-up declaration.
+
+The `near0` and `drag~` thresholds are purely **research labeling
+conventions**, not Minecraft physics guarantees or Speed/Fly thresholds.
+Residual and displacement are collected together only from eligible,
+same-ground, same-epoch, same-sprint-state, correctly ordered incoming
+client-position packet triples inside the existing six
+**server-tick-hint** post-switch window. No change to that window or
+the original prediction/no-decision/correction behavior.
+
+A fully stationary player might stop sending position packets: that
+absence never becomes a fabricated zero-displacement packet sample.
+Conversely, a true packet delta of zero with near-zero residual is
+different from a positive packet delta with near-zero residual, even
+though both display `r95 0.000`.
+
+### Controlled follow-up
+
+1. In Survival on a long level STONE platform, sprint steadily,
+   **release sprint but continue holding forward** for several seconds;
+   read `trans` and `res` and note the changes to `S>W`.
+2. In the same session, sprint again, then **release both sprint and
+   forward**, without jumping, and compare the new `S>W` samples.
+   Contrast `d95`, `near0`, and `drag~`. Avoid declaring either
+   behavior a verified client key state.
+3. Walk/sprint in a straight line, then make distinct **90-degree turns**
+   while continuing to move on the same uniform ground. The turn
+   counter should begin recording eligible abrupt direction changes,
+   but zero can still result from gradual turning or missed packets.
+4. Jump, teleport, switch to Creative, take knockback, or cross unsupported
+   materials; verify the existing packet predictor exclusions are
+   unchanged and no new post-switch displacement samples cross
+   those boundaries.
+5. Quit/rejoin to verify that all bounded session counters restart.
+
+**Validation status:** Java regression fixtures distinguish genuinely
+near-stationary packet deltas from positive, drag-like displacement
+despite nearly identical residuals. A new live Paper test is still
+required to establish how often either occurs in real gameplay.
+All observations remain opt-in, in-memory and non-enforcing.
+
+## Live displacement-versus-residual retest (2026-11-17)
+
+The tester supplied two consecutive in-game `/hg detection packets
+HypersMC trans` screenshots after the packet displacement
+instrumentation was added. The screenshots do not label the individual
+keyboard-release sequence or precisely separate all the actions, so the
+observations below are **session-level** research results only.
+
+| Measurement | Earlier screenshot | Later screenshot |
+|---|---:|---:|
+| Walk→sprint / sprint→walk observed switches | 1 / 1 | 4 / 4 |
+| Tagged post-switch modeled triples | 4 | 26 |
+| Accelerating / slowing / turning / steady | 2 / 2 / 0 / 26 | 2 / 5 / 0 / 128 |
+| After sprint→walk (`S>W`) tagged triples | 4 | 16 |
+| `S>W` residual r95 | 0.000 | 0.000 |
+| `S>W` actual packet displacement d95 | **0.025** | **0.025** |
+| `S>W` near-zero displacement (< =0.002 blocks) | 0 | 0 |
+| `S>W` drag-like positive-displacement samples | 4 | 16 |
+| After walk→sprint (`W>S`) tagged triples | 0 | 10 |
+| `W>S` residual r95 / actual displacement d95 | n/a / n/a | 0.127 / 0.278 |
+| `W>S` near-zero / drag-like | 0 / 0 | 0 / 0 |
+
+**Result: passed for live packet displacement/residual instrumentation.**
+The second screenshot shows 16 out of 16 sprint→walk transition
+observations with **non-near-zero actual client packet displacement**
+while their residuals match the provisional zero-input drag model
+closely (r95 rounded to 0.000; `drag~`=16). This directly resolves the
+previous ambiguity: the low residual in these *recorded* switch windows
+is **not merely an artifact of fully stationary decoded packet
+intervals**. It is consistent with drag-like coasting.
+
+**Do not over-interpret:** a measured displacement of 0.025 blocks per
+accepted packet interval is not proof that the user released forward,
+proof that sprint was released before forward, a fitted friction
+coefficient, or authenticated client simulation timing. A single
+p95 also does not reveal the full distribution of displacements, and a
+client may stop sending position packets when actually motionless.
+
+The other direction (`W>S`) recorded 10 accepted post-switch
+triples at r95=0.127 and d95=0.278, consistent with active sprint-like
+movement and clearly distinct from the `S>W` observations. The number
+of sprint switches and transition samples increased as the user
+repeated movement sequences; the existing source and no-decision
+guards were not loosened.
+
+**Turning remains unvalidated in live tests:** the counter was 0 in
+both screenshots. This may reflect smooth angle changes, missing
+eligible consecutive packet triples during a sharp turn, or the
+provisional 35-degree per-comparison threshold. Do **not** lower that
+research threshold just to increase the count. Next prioritize a
+bounded distribution of **observed client packet heading-change
+angles**, alongside eligibility/no-decision context, before
+investigating version-aware directional acceleration.
+
+This is an observe-only, single-server research smoke test. No
+false-positive assessment, production physics validation or
+enforcement-ready cheat check is implied.
+
+## Heading-change distributions and eligibility diagnostics (2026-11-17)
+
+After two successful sprint-switch residual/displacement tests, the
+packet-derived phase counter still reported **Turn 0**. This alone cannot
+tell whether there were no qualifying direction changes, whether
+server-tick/context restrictions skipped the changes, or whether the
+movement vectors each turned by less than the provisional **35-degree**
+phase-classification cutoff. We added observation rather than relaxing
+the cutoff.
+
+### Admin command
+
+```text
+/hg detection packets HypersMC heading
+```
+
+Aliases: `headings`, `angles`, `turns`. The six-line output is
+read-only, uses the existing opt-in packet-reachability feature,
+and shows:
+
+- **Angle p50, p95, maximum:** nearest-rank statistics for the latest
+  **128 accepted client-packet horizontal heading changes**. `n`
+  shows retained / total accepted angles. Units are **degrees**.
+- **>=5, >=15, >=35 degrees:** lifetime counts of heading changes
+  falling into progressively larger bands. The original provisional
+  35-degree `Turn` research phase threshold is **unchanged**.
+  A large camera/yaw rotation without a change in the displacement
+  vector does **not** count as a movement heading change.
+- **Too-slow:** number of otherwise modeled packet triples whose
+  *previous or current* XZ displacement magnitude was **below 0.075
+  blocks per accepted packet interval**. They have no reliable
+  movement direction for this study and are excluded from angle
+  statistics, while remaining in the existing packet speed-change
+  and reachability research.
+- **Modeled and no-decision:** existing packet predictor counters,
+  now with cumulative, **mutually exclusive** upstream no-decision
+  reasons: timing (stale, repeated, skipped tick hints), context
+  (unsupported motion, sprint/world/material changes), invalid
+  client claim (undecoded or airborne-ground claim), correction
+  (teleport/velocity recovery), warmup (insufficient prior packets),
+  and unavailable server/version context. Their sum equals the
+  model's packet no-decision count. Explicit correction *events*
+  without an incoming position packet remain separate from these
+  per-packet skip totals.
+
+The angle is computed **only from two consecutive accepted client
+packet XZ displacement vectors**, not from Bukkit `PlayerMoveEvent`,
+server position deltas, or packet yaw. For normalized vectors
+`u = v_prev/|v_prev|` and `v = v_now/|v_now|`, the angle is:
+
+```text
+angleDeg = degrees(atan2(abs(u.x*v.z-u.z*v.x), u.x*v.x+u.z*v.z))
+```
+
+This gives 0–180 degrees regardless of whether the player turns left
+or right. All comparisons still require the same correction epoch,
+same supported material, same sprint state, valid grounded context,
+and consecutive server tick hints. The server hint does **not** prove
+the client simulated exactly one tick per accepted packet.
+
+**Important denominator distinction:** `measured + too-slow = modeled`
+for a session using this version of the recorder. `no-decision`
+describes packet claims that never reached this modeled-triple stage.
+A turn can fail to register because of either an upstream
+no-decision or an accepted triple with too little movement. Different
+no-decision causes should not be summed with slow vectors as if they
+were separate received packets.
+
+### Controlled live test
+
+1. Rebuild/restart the current PR branch and keep
+   `packet_observation.ground_probe.packet_reachability.enabled=true`.
+2. In Survival on a large flat `STONE` platform, **walk straight**
+   without jumping for ~10 seconds; inspect `... heading`. The
+   measured count should increase, with most angles close to zero.
+3. Continue moving and make several **abrupt 90-degree changes to the
+   movement direction**, preferably by switching directional keys
+   rather than merely rotating the camera. Inspect p95/max and the
+   >=5/15/35 counters. An actual client may turn more gradually across
+   several small packet deltas, so a sequence totaling 90 degrees is
+   not guaranteed to produce any single >=35-degree event.
+4. Rotate the camera/yaw while moving in a straight line; the
+   packet-displacement heading should remain small. This separates
+   movement direction from aim direction.
+5. Release movement inputs, jump, teleport, take knockback, switch
+   to Creative and cross unsupported ground. Check `too-slow`
+   and no-decision reasons rather than turning rejected motion into
+   predicted physics. A stationary client may emit no position packets
+   at all; we do not fabricate an angle for a missing packet.
+6. Repeat on other supported versions and under network jitter.
+   Keep all outcomes as research and do not tune the 35-degree
+   label threshold to manufacture counts.
+
+**Status:** bounded heading-angle ring and skip counters plus Java
+regression tests committed; CI and live validation pending. No
+violation/report/ML/punishment paths are added.
+
+## Packet-to-server-tick-hint timing diagnostics (2026-11-17)
+
+After real heading tests, the observer recorded **24 measured heading angles**
+but **509 no-decision packet observations**, including **258 timing**
+exclusions and **247 warmup** exclusions. Those counts do not
+necessarily represent 258 network packet losses or 247 bad decoder
+events. The existing model relies on a Bukkit **server scheduler tick
+hint**, not an authenticated client simulation tick; a `TICK_GAP`
+resets the three-position chain, and another accepted packet is then
+needed to rebuild its displacement history.
+
+A new, read-only, six-line diagnostic exposes the distinction:
+
+```text
+/hg detection packets HypersMC timing
+```
+
+Aliases: `sync`, `tickhints`. This is still controlled by the existing
+opt-in `packet_reachability.enabled` setting.
+
+- **Raw hint pairs +1 / same / gaps / reverse:** differences in the most
+  recent Bukkit scheduler tick index seen by *consecutive incoming client
+  position-packet observations*. These are observations of **server
+  hint assignment**, NOT validated client simulation tick gaps.
+- **Gaps +2 / >=3:** which sizes of positive server hint jump were
+  observed. `+2` means the newer packet was observed two *server
+  tick indices* after the earlier one; it does **not** prove a client
+  tick or packet was dropped. Cross-correction-epoch comparisons are
+  explicitly reset and not included.
+- **Model gaps / model same-tick:** the predictor's actual `TICK_GAP`
+  and `AMBIGUOUS_TICK` no-decision outcomes. Raw repeated hints and
+  raw gaps can occur even when other eligibility rules already rejected
+  a packet, so raw counts and model rejection counts are not expected
+  to match exactly.
+- **Stale / unstable:** number of incoming position observations with
+  server context older than 125 ms (or invalid sample age), and with
+  previous server tick spacing outside 25–125 ms (or no complete
+  consecutive sample). These diagnostic categories may overlap.
+- **Warmup init / timing / context / correction / other:** the existing
+  `WARMUP` no-decision packets attributed to the most recent chain
+  interruption type. A timing gap can induce a *subsequent warmup*;
+  counting the former without the latter understates its impact.
+  Summed warmup attribution equals the original `heading warmup`
+  counter. This is descriptive provenance; it does not mean the input
+  packets actually arrived in client-tick order.
+
+### Example (illustrative, not captured server values)
+
+```text
+Packets: HypersMC [timing]
+SERVER tick hints | NOT client simulation ticks
+Hint pairs +1 260 same 0 gaps 258 reverse 0
+Gap +2 240 >=3 18 | model gaps 258
+Model same-tick 0 | stale 0 | unstable 0
+Warmup init 2 timing 247 context 0 correction 0 other 0
+```
+
+### Controlled next test
+
+1. With the research predictor enabled, walk or sprint steadily on the
+   same large STONE surface without jumping for 10 seconds. Check both
+   `heading` and `timing` before and after the movement.
+2. Compare the **increase** (not the cumulative total) in raw +1 hints,
+   raw gaps, model gaps, and warmups after timing. If timing-origin
+   warmups increase roughly with gaps, interrupted packet sequences
+   explain much of the low heading coverage.
+3. Repeat with several sharp **movement-direction** changes, then
+   separately while standing still and only rotating the camera.
+   Packet headings come from position claims, not LOOK/yaw alone.
+4. Check after teleport, Creative flight, and a laggy server interval.
+   The model should keep declining comparisons when timing or movement
+   context is not trustworthy.
+5. Never change eligibility to allow duplicate or skipped tick hints
+   solely to increase modeled angles. The next possible engineering
+   step is independently calibrated **packet arrival cadence telemetry**
+   and client/server simulation equivalence research, not assigning
+   confidence to server tick hints.
+
+**Safety:** this increment adds constant-memory counters and a staff
+view only. It does not alter the packet model's eligibility, friction
+assumptions, heading cutoff, violation rules, ML labels, reports or
+enforcement. Pure Java regressions check hint classification, context
+metadata, correction-epoch boundaries, warmup attribution and the
+six-line diagnostics output. GitHub CI and live Paper verification
+must be evaluated separately.
+
+## First in-game tick-hint timing diagnostics (2026-11-17)
+
+The tester supplied a screenshot containing both
+`/hg detection packets HypersMC heading` and
+`/hg detection packets HypersMC timing` from the same live session.
+The `heading` display reported:
+
+- Modeled packet triples **164**, no-decision **23** (187 position
+  observations in the predictor); valid heading angles **128/158**
+  retained/total, with six modeled triples too slow to measure.
+- Angle p50/p95/max all printed **0.000 degrees** at three-decimal
+  precision; no angle reached the >=5/15/35-degree research labels.
+  This is compatible with near-straight movement and does **not**
+  establish that the player performed a sharp turn in this sample.
+- No-decision reasons: timing **19**, context **0**, invalid **0**,
+  warmup **2**, correction **2**, unavailable **0**. The categories
+  correctly sum to **23**.
+
+The new `timing` view reported:
+
+| Research counter | In-game value |
+|---|---:|
+| Consecutive +1 server-tick-hint pairs | 165 |
+| Repeated server-tick hints | 1 |
+| Raw positive hint gaps | 20 |
+| Reverse hints | 0 |
+| Gaps of exactly +2 | 0 |
+| Gaps of +3 or more | 20 |
+| Actual predictor TICK_GAP decisions | 18 |
+| Actual predictor AMBIGUOUS_TICK decisions | 0 |
+| Stale server samples | 0 |
+| Unstable tick-spacing samples | 1 |
+| Warmup after initial / timing / context / correction / other | 0 / 2 / 0 / 0 / 0 |
+
+**Validation:** pass for *live observation and reconciliation* of the
+new tick-hint provenance counters. The **186 raw hint pairs** sum
+to **165+1+20**, which is one fewer than **187** received position
+observations. Raw gaps can differ from model gap rejections because
+other model gates take precedence; similarly the single repeated hint
+did not result in an `AMBIGUOUS_TICK` classification.
+
+Model coverage was **164/187 = 87.7%** in this screenshot, considerably
+better than the earlier heading test. This establishes that the
+packet-observer research pipeline can model most packets under *some*
+normal gameplay conditions; it does not establish accurate client tick
+equivalence, packet loss, or enforcement-grade physics.
+
+**Interpretation limit:** 18 actual model gap rejections but only two
+warmups attributed to timing may arise when several gaps are clustered
+rather than regularly interrupting continuous runs. The cumulative
+snapshot does **not** reveal temporal ordering, so this explanation is
+a hypothesis, not a confirmed root cause. A future fixed-size histogram
+of *consecutive accepted model run lengths* and of successive gap
+clusters would help evaluate it without retaining raw positions or
+weakening safeguards.
+
+**Next controlled comparison:** capture `heading` and `timing`
+before and after continuous straight walking, then before and after
+deliberate directional changes on the same STONE ground. Compare
+counter *deltas* across each interval; do not infer missing client
+packets from a server tick-hint difference. No model thresholds,
+guard rails, alerts or punishments changed in this documentation
+update.
+
+## Modeled-run and timing-rejection cluster lengths (2026-11-17)
+
+The first timing-hint runtime test showed **164 modeled** out of **187**
+incoming position observations, **18 actual `TICK_GAP` rejections**
+and only **two warmups attributed to timing**. This established that
+the observer works under some normal movement conditions, but the
+cumulative counts could not determine whether timing problems were
+clustered or scattered between successful modeled observations.
+
+A new **read-only** admin view records bounded sequence lengths:
+
+```text
+/hg detection packets HypersMC runs
+```
+
+Aliases: `clusters`, `runlengths`. Requires the existing opt-in
+packet reachability experiment. The view uses its existing
+**client-POSITION-packet outcome statuses**, not Bukkit
+`PlayerMoveEvent` deltas, and never reclassifies an accepted packet.
+
+**Definitions:**
+
+- **Accepted modeled run:** the number of consecutive incoming position
+  observations already classified `CONSERVATIVE_REACHABLE` or
+  `OUTSIDE_RESEARCH_ENVELOPE`. Any no-decision status closes the run.
+  The length counts accepted *packet observations*, **not validated
+  client simulation ticks**. A long run is useful research coverage,
+  not evidence that timing is correctly synchronized.
+- **Timing-rejection cluster:** one or more consecutive model
+  `TICK_GAP`, `AMBIGUOUS_TICK` or `STALE_SERVER_SAMPLE` rejections.
+  `WARMUP` can occur *within* a cluster and does not split it.
+  A newly modeled packet closes the cluster, as do context changes,
+  invalid claims, unavailable version, and correction boundaries.
+  Cluster length counts only actual timing-rejected packet outcomes,
+  not the intervening warmups or skipped server tick indices.
+- **Completed length distribution:** `n` counts lifetime completed
+  runs/clusters. `p50`, `p95`, and `max` use only the **latest 128
+  completed** lengths; they use nearest-rank percentiles. When nothing
+  has closed yet, percentiles display `n/a`, not fabricated zeros.
+- **Live:** current run or cluster still open at time of the command.
+  Active lengths are **excluded** from the completed distributions.
+  The command never modifies the counters.
+- **Run buckets:** lifetime counts of completed accepted runs of length
+  1, 2–4, 5–19, and 20 or more. **Gap singles/multi** are completed
+  clusters of length 1 versus 2 or more timing rejections.
+- **Warmups in clusters:** lifetime `WARMUP` outcomes observed while a
+  timing cluster is open. This includes recovery after a final gap; it
+  does **not** claim the warmup must be *between* two rejected packets.
+
+The output remains six Minecraft-chat lines:
+
+```text
+Packets: HypersMC [runs]
+Model runs | SERVER tick hints, NOT client ticks
+Accepted runs n 3 p50 12 p95 36 max 36 live 8
+Runs len1 1 len2-4 0 len5-19 1 len20+ 1
+Gap clusters n 5 p50 1 p95 3 max 3 live 0
+Gap singles 4 multi 1 | timing reject 7 | warmups in 4
+```
+
+*Example only — not measurements from the user's server.*
+
+The tracking stores just **two 128-element primitive rings** for
+completed lengths and fixed-size counters. Sorting occurs on staff
+request, not per packet. Explicit server teleport/velocity/respawn
+corrections close any open run/cluster without inventing an incoming
+client packet. All existing predictor ground, version, correction,
+timing, sprint, collision and no-decision gates remain untouched.
+Nothing is connected to player reports, alerts, scoring, ML labels,
+replays, kicks, bans, or automated setbacks.
+
+### Controlled run-length test
+
+1. In Survival on uniform STONE, inspect `timing`, `runs` and
+   `heading` **before** moving.
+2. Walk straight for 10–15 seconds; capture `runs` and `timing`
+   again. Check whether accepted run `n` and completed lengths
+   increase, and whether a long run remains active.
+3. Make repeated sharp **movement-direction** turns without jumping,
+   then capture the same views. If timing remains stable, long runs
+   should continue and more angles can be measured; if timing
+   repeatedly breaks, compare *new* cluster singles/multi and the
+   `warmups in` counter against `timing` model gaps.
+4. Stop for several seconds, then sprint or change game mode; these
+   naturally create boundaries. Do not mistake a zero active length
+   for zero historical valid motion.
+5. Teleport and receive knockback. Open runs/clusters should close
+   without a modeled cross-correction packet, while no enforcement
+   or evidence decisions occur.
+
+**Validation:** Java regression tests cover run/cluster boundaries,
+WARMUP bridging, timing vs context exceptions, explicit corrections,
+retained-window percentiles, session totals, and six-line chat
+diagnostics. Independent CI and live Paper validation still needed.
+
+## Next actual physics work
+
+Capture trustworthy per-player packet order and *validated tick equivalence*,
+then test a version-aware integrator against a legitimate gameplay corpus.
+Input must remain an uncertainty set rather than an invented key stream.
+Use independently resolved collision boxes, surface friction/attributes,
+vertical movement, jumping, sprint/sneak changes and external velocity
+state. Only after robust false-positive evaluation should any
+movement prediction be considered for investigation evidence.
+
+This first increment establishes a narrow, auditable *packet-position
+prediction research path*, not a production anti-cheat check.

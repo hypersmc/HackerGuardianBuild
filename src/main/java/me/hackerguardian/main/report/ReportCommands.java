@@ -129,7 +129,6 @@ public final class ReportCommands {
 
         // /hg reports ...
         commandManager.register("reports", (sender, params) -> {
-            if (HackerGuardian.CommandValidate.notPlayer(sender)) return;
             if (!HackerGuardian.CommandValidate.noPerm(sender, "reports")) return;
 
             if (!sender.hasPermission("hg.reports")) {
@@ -137,7 +136,11 @@ public final class ReportCommands {
                 return;
             }
 
-            if (params.length == 0 || params[0].equalsIgnoreCase("help")) {
+            if (params.length == 0) {
+                handleInbox(sender, new String[]{"inbox"});
+                return;
+            }
+            if (params[0].equalsIgnoreCase("help")) {
                 sendHelp(sender);
                 return;
             }
@@ -145,6 +148,7 @@ public final class ReportCommands {
             String sub = params[0].toLowerCase();
 
             switch (sub) {
+                case "inbox" -> handleInbox(sender, params);
                 case "view" -> handleView(sender, params);
                 case "list" -> handleList(sender, params);
                 case "comment" -> handleComment(sender, params);
@@ -158,6 +162,7 @@ public final class ReportCommands {
 
     private void sendHelp(CommandSender sender) {
         sender.sendMessage(tx.playerText(tx.prefix + "Reports commands:"));
+        sender.sendMessage(tx.playerText(tx.shortprefix + ChatColor.RED + "/hg reports [inbox [OPEN|CLOSED|DISMISSED|ALL] [page]]"));
         sender.sendMessage(tx.playerText(tx.shortprefix + ChatColor.RED + "/hg report <player> <reason...>"));
         sender.sendMessage(tx.playerText(tx.shortprefix + ChatColor.RED + "/hg reports list <player> [page]"));
         sender.sendMessage(tx.playerText(tx.shortprefix + ChatColor.RED + "/hg reports view <id>"));
@@ -165,6 +170,88 @@ public final class ReportCommands {
         sender.sendMessage(tx.playerText(tx.shortprefix + ChatColor.RED + "/hg reports close <id>"));
         sender.sendMessage(tx.playerText(tx.shortprefix + ChatColor.RED + "/hg reports dismiss <id>"));
         sender.sendMessage(tx.playerText(tx.shortprefix + ChatColor.RED + "/hg reports open <id>"));
+    }
+
+    /**
+     * Queue view is console-safe; mutating report commands retain their separate
+     * staff permission and player identity requirements.
+     */
+    private void handleInbox(CommandSender sender, String[] params) {
+        if (!sender.hasPermission("hg.reports.view")) {
+            sender.sendMessage(tx.playerText(tx.prefix + "No permission."));
+            return;
+        }
+        if (params.length > 3) {
+            sender.sendMessage(tx.playerText(tx.prefix + "Usage: /hg reports inbox [OPEN|CLOSED|DISMISSED|ALL] [page]"));
+            return;
+        }
+
+        String status = "OPEN";
+        int page = 1;
+        if (params.length >= 2) {
+            String arg = params[1].toUpperCase(java.util.Locale.ROOT);
+            if (arg.matches("[0-9]+")) {
+                try { page = Integer.parseInt(arg); }
+                catch (NumberFormatException e) { page = Integer.MAX_VALUE; }
+            } else if (arg.equals("OPEN") || arg.equals("CLOSED") || arg.equals("DISMISSED") || arg.equals("ALL")) {
+                status = arg;
+            } else {
+                sender.sendMessage(tx.playerText(tx.prefix + "Status must be OPEN, CLOSED, DISMISSED or ALL."));
+                return;
+            }
+        }
+        if (params.length == 3) {
+            if (params[1].matches("[0-9]+")) {
+                sender.sendMessage(tx.playerText(tx.prefix + "Usage: /hg reports inbox [status] [page]"));
+                return;
+            }
+            try { page = Integer.parseInt(params[2]); }
+            catch (NumberFormatException e) {
+                sender.sendMessage(tx.playerText(tx.prefix + "Page must be a number."));
+                return;
+            }
+        }
+        if (page < 1) {
+            sender.sendMessage(tx.playerText(tx.prefix + "Page must be positive."));
+            return;
+        }
+        int pageSize = Math.max(1, Math.min(20, plugin.getConfig().getInt("Settings.reports_page_size", 5)));
+        final String filter = status;
+        final int requestedPage = page;
+        service.countReportsByStatus(filter).whenComplete((total, error) -> Bukkit.getScheduler().runTask(plugin, () -> {
+            if (error != null) {
+                sender.sendMessage(tx.playerText(tx.prefix + "Failed to count reports."));
+                if (plugin.getConfig().getBoolean("debug")) error.printStackTrace();
+                return;
+            }
+            int pages = Math.max(1, (int) Math.ceil(total / (double) pageSize));
+            int safePage = Math.min(requestedPage, pages);
+            service.listReportsByStatus(filter, safePage, pageSize).whenComplete((rows, ex) ->
+                    Bukkit.getScheduler().runTask(plugin, () -> {
+                        if (ex != null) {
+                            sender.sendMessage(tx.playerText(tx.prefix + "Failed to load inbox."));
+                            if (plugin.getConfig().getBoolean("debug")) ex.printStackTrace();
+                            return;
+                        }
+                        sender.sendMessage(tx.playerText(tx.prefix + "Reports inbox [" + filter + "] "
+                                + ChatColor.GRAY + "(" + safePage + "/" + pages + ", " + total + " total)"));
+                        if (rows.isEmpty()) {
+                            sender.sendMessage(tx.playerText(tx.shortprefix + "(no reports)"));
+                        }
+                        for (ReportRow row : rows) {
+                            sender.sendMessage(tx.playerText(tx.shortprefix
+                                    + ChatColor.RED + "#" + row.id() + ChatColor.RESET
+                                    + " [" + row.status() + "] " + ChatColor.RED + row.reportedName()
+                                    + ChatColor.RESET + " - " + shorten(row.reason(), 44)
+                                    + ChatColor.GRAY + " (" + fmt.format(Instant.ofEpochMilli(row.createdAt())) + ")"));
+                        }
+                        if (safePage < pages) {
+                            sender.sendMessage(tx.playerText(tx.shortprefix
+                                    + "Next: /hg reports inbox " + filter + " " + (safePage + 1)));
+                        }
+                        sender.sendMessage(tx.playerText(tx.shortprefix + "Details: /hg reports view <id>"));
+                    }));
+        }));
     }
 
     private void handleView(CommandSender sender, String[] params) {
