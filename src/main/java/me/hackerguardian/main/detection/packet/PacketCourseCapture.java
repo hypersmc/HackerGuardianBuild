@@ -107,7 +107,7 @@ public final class PacketCourseCapture {
                 case AMBIGUOUS_TICK -> { timing++; ambiguous++; }
                 case STALE_SERVER_SAMPLE -> { timing++; stale++; }
                 case WARMUP -> warmups++;
-                case CONTEXT_CHANGED, UNSUPPORTED_CONTEXT -> context++;
+                case CONTEXT_CHANGED, UNSUPPORTED_CONTEXT -> this.context++;
                 case RECENT_CORRECTION -> correction++;
                 default -> other++;
             }
