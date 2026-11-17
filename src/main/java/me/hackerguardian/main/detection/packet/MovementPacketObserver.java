@@ -359,6 +359,9 @@ public final class MovementPacketObserver implements Listener {
                 // event but were observed in consecutive server samples.
                 packetPrediction.correction();
             }
+            if (packetPrediction != null) {
+                packetPrediction.observeServerTick(tick, timeline.currentCorrectionEpoch(), input);
+            }
             if (groundProbe != null) {
                 groundProbe.sample(tick, System.nanoTime(),
                         timeline.currentCorrectionEpoch(), input,
