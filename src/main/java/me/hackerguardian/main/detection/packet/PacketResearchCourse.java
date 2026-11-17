@@ -28,6 +28,7 @@ public final class PacketResearchCourse {
     private final MovementPacketObserver observer;
     private final Map<UUID, Session> sessions = new HashMap<>();
     private final Map<UUID, Report> reports = new HashMap<>();
+    private final Map<UUID, String> savedReportPaths = new HashMap<>();
     private BukkitTask task;
 
     public record Report(String player, boolean complete, String reason,
@@ -87,6 +88,7 @@ public final class PacketResearchCourse {
 
         Session session = new Session(player, chosen);
         reports.remove(player.getUniqueId());
+        savedReportPaths.remove(player.getUniqueId());
         session.capture.enter(chosen.get(0).phase());
         if (!observer.beginCourse(player, session.capture)) {
             return "Packet observation session became unavailable. Try again.";
@@ -116,9 +118,15 @@ public final class PacketResearchCourse {
         return reports.get(playerId);
     }
 
+    /** Relative to the plugin data folder; null if saving failed. */
+    public String lastReportPath(UUID playerId) {
+        return savedReportPaths.get(playerId);
+    }
+
     public void shutdown() {
         for (UUID id : List.copyOf(sessions.keySet())) finish(id, false, "Plugin stopped");
         reports.clear();
+        savedReportPaths.clear();
         stopTaskIfIdle();
     }
 
@@ -179,19 +187,20 @@ public final class PacketResearchCourse {
         observer.endCourse(id, s.capture);
         Report report = new Report(s.name, complete, reason, s.capture.finish());
         reports.put(id, report);
+        String savedPath = null;
+        try {
+            savedPath = PacketCourseReportExport.write(plugin.getDataFolder().toPath(), id, report);
+            savedReportPaths.put(id, savedPath);
+        } catch (java.io.IOException e) {
+            savedReportPaths.remove(id);
+            plugin.getLogger().warning("Could not save packet course research report: " + e.getMessage());
+        }
         Player player = Bukkit.getPlayer(id);
         if (player != null && player.isOnline()) {
-            player.sendMessage("§6[HG Course] §f" + (complete ? "§aFinished" : "§eStopped")
-                    + "§f: " + reason + " | phases " + report.phases().size() + "/6");
-            long modeled = 0, timing = 0, total = 0;
-            for (var phase : report.phases()) {
-                modeled += phase.modeled();
-                timing += phase.timingRejects();
-                total += phase.packets();
-            }
-            player.sendMessage("§7POSITION packets " + total + " | modeled " + modeled
-                    + " | timing rejected " + timing);
-            player.sendMessage("§7Full breakdown: §f/hg detection course report");
+            for (String line : format(report)) player.sendMessage(line);
+            player.sendMessage(savedPath == null
+                    ? "§cFull report not saved (see server log)."
+                    : "§7Saved: §f" + savedPath);
         }
         stopTaskIfIdle();
     }
@@ -233,8 +242,8 @@ public final class PacketResearchCourse {
                 6, 0.35, 0.3, 0.35, 0);
     }
 
-    /** Staff summary: reliable packets stay distinct from descriptive corner observations. */
-    public static List<String> format(Report report) {
+    /** Full per-phase diagnostics for the exported file only. */
+    public static List<String> formatDetailed(Report report) {
         ArrayList<String> lines = new ArrayList<>();
         lines.add("§6[HG Course] §f" + report.player() + " | "
                 + (report.complete() ? "COMPLETE" : "PARTIAL") + " | " + report.reason());
@@ -250,10 +259,27 @@ public final class PacketResearchCourse {
             }
             lines.add("§e" + r.phase().label() + " §7[" + quality + "] pkt " + r.packets()
                     + " modeled " + r.modeled() + " timing " + r.timingRejects());
-            lines.add(" §7mode mismatch " + r.mismatchedSprint() + " | off-route "
+            lines.add(" §7mode match/mismatch/unknown " + r.matchedSprint()
+                    + "/" + r.mismatchedSprint() + "/" + r.unknownSprint()
+                    + " | route samples " + r.routeSamples() + " off-route "
                     + r.outsideCorridor() + " reverse " + r.backwardSteps()
-                    + " | p95 " + decimal(r.headings().p95())
-                    + " runMax " + length(r.runs().acceptedRuns().max()));
+                    + " | headings " + r.headings().measured()
+                    + " p50 " + decimal(r.headings().p50())
+                    + " p95 " + decimal(r.headings().p95())
+                    + " max " + decimal(r.headings().max()));
+            lines.add(" §7timing gaps " + r.gapRejects()
+                    + " ambiguous " + r.ambiguousRejects()
+                    + " stale " + r.staleRejects()
+                    + " | warmup " + r.warmups()
+                    + " context " + r.contextRejects()
+                    + " correction " + r.correctionRejects()
+                    + " other " + r.otherRejects());
+            lines.add(" §7tick hints adjacent " + r.adjacentHints()
+                    + " repeated " + r.repeatedHints()
+                    + " +2 " + r.twoTickGaps()
+                    + " >=3 " + r.largerTickGaps()
+                    + " | runMax " + length(r.runs().acceptedRuns().max())
+                    + " active " + r.runs().activeAcceptedRun());
             if (r.turn() != null && r.turn().hasTurn()) {
                 var turn = r.turn();
                 lines.add(" §7corner " + turn.expectedDirection() + " -> "
@@ -267,6 +293,51 @@ public final class PacketResearchCourse {
                 + deviated + " deviations §7" + limited + " limited");
         lines.add("§8Quality flags describe route/data reliability, never cheating.");
         return lines;
+    }
+
+    /**
+     * Exactly four short chat lines. The full six-phase breakdown is saved on
+     * disk; avoid flooding the player's already-small Minecraft chat window.
+     */
+    public static List<String> format(Report report) {
+        long packets = 0, modeled = 0, timing = 0;
+        long walkPackets = 0, walkModeled = 0, walkTiming = 0;
+        long sprintPackets = 0, sprintModeled = 0, sprintTiming = 0;
+        long modeMismatches = 0;
+        int clean = 0, mixed = 0, deviations = 0, limited = 0;
+        for (var r : report.phases()) {
+            packets += r.packets();
+            modeled += r.modeled();
+            timing += r.timingRejects();
+            modeMismatches += r.mismatchedSprint();
+            if (r.phase().expectsSprint()) {
+                sprintPackets += r.packets();
+                sprintModeled += r.modeled();
+                sprintTiming += r.timingRejects();
+            } else {
+                walkPackets += r.packets();
+                walkModeled += r.modeled();
+                walkTiming += r.timingRejects();
+            }
+            switch (quality(r)) {
+                case "CLEAN" -> clean++;
+                case "MIXED_MODE" -> mixed++;
+                case "DEVIATION" -> deviations++;
+                default -> limited++;
+            }
+        }
+        return List.of(
+                "§6[HG Course] §f" + (report.complete() ? "COMPLETE" : "PARTIAL")
+                        + " §7(" + report.phases().size() + "/6) "
+                        + "§f" + modeled + "/" + packets + " modeled | timing " + timing,
+                "§aWalk §f" + walkModeled + "/" + walkPackets + " §7timing " + walkTiming
+                        + " §bSprint §f" + sprintModeled + "/" + sprintPackets
+                        + " §7timing " + sprintTiming,
+                "§7Quality §a" + clean + " clean §e" + mixed + " mixed §c"
+                        + deviations + " detour §7" + limited + " limited",
+                "§7Sprint-state mismatches " + modeMismatches
+                        + " | §f/hg detection course report"
+        );
     }
 
     /** Route quality is descriptive and never a cheating verdict. */
