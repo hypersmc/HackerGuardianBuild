@@ -15,7 +15,7 @@ public final class MovementPacketDiagnostics {
 
     public enum View {
         SUMMARY, MOVEMENT, NETWORK, TICK, GUARDS, PROBE, PROFILE, DYNAMICS, IDLE,
-        PREDICT, RESIDUALS, SWITCHES, HEADING, TIMING, RUNS, ACTIVITY;
+        PREDICT, RESIDUALS, SWITCHES, HEADING, TIMING, RUNS, ACTIVITY, PHYSICS;
 
         public static View parse(String name) {
             if (name == null || name.isBlank()) return SUMMARY;
@@ -36,6 +36,7 @@ public final class MovementPacketDiagnostics {
                 case "timing", "tickhints", "sync" -> TIMING;
                 case "runs", "clusters", "runlengths" -> RUNS;
                 case "activity", "passive", "context" -> ACTIVITY;
+                case "physics", "envelope", "validate" -> PHYSICS;
                 default -> null;
             };
         }
@@ -388,6 +389,24 @@ public final class MovementPacketDiagnostics {
                             + a.movingModelGaps() + "/" + a.unknownModelGaps());
                 }
             }
+            case PHYSICS -> {
+                if (prediction == null) {
+                    lines.add("Packet physics validation OFF (opt-in)");
+                } else if (!prediction.enabled()) {
+                    lines.add("Physics research unavailable for this version");
+                } else {
+                    var p = prediction.physics();
+                    lines.add("Disk research n" + p.total() + " base "
+                            + (p.total() - p.margin() - p.outside())
+                            + " margin " + p.margin() + " outside " + p.outside());
+                    lines.add(physicsLine("Walk", p.walkStraight(), p.walkTurn()));
+                    lines.add(physicsLine("Sprint", p.sprintStraight(), p.sprintTurn()));
+                    lines.add("Switch n" + p.postSwitch().total()
+                            + " quiet n" + p.quiet().total()
+                            + " short n" + p.lowVector().total()
+                            + " | ratio >1 = outside research envelope");
+                }
+            }
             case RUNS -> {
                 if (prediction == null) {
                     lines.add("Packet run research OFF (opt-in)");
@@ -447,6 +466,13 @@ public final class MovementPacketDiagnostics {
             }
         }
         return List.copyOf(lines);
+    }
+
+    private static String physicsLine(String mode, PacketPhysicsValidation.Group straight,
+                                      PacketPhysicsValidation.Group turn) {
+        return mode + " straight n" + straight.total()
+                + " p95r " + value(straight.p95Ratio())
+                + " | turn n" + turn.total() + " p95r " + value(turn.p95Ratio());
     }
 
     private static String count(Long value) {
