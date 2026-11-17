@@ -103,6 +103,7 @@ public final class PacketGroundReachability {
     private final PacketTickHintDiagnostics tickHints = new PacketTickHintDiagnostics();
     // Model-outcome-only study, never part of deciding whether a triple is valid.
     private final PacketResearchRuns runs = new PacketResearchRuns();
+    private PacketCourseCapture courseCapture;
     private Claim older, newest;
     private long positionPackets, modeled, noDecision, outside, ambiguous, corrections;
     private long headingWarmupSkips, headingTimingSkips, headingContextSkips;
@@ -274,7 +275,13 @@ public final class PacketGroundReachability {
         }
         tickHints.observeOutcome(status);
         runs.observe(status);
+        if (courseCapture != null) courseCapture.observe(status, packet, context);
         lastStatus = status;
+    }
+
+    /** Attach or detach an observe-only, bounded staff course capture. */
+    public synchronized void setCourseCapture(PacketCourseCapture capture) {
+        this.courseCapture = capture;
     }
 
     /** Called after teleport/velocity/respawn/world epoch changes. */
