@@ -108,8 +108,11 @@ class PacketPassiveMovementContextTest {
         study.observePacket(packet(0), ctx(9, 0, 0, false),
                 PacketGroundReachability.Status.TICK_GAP);
         var s = study.snapshot();
-        assertEquals(1, s.noPositionIntervals());
-        assertEquals(1, s.noPositionUnknown());
+        // A decoded position was seen during this sampled interval; it is
+        // therefore NOT a no-position interval. The skipped samples still
+        // prevent a quiet/moving attribution of the subsequent hint gap.
+        assertEquals(0, s.noPositionIntervals());
+        assertEquals(0, s.noPositionUnknown());
         assertEquals(1, s.unknownHintGaps());
         assertEquals(1, s.unknownModelGaps());
     }
