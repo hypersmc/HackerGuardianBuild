@@ -94,6 +94,7 @@ public final class PacketCourseCapture {
 
         void correction() {
             previousRoute = null;
+            runs.correction();
             if (turn != null) turn.correction();
         }
 
