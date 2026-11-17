@@ -90,7 +90,8 @@ public final class PacketGroundReachability {
                            HeadingSkipReasons headingSkips,
                            PacketTickHintDiagnostics.Snapshot tickHints,
                            PacketResearchRuns.Snapshot runs,
-                           PacketPassiveMovementContext.Snapshot activity) {}
+                           PacketPassiveMovementContext.Snapshot activity,
+                           PacketPhysicsValidation.Snapshot physics) {}
 
     private record Claim(long tick, long epoch, String world,
                          MovementPacketBuffer.Position position, String material,
@@ -105,6 +106,8 @@ public final class PacketGroundReachability {
     // Model-outcome-only study, never part of deciding whether a triple is valid.
     private final PacketResearchRuns runs = new PacketResearchRuns();
     private final PacketPassiveMovementContext passiveActivity = new PacketPassiveMovementContext();
+    // Evidence-quality stratification, downstream of all current model gates.
+    private final PacketPhysicsValidation physicsValidation = new PacketPhysicsValidation();
     private PacketCourseCapture courseCapture;
     private Claim older, newest;
     private long positionPackets, modeled, noDecision, outside, ambiguous, corrections;
@@ -229,6 +232,9 @@ public final class PacketGroundReachability {
                     boolean postSwitch = transitions.observe(tick, epoch,
                             current.sprint(), prevDx, prevDz, dx, dz,
                             residual, lastExcess);
+                    physicsValidation.observe(current.sprint(), postSwitch,
+                            prevDx, prevDz, dx, dz, residual,
+                            profile.maxUnknownInputAcceleration(), profile.uncertainty());
                     // The first handful of eligible packet triples after
                     // switching mode can retain legitimate prior momentum.
                     // Research them separately, not under steady walking.
@@ -336,6 +342,7 @@ public final class PacketGroundReachability {
                 new HeadingSkipReasons(headingWarmupSkips, headingTimingSkips,
                         headingContextSkips, headingInvalidPacketSkips,
                         headingCorrectionSkips, headingUnavailableSkips),
-                tickHints.snapshot(), runs.snapshot(), passiveActivity.snapshot());
+                tickHints.snapshot(), runs.snapshot(), passiveActivity.snapshot(),
+                physicsValidation.snapshot());
     }
 }
