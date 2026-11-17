@@ -81,7 +81,7 @@ public final class PacketResearchCourse {
             }
         }
         if (chosen == null) {
-            return "No safe flat 58-block course in either direction. Try an open flat platform.";
+            return "No safe flat 54-block course in either direction. Try an open flat platform.";
         }
 
         Session session = new Session(player, chosen);
@@ -236,7 +236,7 @@ public final class PacketResearchCourse {
             player.spawnParticle(Particle.END_ROD, x, session.y + 0.12, z,
                     1, 0, 0, 0, 0);
         }
-        player.spawnParticle(Particle.HAPPY_VILLAGER,
+        player.spawnParticle(Particle.END_ROD,
                 leg.to().x() + 0.5, session.y + 0.6, leg.to().z() + 0.5,
                 6, 0.35, 0.3, 0.35, 0);
     }
