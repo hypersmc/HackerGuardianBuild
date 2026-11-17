@@ -92,6 +92,10 @@ public final class DetectionCommands {
                     sender.sendMessage("§7No finished packet course report yet.");
                 } else {
                     for (String line : PacketResearchCourse.format(report)) sender.sendMessage(line);
+                    String exported = course.lastReportPath(player.getUniqueId());
+                    sender.sendMessage(exported == null
+                            ? "§cFull report not saved (see server log)."
+                            : "§7Saved: §f" + exported);
                 }
             }
             default -> sender.sendMessage("§7Usage: /hg detection course [start|stop|report]");
