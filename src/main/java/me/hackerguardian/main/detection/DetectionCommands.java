@@ -10,6 +10,7 @@ import me.hackerguardian.main.detection.normality.NormalityDetector;
 import me.hackerguardian.main.detection.packet.MovementPacketBuffer;
 import me.hackerguardian.main.detection.packet.MovementPacketDiagnostics;
 import me.hackerguardian.main.detection.packet.MovementPacketObserver;
+import me.hackerguardian.main.detection.packet.PacketResearchCourse;
 import me.hackerguardian.main.detection.telemetry.BehaviorSnapshot;
 import me.hackerguardian.main.utils.CommandManager;
 import me.hackerguardian.main.utils.textHandling;
@@ -46,6 +47,7 @@ public final class DetectionCommands {
             if (params[0].equalsIgnoreCase("probe")) { handleProbe(sender, params); return; }
             if (params[0].equalsIgnoreCase("capture")) { handleCapture(sender, params); return; }
             if (params[0].equalsIgnoreCase("packets")) { handlePackets(sender, params); return; }
+            if (params[0].equalsIgnoreCase("course")) { handleCourse(sender, params); return; }
 
             if (params.length != 1) {
                 sendUsage(sender);
@@ -59,6 +61,41 @@ public final class DetectionCommands {
             }
             showAssessment(sender, target);
         });
+    }
+
+    private void handleCourse(CommandSender sender, String[] params) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage("§cCourse commands must be run in game.");
+            return;
+        }
+        PacketResearchCourse course = runtime.getPacketCourse();
+        if (course == null) {
+            sender.sendMessage("§cPacket observation is unavailable.");
+            return;
+        }
+        String action = params.length == 1 ? "start" : params[1].toLowerCase(java.util.Locale.ROOT);
+        if (params.length > 2) {
+            sender.sendMessage("§7Usage: /hg detection course [start|stop|report]");
+            return;
+        }
+        switch (action) {
+            case "start" -> {
+                String error = course.start(player);
+                if (error != null) sender.sendMessage("§c[HG Course] " + error);
+            }
+            case "stop" -> {
+                if (!course.cancel(player)) sender.sendMessage("§7No active packet course.");
+            }
+            case "report" -> {
+                var report = course.lastReport(player.getUniqueId());
+                if (report == null) {
+                    sender.sendMessage("§7No finished packet course report yet.");
+                } else {
+                    for (String line : PacketResearchCourse.format(report)) sender.sendMessage(line);
+                }
+            }
+            default -> sender.sendMessage("§7Usage: /hg detection course [start|stop|report]");
+        }
     }
 
     private void handlePackets(CommandSender sender, String[] params) {
@@ -396,6 +433,7 @@ public final class DetectionCommands {
         sender.sendMessage(tx.playerText(" §7/hg detection learning [player]"));
         sender.sendMessage(tx.playerText(" §7/hg detection probe <player>"));
         sender.sendMessage(tx.playerText(" §7/hg detection packets <player>"));
+        sender.sendMessage(tx.playerText(" §7/hg detection course [start|stop|report]"));
         sender.sendMessage(tx.playerText(" §7/hg detection normality [reload]"));
         sender.sendMessage(tx.playerText(" §7/hg detection ml [reload]"));
         sendCaptureUsage(sender);
