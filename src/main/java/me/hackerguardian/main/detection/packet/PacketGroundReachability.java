@@ -294,6 +294,7 @@ public final class PacketGroundReachability {
         transitions.interruption();
         tickHints.correction();
         runs.correction();
+        if (courseCapture != null) courseCapture.correction();
     }
 
     private static boolean sameContext(Claim a, Claim b) {
